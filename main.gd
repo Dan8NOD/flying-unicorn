@@ -82,7 +82,7 @@ const FIRE_INTERVAL := 0.3
 const HEAT_TIME := 9.0
 const RELOAD_TIME := 3.0
 const BEAM_PERIOD := 6.0
-const BEAM_DUR := 3.0
+const BEAM_DUR := 0.75
 var heat := 0.0
 var shock: Array = []
 var overheated := false
@@ -752,7 +752,8 @@ func _game_update(dt: float) -> void:
 	# Spawning
 	ring_timer -= dt
 	if ring_timer <= 0:
-		_spawn_ring()
+		if rings.size() < _ring_target():
+			_spawn_ring()
 		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.1
 	cloud_timer -= dt
 	if cloud_timer <= 0:
@@ -775,6 +776,7 @@ func _game_update(dt: float) -> void:
 				react_pop = 1.0
 				if r.gold: _gold_hit()
 				elif r.red: _red_hit()
+				else: _single_laser()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -902,7 +904,7 @@ func _beam_hit(dt: float) -> void:
 		if bin:
 			boss.beam_tick -= dt
 			if boss.beam_tick <= 0:
-				boss.beam_tick = 0.6
+				boss.beam_tick = 0.35
 				_damage_boss(1)
 				_burst(boss.x, boss.y, 10, [Color.WHITE, Color("ff4d5e")], 220)
 	for c in clouds:
@@ -1314,6 +1316,53 @@ func _red_hit() -> void:
 	_laser_volley()
 
 
+func _foe_count() -> int:
+	var n := 0
+	for c in clouds:
+		if not c.dead:
+			n += 1
+	if boss != null and not boss.leaving:
+		n += 1
+	return n
+
+
+func _foe_cap() -> int:
+	var cap := mini(1 + level / 2, 3)
+	if boss != null:
+		cap -= 1
+	return maxi(0, cap)
+
+
+func _ring_target() -> int:
+	return maxi(2, 2 * _foe_count())
+
+
+func _single_laser() -> void:
+	var foe = _nearest_foe(Vector2(uni.x, uni.y), 2000.0)
+	var l := Laser.new()
+	if vertical:
+		l.x = uni.x
+		l.y = uni.y - 70
+		l.vx = 0
+		l.vy = -900
+	else:
+		var tip := _horn_tip()
+		l.x = tip.x
+		l.y = tip.y
+		l.vx = 900
+		l.vy = 0
+	if foe != null:
+		var aim := Vector2(foe.x - l.x, foe.y - l.y)
+		if aim.length() > 1:
+			aim = aim.normalized() * 900.0
+			l.vx = aim.x
+			l.vy = aim.y
+	l.c = RAINBOW[lasers.size() % 6]
+	l.lock = foe
+	lasers.append(l)
+	synth.laser()
+
+
 func _roll_cloud_kind(c: StormCloud) -> void:
 	var roll := randf()
 	c.zappy = randf() < 1.0 / 9.0
@@ -1429,15 +1478,19 @@ func _game_overhead(dt: float) -> void:
 	# Spawning from the top.
 	ring_timer -= dt
 	if ring_timer <= 0:
-		_spawn_ring_top()
+		if rings.size() < _ring_target():
+			_spawn_ring_top()
 		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.1
 	cloud_timer -= dt
 	if cloud_timer <= 0:
-		var c := StormCloud.new()
-		c.x = randf_range(80, VW - 80); c.y = -90; c.phase = randf_range(0, 6)
-		_roll_cloud_kind(c)
-		clouds.append(c)
-		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
+		if _foe_count() >= _foe_cap():
+			cloud_timer = 0.5
+		else:
+			var c := StormCloud.new()
+			c.x = randf_range(80, VW - 80); c.y = -90; c.phase = randf_range(0, 6)
+			_roll_cloud_kind(c)
+			clouds.append(c)
+			cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
 	if hp < 70.0 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
 		pk.x = randf_range(90, VW - 90); pk.y = -50; pk.phase = randf_range(0, 6)
@@ -1455,6 +1508,7 @@ func _game_overhead(dt: float) -> void:
 				react_pop = 1.0
 				if r.gold: _gold_hit()
 				elif r.red: _red_hit()
+				else: _single_laser()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -1567,6 +1621,9 @@ func _spawn_ring() -> void:
 
 
 func _spawn_cloud() -> void:
+	if _foe_count() >= _foe_cap():
+		cloud_timer = 0.5
+		return
 	var c := StormCloud.new()
 	c.x = W + 80; c.y = randf_range(80, H - 120); c.phase = randf_range(0, 6)
 	_roll_cloud_kind(c)

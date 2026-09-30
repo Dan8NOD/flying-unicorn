@@ -66,6 +66,7 @@ var mer_py := 325.0
 var mer_cd := 2.0
 var mer_spool := 0.0
 var mer_lock = null
+var _mer_vel := Vector2.ZERO
 var arcs: Array = []
 var rockets: Array = []
 var rocket_cd := 0.0
@@ -130,6 +131,17 @@ var last_ring_x := 480.0
 
 var best := 0
 var synth: SynthClass
+# Wonder World: the free-roam reward space. Unlocks after WONDER_AT seconds
+# of play (kid engagement window); rotation flips it between side-view
+# platformer and overhead wander. Nothing hostile in there.
+var wonder := false
+var wonder_unlocked := false
+var powered := false
+var play_time := 0.0
+const WONDER_AT := 480.0
+var bits := 0
+var _air_jump := true
+var _walk_touch := Vector2(-1, -1)
 
 # rendering resources
 var font: Font
@@ -138,6 +150,7 @@ var btn_tex: Texture2D
 var _btn_play := Rect2()
 var _btn_again := Rect2()
 var _btn_resume := Rect2()
+var _btn_sky := Rect2()
 var _teaser_rect := Rect2()
 var _teaser_over_rect := Rect2()
 
@@ -263,6 +276,7 @@ func _ready() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load("user://flying_unicorn.cfg") == OK:
 		best = int(cfg.get_value("game", "best", 0))
+	wonder_unlocked = bool(cfg.get_value("game", "wonder", false))
 	var muted_saved = cfg.get_value("game", "muted", false)
 	tilt_enabled = bool(cfg.get_value("game", "tilt", false))
 	synth = SynthClass.new()
@@ -291,6 +305,7 @@ func _ready() -> void:
 var _autostart := false
 var _force_level := 0
 var _force_vertical := false
+var _force_wonder := false
 
 
 func _parse_args() -> void:
@@ -311,6 +326,8 @@ func _parse_args() -> void:
 			_force_level = int(a.get_slice("=", 1))
 		elif a == "--vertical":
 			_force_vertical = true
+		elif a == "--wonder":
+			_force_wonder = true
 
 
 # Screenshot/QA hooks: jump straight to a level's palette or force the
@@ -324,6 +341,8 @@ func _apply_test_hooks() -> void:
 		vertical = true
 		uni.x = VW / 2
 		uni.y = VH * 0.72
+	if _force_wonder:
+		_enter_wonder()
 
 
 func _save_cfg() -> void:
@@ -331,6 +350,7 @@ func _save_cfg() -> void:
 	cfg.set_value("game", "best", best)
 	cfg.set_value("game", "muted", synth.muted)
 	cfg.set_value("game", "tilt", tilt_enabled)
+	cfg.set_value("game", "wonder", wonder_unlocked)
 	cfg.save("user://flying_unicorn.cfg")
 
 
@@ -544,6 +564,8 @@ func reset() -> void:
 	mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false; gold_in = 3; dash_t = 0; dash_lock = null;
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
+	wonder = false; powered = false; bits = 0
+	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
 	if vertical:
@@ -606,6 +628,9 @@ func _process(delta: float) -> void:
 			start()
 		hp = 0.0
 		game_over()
+	# Wonder World unlock: the 8-minute kid-engagement reward.
+	if state == "play" and not wonder and not wonder_unlocked and play_time >= WONDER_AT:
+		_enter_wonder()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
 	# accidental rotation never whips the playfield around.
 	var want := 1.0 if vertical else 0.0
@@ -653,6 +678,8 @@ func _process(delta: float) -> void:
 
 func _game_update(dt: float) -> void:
 	t += dt
+	if state == "play":
+		play_time += dt
 	if level_banner > 0: level_banner -= dt
 	if flash > 0: flash -= dt
 	if hurt_timer > 0: hurt_timer -= dt
@@ -698,6 +725,11 @@ func _game_update(dt: float) -> void:
 
 	if vertical:
 		_game_overhead(dt)
+		return
+
+	if wonder:
+		_wonder_side(dt)
+		_update_particles(dt)
 		return
 
 	# Movement: pointer steers toward finger; keys/stick/dpad accelerate.
@@ -901,6 +933,10 @@ func _beam_origin() -> Vector2:
 
 # Heat, reload and the auto eye-beam. Sets fire_ok for the two fire sites.
 func _tick_weapons(dt: float) -> void:
+	if wonder:
+		fire_ok = false
+		beam_t = 0
+		return
 	var want_fire := state == "play" and (pointer_down or Input.is_action_pressed("fire"))
 	if overheated:
 		reload_t -= dt
@@ -967,7 +1003,7 @@ func _spawn_boss() -> void:
 
 
 func _boss_update(dt: float) -> void:
-	if state != "play":
+	if wonder or state != "play":
 		return
 	if boss == null:
 		boss_spawn_t -= dt
@@ -1171,9 +1207,26 @@ func _nearest_foe(mp: Vector2, max_d := MER_RANGE):
 # discharge that zaps the locked foe and heals the pony.
 func _mermaid_update(dt: float) -> void:
 	var anchor := Vector2(uni.x + 75, uni.y - 55) if vertical else Vector2(uni.x + 95, uni.y + 20)
-	var k := minf(1.0, dt * 3.0)
+	# Swim weave: snake side-to-side across the facing direction so the
+	# trail reads as swimming instead of sliding. Smoothed by the lerp.
+	var facing := Vector2(uni.x - mer_px, uni.y - mer_py)
+	if facing.length() > 1.0:
+		var side := Vector2(-facing.y, facing.x).normalized()
+		anchor += side * sin(t * 1.7) * 9.0
+	# Spool surge: lean toward the locked foe while winding up the zap.
+	if mer_spool > 0 and mer_lock != null and is_instance_valid(mer_lock) and not mer_lock.dead:
+		var dl := Vector2(mer_lock.x - mer_px, mer_lock.y - mer_py)
+		if dl.length() > 1.0:
+			anchor += dl.normalized() * 18.0
+	# Catch up faster when far so she never gets stranded off-screen.
+	var dist := Vector2(anchor.x - mer_px, anchor.y - mer_py).length()
+	var k := minf(1.0, dt * (3.0 + dist * 0.012))
+	var ox := mer_px
+	var oy := mer_py
 	mer_px = lerpf(mer_px, anchor.x, k)
 	mer_py = lerpf(mer_py, anchor.y, k)
+	if dt > 0.0:
+		_mer_vel = Vector2(mer_px - ox, mer_py - oy) / dt
 	if state != "play":
 		return
 	var mp := _mer_pos()
@@ -1302,6 +1355,9 @@ func _draw_mermaid() -> void:
 	if to_pony.length() < 0.001:
 		to_pony = Vector2.RIGHT
 	to_pony = to_pony.normalized()
+	# Bank into the swim: lean the body frame with lateral velocity.
+	var lat := _mer_vel.x * -to_pony.y + _mer_vel.y * to_pony.x
+	to_pony = to_pony.rotated(clampf(lat * 0.00045, -0.28, 0.28))
 	var back := -to_pony
 	var perp := Vector2(-back.y, back.x)
 	# DAN, 2026-09-30: clamp the sway — at exactly w1 == -6 the belly-stripe
@@ -1312,6 +1368,7 @@ func _draw_mermaid() -> void:
 	var tail := PackedVector2Array([mp + perp * 7, mp + back * 28 + perp * w1, mp + back * 13 - perp * 7])
 	draw_colored_polygon(tail, Color("1f9e85"))
 	draw_colored_polygon(PackedVector2Array([mp + perp * 2, mp + back * 24 + perp * w1, mp + back * 12 - perp * 2]), Color("7df0c8"))
+	draw_polyline(PackedVector2Array([mp + perp * 7, mp + back * 14 + perp * (w1 * 0.5), mp + back * 27 + perp * w1]), Color("7df0c8", 0.65), 2.0, true)
 	draw_colored_polygon(PackedVector2Array([mp + back * 10 + perp * 4, mp + back * 20 + perp * (w1 * 0.5), mp + back * 12 + perp * 12]), Color("17806c"))
 	# Scale freckles along the tail.
 	for si in 3:
@@ -1336,6 +1393,8 @@ func _draw_mermaid() -> void:
 	draw_circle(hand, 2.5, Color("ffd9c9"))
 	# Happy face toward the pony, star hairpin, drifting bubbles.
 	var face := mp + to_pony * 3
+	draw_circle(face + to_pony * 2.5 - perp * 3.2, 1.7, Color("2a1650"))
+	draw_circle(face + to_pony * 2.5 + perp * 3.2, 1.7, Color("2a1650"))
 	draw_arc(face + perp * 1, 2.5, PI * 0.15, PI * 0.85, 10, Color("2a1650"), 1.5, true)
 	draw_circle(face - perp * 4 + to_pony * 1, 1.6, Color("ff9ccf"))
 	draw_colored_polygon(_sparkle_poly((face + back * 8 - perp * 6).x, (face + back * 8 - perp * 6).y, 4), Color("ffd23f"))
@@ -1512,8 +1571,12 @@ func _spawn_ring_top() -> void:
 # on a fixed rail while the world scrolls down. Scoring, combo, levels,
 # clouds and pickups mirror the side view one-to-one.
 func _game_overhead(dt: float) -> void:
-	if state == "play" and not paused:
+	if state == "play":
 		ground_y += speed * dt * 0.25
+	if wonder:
+		_wonder_top(dt)
+		_update_particles(dt)
+		return
 	# Movement: strafe; rail height is fixed.
 	if state == "play" and dash_t <= 0:
 		if pointer_down:
@@ -1756,7 +1819,7 @@ func _to_virtual(screen_pos: Vector2) -> Vector2:
 
 func _press_at(vp: Vector2) -> void:
 	# UI buttons first (screen space, above the card layer)
-	if vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
+	if not wonder and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
 		_rocket_tap = true
 		return
 	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
@@ -1799,6 +1862,16 @@ func _press_at(vp: Vector2) -> void:
 		if _btn_resume.has_point(dp):
 			toggle_pause()
 			return
+		if wonder and _btn_sky.has_point(dp):
+			_exit_wonder()
+			return
+	if wonder and state == "play" and not paused:
+		_walk_touch = _to_logic(vp) if not vertical else _to_virtual(vp)
+		if not vertical:
+			_wonder_jump = true
+		pointer_down = true
+		pointer_pos = vp
+		return
 	pointer_down = true
 	pointer_y = _to_logic(vp).y
 	pointer_pos = vp
@@ -1811,20 +1884,26 @@ func _input(event: InputEvent) -> void:
 		else:
 			pointer_down = false
 			pointer_y = null
+			_walk_touch = Vector2(-1, -1)
 	elif event is InputEventScreenDrag:
 		if pointer_down:
 			pointer_pos = _to_virtual(event.position)
 			pointer_y = _to_logic(pointer_pos).y
+			if wonder:
+				_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_press_at(_to_virtual(event.position))
 		else:
 			pointer_down = false
 			pointer_y = null
+			_walk_touch = Vector2(-1, -1)
 	elif event is InputEventMouseMotion:
 		if pointer_down:
 			pointer_pos = _to_virtual(event.position)
 			pointer_y = _to_logic(pointer_pos).y
+			if wonder:
+				_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
 
 
 # ─── Drawing helpers ──────────────────────────────────────────────────────
@@ -2075,8 +2154,9 @@ func _draw_planet(px: float, py: float, pr: float) -> void:
 func _draw_scenery(dt: float) -> void:
 	var moving := state == "play" and not paused
 	if moving:
-		hill_x += speed * dt * 0.1
-		city_x += speed * dt * 0.28
+		var run := maxf(40.0, absf(uni.vx) * 1.4) if wonder else speed
+		hill_x += run * dt * 0.1
+		city_x += run * dt * 0.28
 	var night := _sky_is_night()
 	# Far skyline silhouette — slowest parallax, sits behind the hills.
 	var fw := 210.0
@@ -2847,7 +2927,9 @@ func _draw_pause_card() -> void:
 	_card(Rect2(W / 2 - 190, H / 2 - 110, 380, 220))
 	_rainbow_title(W / 2, H / 2 - 110 + 42, "Paused", 44)
 	_text_c(Vector2(W / 2, H / 2 - 110 + 82), "Taking a little rest on a cloud.", 15, Color("ffd9ef"))
-	_btn_resume = _play_button(Vector2(W / 2, H / 2 - 110 + 148), "Keep Flying")
+	_btn_resume = _play_button(Vector2(W / 2, H / 2 - 110 + 148), "Keep Playing")
+	if wonder:
+		_btn_sky = _play_button(Vector2(W / 2, H / 2 - 110 + 196), "Back to the Sky")
 
 
 func _toggle_button(center: Vector2, text: String, on: bool) -> Rect2:
@@ -2888,6 +2970,15 @@ func _meter(r: Rect2, frac: float, col: Color) -> void:
 
 
 func _draw_hud() -> void:
+	if wonder:
+		_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
+		_stroke_text(Vector2(22, 76), "⭐ x%d" % bits, 20, Color("ffd23f"), HORIZONTAL_ALIGNMENT_LEFT, 4)
+		_stroke_text(Vector2(VW / 2, 40), "Wonder World", 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
+		_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
+		_draw_round_button(Vector2(VW - 33, 33), "❚❚")
+		if transitioning:
+			_pill(Vector2(VW / 2, 76), "TURNING…")
+		return
 	_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
 	var hpk := clampf(hp / HP_MAX, 0.0, 1.0)
 	var hpcol := Color("7df08a") if hpk > 0.5 else (Color("ffd23f") if hpk > 0.25 else Color("ff4d5e"))
@@ -2933,6 +3024,291 @@ func _draw_hud() -> void:
 		_pill(Vector2(VW / 2, 76), "TURNING…")
 
 
+# ─── Wonder World ─────────────────────────────────────────────────────────
+# The free-roam reward space (DAN, 2026-09-30: unlock at ~8 minutes of play,
+# Mario-style walk/jump landscape mode, overhead meadow when rotated, nothing
+# hostile, pony arrives powered up with a rainbow double jump).
+const WCOL := 170.0
+const WCELL := 190.0
+var _bit_taken := {}
+var _wonder_jump := false
+
+
+func _enter_wonder() -> void:
+	wonder = true
+	wonder_unlocked = true
+	powered = true
+	_save_cfg()
+	rings = []; clouds = []; lasers = []; pickups = []; popups = []
+	boss = null; bolts = []; rockets = []; arcs = []; dash_t = 0; dash_lock = null
+	bits = 0
+	uni.x = 140.0
+	uni.y = H - 160.0
+	uni.vx = 0.0; uni.vy = 0.0
+	uni.tilt = 0.0
+	level_banner = 2.4
+	flash = maxf(flash, 0.25)
+	_air_jump = true
+	_burst(uni.x, uni.y, 40, [Color("ffd23f"), Color("fff4b0"), Color.WHITE], 320)
+	synth.powerup()
+	synth.pony()
+
+
+func _exit_wonder() -> void:
+	wonder = false
+	powered = false
+	paused = false
+	reset()
+	state = "play"
+
+
+# Column layout is a pure hash of the column index, so wrap-around and
+# rotation always agree on where platforms and bits sit.
+func _wonder_col(c: int) -> Array:
+	var py := 300.0 + _hash01(c * 7 + 3) * 150.0
+	var pw := 120.0 + _hash01(c * 5 + 1) * 60.0
+	var bounce := _hash01(c * 11 + 2) < 0.3
+	var nb := 1 + int(_hash01(c * 13 + 7) * 3.0)
+	return [py, pw, bounce, nb]
+
+
+func _wonder_cols() -> Array:
+	var out := []
+	var c := int(floor(-80.0 / WCOL))
+	while c * WCOL < W + 100:
+		out.append(c)
+		c += 1
+	return out
+
+
+func _wonder_bit_pos(c: int, bi: int) -> Vector2:
+	var L := _wonder_col(c)
+	var n: int = L[3]
+	var bx: float = c * WCOL
+	if n > 1:
+		bx = c * WCOL - L[1] * 0.3 + bi * (L[1] * 0.6 / (n - 1))
+	return Vector2(bx, L[0] - 46.0 - sin(t * 3.0 + c + bi) * 6.0)
+
+
+func _wonder_side(dt: float) -> void:
+	if state != "play":
+		uni.y += sin(t * 2.0) * 4.0 * dt
+		return
+	# Walk: keys/stick, or press-drag toward a spot.
+	var walk := 0.0
+	if Input.is_action_pressed("fly_left"):
+		walk -= 1.0
+	if Input.is_action_pressed("fly_right"):
+		walk += 1.0
+	if pointer_down and _walk_touch.x >= 0:
+		var d: float = _walk_touch.x - uni.x
+		if absf(d) > 18.0:
+			walk = clampf(d / 120.0, -1.0, 1.0)
+	uni.vx += walk * 1400.0 * dt
+	if walk == 0.0:
+		uni.vx *= pow(0.001, dt)
+	uni.vx = clampf(uni.vx, -300.0, 300.0)
+	# Gravity + rainbow double jump.
+	uni.vy += 1500.0 * dt
+	uni.vy = minf(uni.vy, 900.0)
+	if Input.is_action_just_pressed("fly_up") or Input.is_action_just_pressed("fire") or _wonder_jump:
+		_wonder_jump = false
+		var grounded: bool = uni.y + 20 >= H - 66
+		if not grounded:
+			for c in _wonder_cols():
+				var L := _wonder_col(c)
+				if absf(uni.x - c * WCOL) < L[1] * 0.5 + 14 and absf(uni.y + 20 - L[0]) < 16:
+					grounded = true
+					break
+		if grounded:
+			uni.vy = -620
+			_air_jump = true
+			react_pop = 0.6
+			_burst(uni.x, uni.y + 18, 6, [Color.WHITE, Color("ffd9ef")], 120)
+			synth.pony()
+		elif _air_jump:
+			_air_jump = false
+			uni.vy = -560
+			react_pop = 1.0
+			_burst(uni.x, uni.y + 10, 14, RAINBOW, 220)
+			synth.gold()
+	var prev_foot: float = uni.y + 20
+	uni.x += uni.vx * dt
+	uni.y += uni.vy * dt
+	if uni.x < 30:
+		uni.x = 30
+		uni.vx = absf(uni.vx) * 0.4
+	if uni.x > W - 30:
+		uni.x = W - 30
+		uni.vx = -absf(uni.vx) * 0.4
+	if uni.y < 80:
+		uni.y = 80
+		uni.vy = absf(uni.vy) * 0.3
+	# Land on platforms; rainbow clouds boing.
+	var landed := false
+	if uni.vy >= 0:
+		for c in _wonder_cols():
+			var L := _wonder_col(c)
+			if absf(uni.x - c * WCOL) < L[1] * 0.5 + 12 and prev_foot <= L[0] + 4 and uni.y + 20 >= L[0]:
+				if L[2]:
+					uni.vy = -760
+					react_pop = 1.0
+					_burst(uni.x, L[0], 12, [Color.WHITE, Color("bfe9ff")], 180)
+					synth.poof()
+				else:
+					uni.y = L[0] - 20
+					uni.vy = 0
+					_air_jump = true
+				landed = true
+				break
+		if not landed and uni.y + 20 >= H - 60:
+			uni.y = H - 80
+			uni.vy = 0
+			_air_jump = true
+	uni.tilt += (clampf(uni.vx / 700.0, -0.3, 0.3) - uni.tilt) * minf(1, dt * 8)
+	uni.flap += dt * 10.0
+	# Star bits: collect on touch, twinkle back a few seconds later.
+	for c in _wonder_cols():
+		var L := _wonder_col(c)
+		for bi in L[3]:
+			var bp := _wonder_bit_pos(c, bi)
+			if Vector2(uni.x - bp.x, uni.y - bp.y).length() < 34:
+				var key := "%d:%d" % [c, bi]
+				if not _bit_taken.has(key):
+					_bit_taken[key] = t
+					bits += 1
+					score += 5
+					_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 160)
+					synth.ring(bits)
+	# Powered aura sparkles.
+	if randf() < 0.5:
+		var p := Particle.new()
+		p.x = uni.x + randf_range(-22, 22)
+		p.y = uni.y + randf_range(-18, 18)
+		p.vx = randf_range(-25, 25)
+		p.vy = randf_range(-40, -10)
+		p.life = 0.5
+		p.max_life = 0.5
+		p.r = randf_range(2, 4)
+		p.c = RAINBOW[int(t * 10) % 6]
+		p.star = true
+		particles.append(p)
+
+
+func _wonder_top(dt: float) -> void:
+	if state != "play":
+		return
+	var walk := Vector2.ZERO
+	if Input.is_action_pressed("fly_left"):
+		walk.x -= 1.0
+	if Input.is_action_pressed("fly_right"):
+		walk.x += 1.0
+	if Input.is_action_pressed("fly_up"):
+		walk.y -= 1.0
+	if Input.is_action_pressed("fly_down"):
+		walk.y += 1.0
+	if pointer_down and _walk_touch.x >= 0:
+		var d := _walk_touch - Vector2(uni.x, uni.y)
+		if d.length() > 24:
+			walk = d.normalized()
+	uni.vx += walk.x * 1400.0 * dt
+	uni.vy += walk.y * 1400.0 * dt
+	if walk.x == 0:
+		uni.vx *= pow(0.001, dt)
+	if walk.y == 0:
+		uni.vy *= pow(0.001, dt)
+	uni.vx = clampf(uni.vx, -260, 260)
+	uni.vy = clampf(uni.vy, -260, 260)
+	uni.x = wrapf(uni.x + uni.vx * dt, 20, VW - 20)
+	uni.y = wrapf(uni.y + uni.vy * dt, 40, VH - 40)
+	uni.tilt += (clampf(uni.vx / 800.0, -0.35, 0.35) - uni.tilt) * minf(1, dt * 8)
+	uni.flap += dt * 10.0
+	# Meadow bits on a hashed grid; same touch-collect rule.
+	var ci := int(floor(-80.0 / WCELL))
+	while ci * WCELL < VW + 100:
+		var cj := int(floor(-80.0 / WCELL))
+		while cj * WCELL < VH + 100:
+			if _hash01(ci * 31 + cj * 7) < 0.55:
+				var bx := ci * WCELL + 30 + _hash01(ci * 17 + cj * 13) * (WCELL - 60)
+				var by := cj * WCELL + 30 + _hash01(ci * 23 + cj * 5) * (WCELL - 60)
+				by += sin(t * 2.5 + ci + cj) * 5
+				if Vector2(uni.x - bx, uni.y - by).length() < 36:
+					var key := "T:%d:%d" % [ci, cj]
+					if not _bit_taken.has(key):
+						_bit_taken[key] = t
+						bits += 1
+						score += 5
+						_burst(bx, by, 8, [Color("ffd23f"), Color.WHITE], 160)
+						synth.ring(bits)
+			cj += 1
+		ci += 1
+	if _bit_taken.size() > 80:
+		for k in _bit_taken.keys():
+			if t - _bit_taken[k] > 6.0:
+				_bit_taken.erase(k)
+	if randf() < 0.4:
+		var p := Particle.new()
+		p.x = uni.x + randf_range(-20, 20)
+		p.y = uni.y + randf_range(-16, 16)
+		p.vx = randf_range(-20, 20)
+		p.vy = randf_range(-30, -8)
+		p.life = 0.5
+		p.max_life = 0.5
+		p.r = randf_range(2, 4)
+		p.c = RAINBOW[int(t * 10) % 6]
+		p.star = true
+		particles.append(p)
+
+
+func _draw_wonder() -> void:
+	if vertical:
+		# Overhead meadow: scattered flowers over the quilt.
+		for i in 14:
+			var fx := _hash01(i * 41 + 3) * VW
+			var fy := _hash01(i * 29 + 11) * VH
+			var fcol: Color = [Color("ff9ccf"), Color("fff4b0"), Color(1, 1, 1), Color("bfe9ff")][i % 4]
+			for pi in 5:
+				var pa := pi * TAU / 5 + i
+				draw_circle(Vector2(fx + cos(pa) * 4, fy + sin(pa) * 4), 2.4, fcol)
+			draw_circle(Vector2(fx, fy), 2, Color("ffd23f"))
+		# Bits grid.
+		var ci := int(floor(-80.0 / WCELL))
+		while ci * WCELL < VW + 100:
+			var cj := int(floor(-80.0 / WCELL))
+			while cj * WCELL < VH + 100:
+				if _hash01(ci * 31 + cj * 7) < 0.55:
+					var bx := ci * WCELL + 30 + _hash01(ci * 17 + cj * 13) * (WCELL - 60)
+					var by := cj * WCELL + 30 + _hash01(ci * 23 + cj * 5) * (WCELL - 60) + sin(t * 2.5 + ci + cj) * 5
+					if not _bit_taken.has("T:%d:%d" % [ci, cj]):
+						_bit_star(Vector2(bx, by))
+				cj += 1
+			ci += 1
+		return
+	# Side view: cloud platforms + star bits.
+	for c in _wonder_cols():
+		var L := _wonder_col(c)
+		var px := Vector2(c * WCOL, L[0])
+		var hw: float = L[1] * 0.5
+		_fill_ellipse(px + Vector2(0, 8), hw, 17, Color(0.82, 0.82, 0.96, 0.5))
+		draw_rect(Rect2(px.x - hw, px.y - 12, L[1], 16), Color(0.97, 0.97, 1))
+		draw_circle(px + Vector2(-hw + 10, -8), 13, Color(0.97, 0.97, 1))
+		draw_circle(px + Vector2(0, -14), 15, Color(0.97, 0.97, 1))
+		draw_circle(px + Vector2(hw - 12, -7), 12, Color(0.97, 0.97, 1))
+		draw_rect(Rect2(px.x - hw, px.y + 2, L[1], 4), Color(0.75, 0.78, 0.94, 0.8))
+		if L[2]:
+			draw_polyline(_arc_pts(px.x, px.y - 10, hw + 6, 16, PI * 1.1, PI * 1.9, 16), RAINBOW[int(t * 6) % 6], 3, true)
+		for bi in L[3]:
+			if not _bit_taken.has("%d:%d" % [c, bi]):
+				_bit_star(_wonder_bit_pos(c, bi))
+
+
+func _bit_star(bp: Vector2) -> void:
+	var tw := 0.75 + 0.25 * sin(t * 5 + bp.x * 0.05)
+	draw_texture_rect(_radial_glow_tex(Color(1, 0.85, 0.3, 0.4 * tw), Color(1, 0.85, 0.3, 0)), Rect2(bp.x - 22, bp.y - 22, 44, 44), false)
+	draw_colored_polygon(_sparkle_poly(bp.x, bp.y, 9 * tw), Color("ffd23f"))
+	draw_circle(bp, 2.2, Color.WHITE)
+
+
 # ─── Draw ─────────────────────────────────────────────────────────────────
 func _draw() -> void:
 	var dt := get_process_delta_time()
@@ -2957,6 +3333,8 @@ func _draw() -> void:
 			_draw_storm_top(c)
 		else:
 			_draw_storm_cloud(c)
+	if wonder:
+		_draw_wonder()
 	for p in pickups:
 		var y: float = p.y + sin(t * 3 + p.phase) * 8
 		draw_circle(Vector2(p.x, y - 4), 22, Color(1, 1, 1, 0.5))

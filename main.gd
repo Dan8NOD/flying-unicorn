@@ -70,7 +70,7 @@ var over_card_timer := 0.0
 var over_card_visible := false
 var over_is_best := false
 
-var uni := { "x": 190.0, "y": H / 2, "vy": 0.0, "flap": 0.0, "tilt": 0.0 }
+var uni := { "x": 190.0, "y": H / 2, "vx": 0.0, "vy": 0.0, "flap": 0.0, "tilt": 0.0 }
 
 var rings: Array = []
 var clouds: Array = []
@@ -84,6 +84,8 @@ var stars: Array = []
 
 var pointer_y = null
 var pointer_down := false
+var pointer_pos := Vector2.ZERO
+var last_ring_x := 480.0
 
 var best := 0
 var synth: SynthClass
@@ -286,21 +288,25 @@ func _layout() -> void:
 		st.y = clampf(st.y, 0.0, H * 0.6)
 
 
-# Portrait world mapping: logic +x (travel) points at the top of the
-# screen. HUD, cards and buttons stay upright in screen space.
-# During a rotation the angle, scale and center all ease together.
+# Transition progress eased for the crossfade. Portrait plays overhead
+# (camera above, travel up-screen); landscape keeps the side view and
+# centers the 960x540 world. HUD, cards and buttons stay upright always.
 func _view_ease() -> float:
 	var t := clampf(view_t, 0.0, 1.0)
 	return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 
 
-func _view_theta() -> float:
-	return -PI / 2 * _view_ease()
+# Last settled frame, drawn fading out over the new orientation.
+var trans_tex: Texture2D = null
 
 
-func _view_scale() -> float:
-	var e := _view_ease()
-	return lerpf(minf(1.0, minf(VW / 960.0, VH / 540.0)), minf(VW / 540.0, VH / 960.0), e)
+func _snap_old_frame() -> void:
+	trans_tex = null
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	if not transitioning:
+		return
+	trans_tex = ImageTexture.create_from_image(get_viewport().get_texture().get_image())
 
 
 var _wxf_p := Vector2.ZERO
@@ -309,16 +315,15 @@ var _wxf_s := Vector2.ONE
 
 
 func _world_begin() -> void:
+	# Side view centers the 960x540 world (1:1 when it fits, shrunk on
+	# small windows). Overhead draws direct in screen coords.
+	_wxf_p = Vector2.ZERO
+	_wxf_r = 0.0
+	_wxf_s = Vector2.ONE
 	if not vertical:
-		_wxf_p = Vector2.ZERO
-		_wxf_r = 0.0
-		_wxf_s = Vector2.ONE
-		return
-	var s := _view_scale()
-	var th := _view_theta()
-	_wxf_p = _world_center() - s * Vector2(480, 270).rotated(th)
-	_wxf_r = th
-	_wxf_s = Vector2(s, s)
+		var s := minf(1.0, minf(VW / 960.0, VH / 540.0))
+		_wxf_p = Vector2(VW / 2, VH / 2) - s * Vector2(480, 270)
+		_wxf_s = Vector2(s, s)
 	_world_apply()
 
 
@@ -338,18 +343,11 @@ func _wxf(pos: Vector2, rot: float, sc: Vector2) -> void:
 	draw_set_transform(_wxf_p + (_wxf_s * pos).rotated(_wxf_r), _wxf_r + rot, _wxf_s * sc)
 
 
-# Screen point the logic world centers on. Portrait sits below middle so
-# the camera looks over the top of her head at what's coming.
-func _world_center() -> Vector2:
-	var e := _view_ease()
-	return Vector2(VW / 2, VH / 2).lerp(Vector2(VW / 2, VH * 0.62), e)
-
-
-# Map a screen-space touch into world logic coordinates for steering.
+# Map a screen-space touch into side-view logic coordinates.
 func _to_logic(vp: Vector2) -> Vector2:
-	var s := _view_scale()
-	var sc := _world_center()
-	return Vector2(480, 270) + ((vp - sc) / s).rotated(-_view_theta())
+	var s := minf(1.0, minf(VW / 960.0, VH / 540.0))
+	var sc := Vector2(VW / 2, VH / 2)
+	return Vector2(480, 270) + (vp - sc) / s
 
 
 # Cards are authored in the 960x540 design space. Returns [screen_center, fit]
@@ -386,6 +384,16 @@ func _setup_input() -> void:
 	_add_key("fly_down", KEY_DOWN)
 	_add_joy_button("fly_down", JOY_BUTTON_DPAD_DOWN)
 	_add_joy_axis("fly_down", JOY_AXIS_LEFT_Y, 1.0)
+	_add_action("fly_left")
+	_add_key("fly_left", KEY_A)
+	_add_key("fly_left", KEY_LEFT)
+	_add_joy_button("fly_left", JOY_BUTTON_DPAD_LEFT)
+	_add_joy_axis("fly_left", JOY_AXIS_LEFT_X, -1.0)
+	_add_action("fly_right")
+	_add_key("fly_right", KEY_D)
+	_add_key("fly_right", KEY_RIGHT)
+	_add_joy_button("fly_right", JOY_BUTTON_DPAD_RIGHT)
+	_add_joy_axis("fly_right", JOY_AXIS_LEFT_X, 1.0)
 	_add_action("fire")
 	_add_key("fire", KEY_SPACE)
 	_add_key("fire", KEY_X)
@@ -433,7 +441,11 @@ func reset() -> void:
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
-	uni.y = H / 2; uni.vy = 0
+	uni.y = H / 2; uni.vy = 0; uni.vx = 0
+	last_ring_x = VW / 2
+	if vertical:
+		uni.x = VW / 2
+		uni.y = VH * 0.72
 	_set_level_sky()
 
 
@@ -482,10 +494,14 @@ func _process(delta: float) -> void:
 	if want != view_target:
 		view_target = want
 		transitioning = true
+		# Fresh field on the other side: positions don't translate.
+		rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
+		_snap_old_frame()
 	if transitioning:
 		view_t = move_toward(view_t, view_target, delta / TRANS_DUR)
 		if view_t == view_target:
 			transitioning = false
+			trans_tex = null
 
 	# Screenshot test hook
 	if _shot_at >= 0:
@@ -524,8 +540,12 @@ func _game_update(dt: float) -> void:
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
 	react_angle += react_spin * dt
 	react_spin = move_toward(react_spin, 0.0, dt * 14.0)
-	if react_angle > PI * 4: react_angle -= PI * 4
-	if react_angle < -PI * 4: react_angle += PI * 4
+	# Settle back to upright — a resting tilt reads as stuck sideways.
+	if absf(react_spin) < 0.5:
+		var full := roundf(react_angle / TAU) * TAU
+		react_angle = lerpf(react_angle, full, minf(1.0, dt * 6.0))
+		if absf(react_angle - full) < 0.001:
+			react_angle = full
 	blink_timer -= dt
 	if blink_timer <= 0:
 		blink_timer = randf_range(2.5, 5.5)
@@ -544,6 +564,10 @@ func _game_update(dt: float) -> void:
 		shoot.y += 260 * dt
 		shoot.life -= dt
 		if shoot.life <= 0: shoot = {}
+
+	if vertical:
+		_game_overhead(dt)
+		return
 
 	# Movement: pointer steers toward finger; keys/stick/dpad accelerate
 	if state == "play":
@@ -693,6 +717,166 @@ func _game_update(dt: float) -> void:
 	_update_particles(dt)
 
 
+func _spawn_ring_top() -> void:
+	var r := Ring.new()
+	r.gold = randf() < 0.12
+	r.x = clampf(last_ring_x + randf_range(-140, 140), 70, VW - 70)
+	last_ring_x = r.x
+	r.y = -70
+	r.base_y = r.y
+	var rad := 46.0 if r.gold else 58.0
+	r.rx = rad
+	r.ry = rad
+	r.bob = randf_range(20, 40) if level >= 3 and randf() < 0.5 else 0.0
+	r.phase = randf_range(0, 6)
+	rings.append(r)
+
+
+# Overhead portrait mode: top-down camera, she strafes across the screen
+# on a fixed rail while the world scrolls down. Scoring, combo, levels,
+# clouds and pickups mirror the side view one-to-one.
+func _game_overhead(dt: float) -> void:
+	# Movement: strafe; rail height is fixed.
+	if state == "play":
+		if pointer_down:
+			var target: float = clampf(pointer_pos.x, 50, VW - 50)
+			uni.vx += (target - uni.x) * 14 * dt
+			uni.vx *= pow(0.02, dt)
+		else:
+			var lx := 0.0
+			if Input.is_action_pressed("fly_left"): lx -= 1.0
+			if Input.is_action_pressed("fly_right"): lx += 1.0
+			uni.vx += lx * 2200 * dt
+			if tilt_enabled and lx == 0.0:
+				uni.vx += _tilt_steer() * 1500 * dt
+			if lx == 0.0 and not tilt_enabled:
+				uni.vx *= pow(0.04, dt)
+	else:
+		uni.vx *= pow(0.04, dt)
+	uni.vx = clampf(uni.vx, -560, 560)
+	uni.x += uni.vx * dt
+	if uni.x < 50:
+		uni.x = 50
+		uni.vx = absf(uni.vx) * 0.5
+	if uni.x > VW - 50:
+		uni.x = VW - 50
+		uni.vx = -absf(uni.vx) * 0.5
+	uni.y = VH * 0.72 + sin(t * 2) * 6
+	uni.tilt += (clampf(uni.vx / 900, -0.4, 0.4) - uni.tilt) * minf(1, dt * 8)
+	uni.flap += dt * (11.0 if state == "play" else 6.0)
+
+	# Sparkle trail falls behind, below her.
+	if randf() < 0.7:
+		var p := Particle.new()
+		p.x = uni.x + randf_range(-6, 6); p.y = uni.y + 70
+		p.vx = randf_range(-20, 20); p.vy = speed * 0.6
+		p.life = 0.6; p.max_life = 0.6; p.r = randf_range(2, 4)
+		p.c = RAINBOW[int(t * 12) % 6]
+		p.star = randf() < 0.4
+		particles.append(p)
+
+	if state != "play":
+		_update_particles(dt)
+		return
+
+	# Firing upward.
+	if (pointer_down or Input.is_action_pressed("fire")) and fire_cooldown <= 0:
+		var l := Laser.new()
+		l.x = uni.x; l.y = uni.y - 70
+		l.c = RAINBOW[lasers.size() % 6]
+		lasers.append(l)
+		fire_cooldown = 0.18
+		synth.laser()
+
+	# Spawning from the top.
+	ring_timer -= dt
+	if ring_timer <= 0:
+		_spawn_ring_top()
+		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.1
+	cloud_timer -= dt
+	if cloud_timer <= 0:
+		var c := StormCloud.new()
+		c.x = randf_range(80, VW - 80); c.y = -90; c.phase = randf_range(0, 6)
+		clouds.append(c)
+		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
+	if hearts < 3 and randf() < dt * 0.04 and pickups.is_empty():
+		var pk := Pickup.new()
+		pk.x = randf_range(90, VW - 90); pk.y = -50; pk.phase = randf_range(0, 6)
+		pickups.append(pk)
+
+	# Rings drift down; pass through near her.
+	for r in rings:
+		r.y += speed * dt
+		if r.bob > 0:
+			r.x = clampf(r.x + sin(t * 1.6 + r.phase) * r.bob * dt, 40, VW - 40)
+		if not r.done and r.y >= uni.y:
+			r.done = true
+			if Vector2(uni.x - r.x, uni.y - r.y).length() < r.rx - 10:
+				r.result = "hit"
+				react_pop = 1.0
+				if r.gold: react_spin = 7.0
+				combo += 1; rings_passed += 1
+				best_combo = maxi(best_combo, combo)
+				var pts := (50 if r.gold else 10) * combo
+				score += pts
+				_popup(r.x, r.y - r.rx - 10, "+%d%s" % [pts, "  x%d" % combo if combo > 1 else ""], Color("ffd23f") if r.gold else Color.WHITE)
+				_burst(r.x, r.y, 36 if r.gold else 18, [Color("ffd23f"), Color("fff4b0"), Color.WHITE] if r.gold else RAINBOW)
+				if r.gold: synth.gold()
+				else: synth.ring(combo)
+				if rings_passed % 10 == 0:
+					level += 1; speed *= 1.1; level_banner = 2
+					synth.level_up()
+					_set_level_sky()
+			else:
+				r.result = "miss"
+				if combo > 1:
+					_popup(uni.x, uni.y - 70, "combo lost", Color("ffd9ef"))
+				combo = 0
+	rings = rings.filter(func(r): return r.y < VH + 80)
+
+	# Lasers fly up.
+	for l in lasers:
+		l.y -= 900 * dt
+	lasers = lasers.filter(func(l): return l.y > -40 and not l.dead)
+
+	# Storm clouds drift down.
+	for c in clouds:
+		c.y += speed * 0.85 * dt
+		c.x += sin(t * 2 + c.phase) * 30 * dt
+		if c.hit_flash > 0: c.hit_flash -= dt
+		for l in lasers:
+			if not l.dead and Vector2(l.x - c.x, l.y - c.y).length() < c.r + 8:
+				l.dead = true; c.hp -= 1; c.hit_flash = 0.08
+				_burst(l.x, l.y, 5, [Color.WHITE, l.c], 140)
+				synth.zap()
+				if c.hp <= 0:
+					c.dead = true; score += 25
+					_popup(c.x, c.y - 40, "+25 zap!", Color("ffe45c"))
+					_burst(c.x, c.y, 28, [Color.WHITE, Color("e8e0ff"), Color("ffe45c"), Color("b77bff")], 260)
+					synth.poof()
+		if not c.dead and hurt_timer <= 0 and Vector2(uni.x - c.x, uni.y - c.y).length() < c.r + 26:
+			c.dead = true; hearts -= 1; combo = 0; hurt_timer = 1.6; flash = 0.25
+			react_pop = 1.0; react_spin = -9.0
+			_burst(c.x, c.y, 20, [Color("6d6690"), Color("ffe45c")], 200)
+			synth.hurt()
+			Input.vibrate_handheld(300)
+			if hearts <= 0:
+				game_over()
+	clouds = clouds.filter(func(c): return c.y < VH + 80 and not c.dead)
+
+	# Heart pickups drift down.
+	for p in pickups:
+		p.y += speed * 0.9 * dt
+		if Vector2(uni.x - p.x, uni.y - 10 - p.y).length() < 40:
+			p.dead = true; hearts = mini(3, hearts + 1)
+			_popup(p.x, p.y - 30, "+1 heart", Color("ff6fb5"))
+			_burst(p.x, p.y, 16, [Color("ff6fb5"), Color.WHITE], 180)
+			synth.heart()
+	pickups = pickups.filter(func(p): return p.y < VH + 40 and not p.dead)
+
+	_update_particles(dt)
+
+
 func _update_particles(dt: float) -> void:
 	for p in particles:
 		p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.life -= dt
@@ -795,6 +979,7 @@ func _press_at(vp: Vector2) -> void:
 			return
 	pointer_down = true
 	pointer_y = _to_logic(vp).y
+	pointer_pos = vp
 
 
 func _input(event: InputEvent) -> void:
@@ -806,7 +991,8 @@ func _input(event: InputEvent) -> void:
 			pointer_y = null
 	elif event is InputEventScreenDrag:
 		if pointer_down:
-			pointer_y = _to_logic(_to_virtual(event.position)).y
+			pointer_pos = _to_virtual(event.position)
+			pointer_y = _to_logic(pointer_pos).y
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_press_at(_to_virtual(event.position))
@@ -815,7 +1001,8 @@ func _input(event: InputEvent) -> void:
 			pointer_y = null
 	elif event is InputEventMouseMotion:
 		if pointer_down:
-			pointer_y = _to_logic(_to_virtual(event.position)).y
+			pointer_pos = _to_virtual(event.position)
+			pointer_y = _to_logic(pointer_pos).y
 
 
 # ─── Drawing helpers ──────────────────────────────────────────────────────
@@ -1158,6 +1345,78 @@ func _draw_storm_cloud(c: StormCloud) -> void:
 	_world_apply()
 
 
+# ─── Overhead portrait view ─────────────────────────────────────────────
+func _draw_over_bg() -> void:
+	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
+	for i in 8:
+		var gx := (i + 0.5) * VW / 8 + sin(t * 0.3 + i * 2.1) * 20
+		var gy := fmod(i * VH / 8 + t * 15, VH + 200) - 100
+		_puff_alpha(gx, gy, 0.9, 0.5)
+	if level >= 3:
+		for s in stars:
+			var sx: float = s.x * VW / 960.0
+			var sy: float = s.y * VH / 540.0
+			var a: float = 0.4 + 0.4 * sin(t * 2 + s.p)
+			draw_circle(Vector2(sx, sy), s.r, Color(1, 1, 1, a))
+
+
+func _draw_ring_top(r: Ring) -> void:
+	var edge := Color("c98f00") if r.gold else Color("b3317a")
+	var col := Color("ffd23f") if r.gold else (Color.WHITE if r.result == "hit" else Color("ff6fb5"))
+	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, edge, 12, true)
+	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, col, 7, true)
+	if r.gold:
+		for i in 3:
+			var a := t * 3 + i * 2.1
+			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * (r.rx + 4), r.y + sin(a) * (r.rx + 4), 4), Color.WHITE)
+
+
+func _draw_pony_top() -> void:
+	var blink_hide := hurt_timer > 0 and int(hurt_timer * 12) % 2 == 0
+	if blink_hide:
+		return
+	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
+	# Shadow on the clouds below.
+	_fill_ellipse(Vector2(0, 52), 40, 12, Color(0.35, 0.3, 0.55, 0.18))
+	# Rainbow tail streaming behind.
+	for i in 6:
+		var wav := sin(t * 8 + i * 0.6) * 5
+		draw_line(Vector2(-8 + i * 3, 28), Vector2(-20 + i * 8 + wav, 64), RAINBOW[i], 6, true)
+	# Wings spread wide.
+	_fill_ellipse(Vector2(-32, -6), 26, 12, Color("ffe3f1"))
+	_fill_ellipse(Vector2(32, -6), 26, 12, Color("f5c3dd"))
+	for sx in [-1.0, 1.0]:
+		for k in 3:
+			var y0 := -12.0 + k * 6.0
+			draw_line(Vector2(sx * 12, y0), Vector2(sx * 50, y0 - 4), Color("d9468f"), 1.5, true)
+	# Hooves peeking out.
+	for hv in [Vector2(-22, -12), Vector2(-22, 12), Vector2(22, -12), Vector2(22, 12)]:
+		draw_circle(hv, 4, Color("b9bfd6"))
+	# Body (foreshortened from above).
+	_fill_ellipse(Vector2.ZERO, 24, 38, Color("ff9ccf"))
+	draw_polyline(_arc_pts(0, 0, 24, 38, 0, TAU, 36), Color("d9468f"), 2.5, true)
+	# Armor plate with the gold cat dot.
+	draw_rect(Rect2(-13, -16, 26, 34), Color("c9cde0"))
+	draw_rect(Rect2(-13, -16, 26, 34), Color("5d6384"), false, 2)
+	draw_circle(Vector2.ZERO, 4, Color("ffd23f"))
+	# Head from above, snout forward.
+	_fill_ellipse(Vector2(0, -44), 15, 15, Color("ff9ccf"))
+	draw_polyline(_arc_pts(0, -44, 15, 15, 0, TAU, 28), Color("d9468f"), 2.5, true)
+	_fill_ellipse(Vector2(0, -53), 10, 8, Color("ffc6e2"))
+	draw_circle(Vector2(0, -54), 2, Color("d9468f"))
+	# Horn pointing at the sky.
+	var glow := 1.0 if fire_cooldown > 0.08 else 0.5 + 0.3 * sin(t * 6)
+	draw_circle(Vector2(0, -62), 10, Color(1, 240 / 255.0, 160 / 255.0, 0.35 * glow))
+	draw_colored_polygon(PackedVector2Array([Vector2(-5, -54), Vector2(5, -54), Vector2(0, -72)]), Color("ffd23f"))
+	draw_polyline(PackedVector2Array([Vector2(-5, -54), Vector2(5, -54), Vector2(0, -72), Vector2(-5, -54)]), Color("e0a800"), 1.5, true)
+	# Mane arc over the crown.
+	var mx := [-18.0, -9.0, 0.0, 9.0, 18.0]
+	var my := [-40.0, -48.0, -51.0, -48.0, -40.0]
+	for i in 5:
+		draw_circle(Vector2(mx[i], my[i] + sin(t * 9 + i) * 1.5), 7, RAINBOW[i])
+	_world_apply()
+
+
 # ─── Cards ────────────────────────────────────────────────────────────────
 func _card(rect: Rect2) -> void:
 	var glow := StyleBoxFlat.new()
@@ -1332,10 +1591,16 @@ func _draw() -> void:
 		# Paint the fit margins first; the world layer covers the rest.
 		draw_rect(Rect2(0, 0, VW, VH), sky_top)
 	_world_begin()
-	_draw_background(dt)
+	if vertical:
+		_draw_over_bg()
+	else:
+		_draw_background(dt)
 
 	for r in rings:
-		_ring_stroke(r, false)
+		if vertical:
+			_draw_ring_top(r)
+		else:
+			_ring_stroke(r, false)
 	for c in clouds:
 		_draw_storm_cloud(c)
 	for p in pickups:
@@ -1345,18 +1610,30 @@ func _draw() -> void:
 
 	# Lasers
 	for l in lasers:
-		var glow: Color = l.c
-		glow.a = 0.35
-		draw_line(Vector2(l.x - 44, l.y), Vector2(l.x, l.y), glow, 7, true)
-		draw_line(Vector2(l.x - 30, l.y), Vector2(l.x, l.y), Color.WHITE, 3, true)
+		if vertical:
+			var vglow: Color = l.c
+			vglow.a = 0.35
+			draw_line(Vector2(l.x, l.y + 44), Vector2(l.x, l.y), vglow, 7, true)
+			draw_line(Vector2(l.x, l.y + 30), Vector2(l.x, l.y), Color.WHITE, 3, true)
+		else:
+			var glow: Color = l.c
+			glow.a = 0.35
+			draw_line(Vector2(l.x - 44, l.y), Vector2(l.x, l.y), glow, 7, true)
+			draw_line(Vector2(l.x - 30, l.y), Vector2(l.x, l.y), Color.WHITE, 3, true)
 
-	# Soft drop shadow on the cloud floor — fades as she climbs.
-	var sh_h := clampf(H - 60 - uni.y, 0.0, 600.0)
-	var sh_k := 1.0 - sh_h / 600.0
-	_fill_ellipse(Vector2(uni.x, H - 56), 46.0 * (0.5 + 0.5 * sh_k), 10.0, Color(0.35, 0.3, 0.55, 0.22 * sh_k))
-	_draw_unicorn()
+	if vertical:
+		_draw_pony_top()
+	else:
+		# Soft drop shadow on the cloud floor — fades as she climbs.
+		var sh_h := clampf(H - 60 - uni.y, 0.0, 600.0)
+		var sh_k := 1.0 - sh_h / 600.0
+		_fill_ellipse(Vector2(uni.x, H - 56), 46.0 * (0.5 + 0.5 * sh_k), 10.0, Color(0.35, 0.3, 0.55, 0.22 * sh_k))
+		_draw_unicorn()
 	for r in rings:
-		_ring_stroke(r, true)
+		if vertical:
+			_draw_ring_top(r)
+		else:
+			_ring_stroke(r, true)
 
 	for p in particles:
 		var col: Color = p.c
@@ -1371,6 +1648,8 @@ func _draw() -> void:
 		col.a = minf(1, p.life * 1.5)
 		_stroke_text(Vector2(p.x, p.y), p.text, 20, col, HORIZONTAL_ALIGNMENT_CENTER, 4, Color(42 / 255.0, 22 / 255.0, 80 / 255.0, 0.7))
 	_world_end()
+	if transitioning and trans_tex != null:
+		draw_texture_rect(trans_tex, Rect2(0, 0, VW, VH), false, Color(1, 1, 1, 1.0 - _view_ease()))
 
 	if flash > 0:
 		draw_rect(Rect2(0, 0, VW, VH), Color(1, 1, 1, minf(1, flash * 1.6)))

@@ -133,6 +133,7 @@ class StormCloud:
 	var rain := false
 	var gust := false
 	var lit := false
+	var zappy := false
 
 
 class Laser:
@@ -707,7 +708,7 @@ func _game_update(dt: float) -> void:
 		c.x -= speed * (1.6 if c.gust else 0.85) * dt
 		c.y += sin(t * 2 + c.phase) * 30 * dt
 		if c.hit_flash > 0: c.hit_flash -= dt
-		var flash_now := sin(t * 5 + c.phase) > 0.3
+		var flash_now: bool = c.zappy and sin(t * 5 + c.phase) > 0.3
 		if flash_now and not c.lit and c.x > -40 and c.x < W + 40:
 			synth.thunder()
 		c.lit = flash_now
@@ -753,6 +754,7 @@ func _game_update(dt: float) -> void:
 
 func _roll_cloud_kind(c: StormCloud) -> void:
 	var roll := randf()
+	c.zappy = randf() < 1.0 / 9.0
 	var gust_odds := 0.0
 	if level >= 3:
 		gust_odds = 0.15 + 0.02 * mini(level - 3, 5)
@@ -908,7 +910,7 @@ func _game_overhead(dt: float) -> void:
 		c.y += speed * (1.6 if c.gust else 0.85) * dt
 		c.x += sin(t * 2 + c.phase) * 30 * dt
 		if c.hit_flash > 0: c.hit_flash -= dt
-		var flash_now := sin(t * 5 + c.phase) > 0.3
+		var flash_now: bool = c.zappy and sin(t * 5 + c.phase) > 0.3
 		if flash_now and not c.lit and c.y > -40 and c.y < VH + 40:
 			synth.thunder()
 		c.lit = flash_now

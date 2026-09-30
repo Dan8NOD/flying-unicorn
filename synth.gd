@@ -104,7 +104,7 @@ func _variant_stream(key: String) -> AudioStream:
 	return s
 
 
-func _play(key: String, notes: Array) -> void:
+func _play(key: String, notes: Array, pitch := 1.0) -> void:
 	if muted:
 		return
 	var v := _variant_stream(key)
@@ -112,9 +112,11 @@ func _play(key: String, notes: Array) -> void:
 		for p in players:
 			if not p.playing:
 				p.stream = v
+				p.pitch_scale = pitch
 				p.play()
 				return
 		players[0].stream = v
+		players[0].pitch_scale = pitch
 		players[0].play()
 		return
 	var f := _file_stream(key)
@@ -122,9 +124,11 @@ func _play(key: String, notes: Array) -> void:
 		for p in players:
 			if not p.playing:
 				p.stream = f
+				p.pitch_scale = pitch
 				p.play()
 				return
 		players[0].stream = f
+		players[0].pitch_scale = pitch
 		players[0].play()
 		return
 	if not _cache.has(key):
@@ -132,10 +136,12 @@ func _play(key: String, notes: Array) -> void:
 	for p in players:
 		if not p.playing:
 			p.stream = _cache[key]
+			p.pitch_scale = pitch
 			p.play()
 			return
 	# all busy: steal the first
 	players[0].stream = _cache[key]
+	players[0].pitch_scale = pitch
 	players[0].play()
 
 # ─── sfx ────────────────────────────────────────────────────────────────────
@@ -144,10 +150,10 @@ func laser() -> void:
 
 func ring(combo: int) -> void:
 	var b := 520.0 + mini(combo, 12) * 40.0
-	_play("ring%d" % mini(combo, 12), [
+	_play("ring", [
 		{ "f": b, "dur": 0.12, "wave": Wave.TRIANGLE, "vol": 0.12 },
 		{ "f": b * 1.5, "dur": 0.16, "wave": Wave.TRIANGLE, "vol": 0.1, "delay": 0.07 },
-	])
+	], 1.0 + mini(combo, 12) * 0.03)
 
 func gold() -> void:
 	var notes: Array = []

@@ -213,6 +213,10 @@ func ready() -> void:
 func boss() -> void:
 	_play("boss1", [{ "f": 220.0, "dur": 0.8, "wave": Wave.SAWTOOTH, "vol": 0.1, "slide": -120.0 }])
 
+func boom() -> void:
+	_play("boom1", [{ "f": 120.0, "dur": 0.5, "wave": Wave.SAWTOOTH, "vol": 0.12, "slide": -60.0 }])
+
+
 func rocket() -> void:
 	_play("rocket", [{ "f": 200.0, "dur": 0.4, "wave": Wave.SAWTOOTH, "vol": 0.09, "slide": 900.0 }])
 

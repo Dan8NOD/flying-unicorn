@@ -152,6 +152,7 @@ class Ring:
 	var ry: float
 	var rx := 16.0
 	var gold := false
+	var red := false
 	var done := false
 	var result := ""
 	var bob := 0.0
@@ -210,8 +211,11 @@ class Rocket:
 class Laser:
 	var x: float
 	var y: float
+	var vx := 900.0
+	var vy := 0.0
 	var c: Color
 	var dead := false
+	var lock = null
 
 
 class Pickup:
@@ -770,6 +774,7 @@ func _game_update(dt: float) -> void:
 				r.result = "hit"
 				react_pop = 1.0
 				if r.gold: _gold_hit()
+				elif r.red: _red_hit()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -789,8 +794,10 @@ func _game_update(dt: float) -> void:
 
 	# Lasers
 	for l in lasers:
-		l.x += 900 * dt
-	lasers = lasers.filter(func(l): return l.x < W + 40 and not l.dead)
+		_steer_laser(l, dt)
+		l.x += l.vx * dt
+		l.y += l.vy * dt
+	lasers = lasers.filter(func(l): return l.x < W + 40 and l.x > -60 and l.y > -60 and l.y < H + 60 and not l.dead)
 
 	# Storm clouds
 	for c in clouds:
@@ -1184,12 +1191,14 @@ func _fire_rockets(free := false) -> void:
 
 
 func _rocket_boom(x: float, y: float) -> void:
-	_burst(x, y, 30, [Color.WHITE, Color("ffb13d"), Color("ff4d5e")], 300)
+	flash = maxf(flash, 0.08)
+	shock.append({ "x": x, "y": y, "life": 0.45, "max": 0.45 })
+	_burst(x, y, 34, [Color.WHITE, Color("ffb13d"), Color("ff4d5e")], 320)
 	_burst(x, y, 14, [Color("7a7a8a"), Color.WHITE], 160)
 	for c in clouds:
 		if not c.dead and Vector2(c.x - x, c.y - y).length() < 85:
 			_hurt_cloud(c, 1)
-	synth.poof()
+	synth.boom()
 
 
 func _update_rockets(dt: float) -> void:
@@ -1258,6 +1267,53 @@ func _draw_mermaid() -> void:
 		draw_circle(mp - to_pony * (6 + hy * 0.4) + perp * (4 + sin(t * 4 + h) * 2.0), 4.5 - h, Color("ff6fb5"))
 
 
+func _steer_laser(l, dt: float) -> void:
+	if l.lock == null or not is_instance_valid(l.lock) or l.lock.dead:
+		return
+	var want := Vector2(l.lock.x, l.lock.y) - Vector2(l.x, l.y)
+	if want.length() < 1:
+		return
+	var spd := Vector2(l.vx, l.vy).length()
+	want = want.normalized() * spd
+	var v := Vector2(l.vx, l.vy).lerp(want, minf(1.0, dt * 3.0))
+	if v.length() > 1:
+		v = v.normalized() * spd
+		l.vx = v.x
+		l.vy = v.y
+
+
+func _laser_volley() -> void:
+	var foe = _nearest_foe(Vector2(uni.x, uni.y), 2000.0)
+	for i in 4:
+		var l := Laser.new()
+		if vertical:
+			l.x = uni.x + (i - 1.5) * 14
+			l.y = uni.y - 70
+			l.vx = 0
+			l.vy = -900
+		else:
+			var tip := _horn_tip()
+			l.x = tip.x
+			l.y = tip.y + (i - 1.5) * 10
+			l.vx = 900
+			l.vy = 0
+		if foe != null:
+			var aim := Vector2(foe.x - l.x, foe.y - l.y)
+			if aim.length() > 1:
+				aim = aim.normalized() * 900.0
+				l.vx = aim.x
+				l.vy = aim.y
+		l.c = Color("ff4d5e")
+		l.lock = foe
+		lasers.append(l)
+	synth.laser()
+
+
+func _red_hit() -> void:
+	flash = maxf(flash, 0.1)
+	_laser_volley()
+
+
 func _roll_cloud_kind(c: StormCloud) -> void:
 	var roll := randf()
 	c.zappy = randf() < 1.0 / 9.0
@@ -1292,7 +1348,9 @@ func _manage_ambience() -> void:
 
 func _spawn_ring_top() -> void:
 	var r := Ring.new()
-	r.gold = randf() < 0.12
+	var rroll := randf()
+	r.gold = rroll < 0.10
+	r.red = rroll >= 0.10 and rroll < 0.20
 	var rspread: float = randf_range(-220, 220) if boss != null else randf_range(-140, 140)
 	r.x = clampf(last_ring_x + rspread, 70, VW - 70)
 	last_ring_x = r.x
@@ -1359,6 +1417,7 @@ func _game_overhead(dt: float) -> void:
 	if (pointer_down or Input.is_action_pressed("fire")) and fire_ok and fire_cooldown <= 0:
 		var l := Laser.new()
 		l.x = uni.x; l.y = uni.y - 70
+		l.vx = 0; l.vy = -900
 		l.c = RAINBOW[lasers.size() % 6]
 		lasers.append(l)
 		fire_cooldown = FIRE_INTERVAL
@@ -1395,6 +1454,7 @@ func _game_overhead(dt: float) -> void:
 				r.result = "hit"
 				react_pop = 1.0
 				if r.gold: _gold_hit()
+				elif r.red: _red_hit()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -1414,8 +1474,10 @@ func _game_overhead(dt: float) -> void:
 
 	# Lasers fly up.
 	for l in lasers:
-		l.y -= 900 * dt
-	lasers = lasers.filter(func(l): return l.y > -40 and not l.dead)
+		_steer_laser(l, dt)
+		l.x += l.vx * dt
+		l.y += l.vy * dt
+	lasers = lasers.filter(func(l): return l.y > -40 and l.y < VH + 60 and l.x > -60 and l.x < VW + 60 and not l.dead)
 
 	# Storm clouds drift down.
 	for c in clouds:
@@ -1491,7 +1553,9 @@ func _horn_tip() -> Vector2:
 
 func _spawn_ring() -> void:
 	var r := Ring.new()
-	r.gold = randf() < 0.12
+	var rroll := randf()
+	r.gold = rroll < 0.10
+	r.red = rroll >= 0.10 and rroll < 0.20
 	r.y = clampf(last_ring_y + randf_range(-260, 260) if boss != null else last_ring_y + randf_range(-170, 170), 90, H - 110)
 	r.base_y = r.y
 	last_ring_y = r.y
@@ -2023,15 +2087,15 @@ func _draw_unicorn() -> void:
 func _ring_stroke(r: Ring, front: bool) -> void:
 	var start := PI / 2 if front else -PI / 2
 	var end := PI * 1.5 if front else PI / 2
-	var col := Color("ffd23f") if r.gold else (Color.WHITE if r.result == "hit" else Color("ff6fb5"))
-	var edge := Color("c98f00") if r.gold else Color("b3317a")
+	var col := Color("ffd23f") if r.gold else (Color("ff4d5e") if r.red else (Color.WHITE if r.result == "hit" else Color("ff6fb5")))
+	var edge := Color("c98f00") if r.gold else (Color("a31220") if r.red else Color("b3317a"))
 	var rp := 1.0 + 0.03 * sin(t * 4 + r.phase)
 	var rx := r.rx * rp
 	var ry := r.ry * rp
 	var pts := _arc_pts(r.x, r.y, rx, ry, start, end, 20)
 	draw_polyline(pts, edge, 12, true)
 	draw_polyline(pts, col, 7, true)
-	if r.gold and front:
+	if (r.gold or r.red) and front:
 		for i in 3:
 			var a := t * 3 + i * 2.1
 			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * rx, r.y + sin(a) * ry, 4), Color.WHITE)
@@ -2137,8 +2201,8 @@ func _draw_over_bg() -> void:
 
 
 func _draw_ring_top(r: Ring) -> void:
-	var edge := Color("c98f00") if r.gold else Color("b3317a")
-	var col := Color("ffd23f") if r.gold else (Color.WHITE if r.result == "hit" else Color("ff6fb5"))
+	var edge := Color("c98f00") if r.gold else (Color("a31220") if r.red else Color("b3317a"))
+	var col := Color("ffd23f") if r.gold else (Color("ff4d5e") if r.red else (Color.WHITE if r.result == "hit" else Color("ff6fb5")))
 	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, edge, 12, true)
 	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, col, 7, true)
 	if r.gold:
@@ -2286,7 +2350,7 @@ func _draw_title_card() -> void:
 	var items := [
 		"☝️ Drag to fly · hold to fire · ROCKETS button",
 		"🎯 Rings in a row build your combo",
-		"🌟 Golden rings are worth extra",
+		"🌟 Gold rings fire rockets · red rings fire lasers",
 		"⛈️ Storm clouds drain her health — zap them first!",
 		"🎮 Gamepad works too · tilt in Settings ⚙",
 	]

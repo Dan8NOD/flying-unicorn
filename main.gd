@@ -204,6 +204,7 @@ class Rocket:
 	var vy: float
 	var life := 3.0
 	var dead := false
+	var lock = null
 
 
 class Laser:
@@ -1098,9 +1099,9 @@ func _mer_pos() -> Vector2:
 	return Vector2(mer_px, mer_py + sin(t * 3.0) * 6.0)
 
 
-func _nearest_foe(mp: Vector2):
+func _nearest_foe(mp: Vector2, max_d := MER_RANGE):
 	var best = null
-	var best_d := MER_RANGE
+	var best_d := max_d
 	for c in clouds:
 		if c.dead:
 			continue
@@ -1159,10 +1160,12 @@ func _discharge(mp: Vector2) -> void:
 	synth.zap()
 
 
-func _fire_rockets() -> void:
-	if state != "play" or rocket_cd > 0:
+func _fire_rockets(free := false) -> void:
+	if state != "play" or (rocket_cd > 0 and not free):
 		return
-	rocket_cd = ROCKET_CD
+	if not free:
+		rocket_cd = ROCKET_CD
+	var foe = _nearest_foe(Vector2(uni.x, uni.y), 2000.0)
 	for k in [-1, 0, 1]:
 		var r := Rocket.new()
 		if vertical:
@@ -1175,6 +1178,7 @@ func _fire_rockets() -> void:
 			r.y = uni.y + k * 16
 			r.vx = 820
 			r.vy = 0
+		r.lock = foe
 		rockets.append(r)
 	synth.rocket()
 
@@ -1195,6 +1199,15 @@ func _update_rockets(dt: float) -> void:
 			_rocket_tap = false
 			_fire_rockets()
 	for r in rockets:
+		if r.lock != null and is_instance_valid(r.lock) and not r.lock.dead:
+			var want := (Vector2(r.lock.x, r.lock.y) - Vector2(r.x, r.y))
+			if want.length() > 1:
+				want = want.normalized() * 820.0
+				var v := Vector2(r.vx, r.vy).lerp(want, minf(1.0, dt * 5.0))
+				if v.length() > 1:
+					v = v.normalized() * 820.0
+					r.vx = v.x
+					r.vy = v.y
 		r.x += r.vx * dt
 		r.y += r.vy * dt
 		r.life -= dt
@@ -1876,8 +1889,8 @@ func _size_k() -> float:
 
 
 func _gold_hit() -> void:
-	react_spin = 9.0
 	flash = maxf(flash, 0.12)
+	_fire_rockets(true)
 	shock.append({ "x": uni.x, "y": uni.y, "life": 0.45, "max": 0.45 })
 	synth.powerup()
 func _draw_wing(front: bool, flap: float, body_rot: float) -> void:

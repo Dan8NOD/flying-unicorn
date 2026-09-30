@@ -134,7 +134,6 @@ var synth: SynthClass
 # rendering resources
 var font: Font
 var sky_tex: Texture2D
-var floor_poly: PackedVector2Array
 var btn_tex: Texture2D
 var _btn_play := Rect2()
 var _btn_again := Rect2()
@@ -286,9 +285,13 @@ func _ready() -> void:
 	reset()
 	if _autostart:
 		start()
+	_apply_test_hooks()
 
 
 var _autostart := false
+var _force_level := 0
+var _force_vertical := false
+
 
 func _parse_args() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -304,6 +307,23 @@ func _parse_args() -> void:
 			_shot_settings_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--force-over="):
 			_force_over_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--level="):
+			_force_level = int(a.get_slice("=", 1))
+		elif a == "--vertical":
+			_force_vertical = true
+
+
+# Screenshot/QA hooks: jump straight to a level's palette or force the
+# portrait overhead view, so every art pass can be verified headlessly.
+func _apply_test_hooks() -> void:
+	if _force_level > 1:
+		level = _force_level
+		speed = 260.0 * pow(1.07, mini(level - 1, 14))
+		_set_level_sky()
+	if _force_vertical:
+		vertical = true
+		uni.x = VW / 2
+		uni.y = VH * 0.72
 
 
 func _save_cfg() -> void:
@@ -356,16 +376,6 @@ func _layout() -> void:
 	uni.x = 190.0 if vertical else maxf(110.0, VW * 0.2)
 	uni.y = clampf(uni.y, 70.0, H - 60.0)
 	last_ring_y = clampf(last_ring_y, 90.0, H - 110.0)
-	# Cloud floor scallop polygon (period 80, drawn shifted by -off)
-	floor_poly = PackedVector2Array()
-	floor_poly.append(Vector2(-80, H))
-	var cx := -40.0
-	while cx <= W + 160:
-		for j in 12:
-			var a := PI + PI * float(j) / 11.0
-			floor_poly.append(Vector2(cx + 34 * cos(a), H - 8 + 34 * sin(a)))
-		cx += 80
-	floor_poly.append(Vector2(W + 160, H))
 	for cl in bg_clouds:
 		cl.x = clampf(cl.x, -140.0, W + 200.0)
 		cl.y = clampf(cl.y, 30.0, H - 60.0)
@@ -1095,10 +1105,21 @@ func _hurt_player(amount := 25.0) -> void:
 func _draw_boss() -> void:
 	_wxf(Vector2(boss.x, boss.y), sin(t * 2 + boss.phase) * 0.08, Vector2.ONE)
 	_fill_ellipse(Vector2(0, 28), 54, 14, Color(0.7, 0.3, 1, 0.25))
+	# Shield bubble once it powers up (the "Shield up!" tell, made visible).
+	if boss.shielded:
+		var pulse := 0.5 + 0.5 * sin(t * 6)
+		draw_arc(Vector2.ZERO, 66, 0, TAU, 48, Color(0.72, 0.48, 1, 0.30 + 0.18 * pulse), 3, true)
+		draw_arc(Vector2.ZERO, 66, t * 1.5, t * 1.5 + PI * 0.6, 32, Color(1, 1, 1, 0.35), 2.5, true)
+	# Dome with glass shine and shaded base.
 	draw_circle(Vector2(0, -12), 20, Color.WHITE if boss.hit_flash > 0 else Color("c9cde0"))
+	draw_arc(Vector2(0, -12), 20, 0, PI, 20, Color("8b86a8", 0.6), 4, true)
 	draw_arc(Vector2(0, -12), 20, PI, TAU, 24, Color("5d6384"), 2.5, true)
+	draw_arc(Vector2(-5, -14), 13, PI * 1.1, PI * 1.6, 12, Color(1, 1, 1, 0.7), 3, true)
 	draw_circle(Vector2(6, -18), 6, Color(1, 1, 1, 0.6))
+	# Hull: shaded underside + rim lights.
 	_fill_ellipse(Vector2.ZERO, 56, 24, Color.WHITE if boss.hit_flash > 0 else Color("8b86a8"))
+	_fill_ellipse(Vector2(0, 8), 52, 14, Color("6f6a92", 0.75))
+	draw_polyline(_arc_pts(0, 0, 56, 24, PI * 1.05, PI * 1.95, 24), Color("5d5880"), 3, true)
 	draw_polyline(_arc_pts(0, 0, 56, 24, 0, TAU, 40), Color("3d3a5c"), 3, true)
 	_fill_ellipse(Vector2.ZERO, 26, 11, Color("1a1430"))
 	draw_polyline(_arc_pts(0, 0, 26, 11, 0, TAU, 28), Color("b77bff"), 2.5, true)
@@ -1277,21 +1298,31 @@ func _draw_mermaid() -> void:
 	if spooling:
 		draw_circle(mp, 20 + mer_spool * 10, Color(0.55, 1, 1, 0.3 * mer_spool))
 		draw_arc(mp, 24 + mer_spool * 10, 0, TAU, 32, Color(1, 1, 1, 0.5 * mer_spool), 2, true)
-	var to_pony := (Vector2(uni.x, uni.y) - mp).normalized()
+	var to_pony := (Vector2(uni.x, uni.y) - mp)
+	if to_pony.length() < 0.001:
+		to_pony = Vector2.RIGHT
+	to_pony = to_pony.normalized()
 	var back := -to_pony
 	var perp := Vector2(-back.y, back.x)
-	var w1 := sin(t * thrash) * 6.0
+	# DAN, 2026-09-30: clamp the sway — at exactly w1 == -6 the belly-stripe
+	# triangle below goes collinear and Godot's triangulation errors every frame.
+	var w1 := clampf(sin(t * thrash) * 6.0, -5.7, 5.7)
 	var w2 := sin(t * thrash + 1.2) * 8.0
 	# Tail: curved body, belly stripe, dorsal fin, notched fluke.
 	var tail := PackedVector2Array([mp + perp * 7, mp + back * 28 + perp * w1, mp + back * 13 - perp * 7])
 	draw_colored_polygon(tail, Color("1f9e85"))
 	draw_colored_polygon(PackedVector2Array([mp + perp * 2, mp + back * 24 + perp * w1, mp + back * 12 - perp * 2]), Color("7df0c8"))
 	draw_colored_polygon(PackedVector2Array([mp + back * 10 + perp * 4, mp + back * 20 + perp * (w1 * 0.5), mp + back * 12 + perp * 12]), Color("17806c"))
+	# Scale freckles along the tail.
+	for si in 3:
+		var sq := mp + back * (8 + si * 6) + perp * (3.0 - si)
+		draw_arc(sq, 2.2, 0, PI, 8, Color("17806c", 0.8), 1.2, true)
 	var fluke := mp + back * 28 + perp * w1
 	draw_colored_polygon(PackedVector2Array([fluke + perp * 8 + back * 2, fluke - perp * 8 + back * 2, fluke + back * 16 + perp * w2 * 0.4]), Color("2fbfa0"))
 	# Hair mass + five flowing strands behind the head.
 	var hair_base := mp + back * 8
 	draw_circle(hair_base, 9, Color("ff6fb5"))
+	draw_circle(hair_base + Vector2(-1.5, -2.5), 4, Color(1, 1, 1, 0.25))
 	for h in 5:
 		var hf: float = h - 2.0
 		var sway := sin(t * 4 + h * 1.3) * 3.0
@@ -1889,6 +1920,52 @@ func _gradient_tex(colors: Array, locs: Array, w := 8, h := 270) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
+# Cached soft radial glow (opaque core fading out). Keyed by color + size;
+# generated once per combo, reused across frames.
+var _vignette: Texture2D = null
+var _glow_cache := {}
+
+
+func _vignette_tex() -> Texture2D:
+	if _vignette == null:
+		var size := 256
+		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+		var half := size / 2.0
+		for y in size:
+			for x in size:
+				var d := Vector2(x + 0.5 - half, y + 0.5 - half).length() / half
+				var a := clampf((d - 0.55) / 0.45, 0.0, 1.0)
+				img.set_pixel(x, y, Color(0.16, 0.09, 0.32, a * 0.26))
+		_vignette = ImageTexture.create_from_image(img)
+	return _vignette
+
+
+func _radial_glow_tex(inner: Color, outer: Color, size := 128) -> Texture2D:
+	var key := "%d|%d|%d|%d_%d" % [int(inner.r * 255), int(inner.g * 255), int(inner.b * 255), int(inner.a * 255), size]
+	if _glow_cache.has(key):
+		return _glow_cache[key]
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var half := size / 2.0
+	for y in size:
+		for x in size:
+			var d := Vector2(x + 0.5 - half, y + 0.5 - half).length() / half
+			var col := inner.lerp(outer, clampf(d, 0.0, 1.0))
+			col.a *= 1.0 - clampf(d, 0.0, 1.0)
+			img.set_pixel(x, y, col)
+	var tex := ImageTexture.create_from_image(img)
+	_glow_cache[key] = tex
+	return tex
+
+
+# Layered-ellipse shading: base fill, darker underside, lighter top sheen.
+# Reads as a soft shaded puff without any per-pixel work.
+func _shaded_ellipse(c: Vector2, rx: float, ry: float, base: Color, shade: Color, sheen := true) -> void:
+	_fill_ellipse(c, rx, ry, base)
+	_fill_ellipse(c + Vector2(0, ry * 0.38), rx * 0.94, ry * 0.62, Color(shade.r, shade.g, shade.b, shade.a * 0.5))
+	if sheen:
+		_fill_ellipse(c + Vector2(-rx * 0.16, -ry * 0.34), rx * 0.62, ry * 0.42, Color(1, 1, 1, 0.28))
+
+
 const LEVEL_NAMES := ["Blueberry Skies", "Sunset Glow", "Dusky Dreams", "Starry Night", "Northern Lights", "Candy Storm", "Cotton Candy", "Rainbow Road", "Deep Space", "Nebula Drift", "Saucer Station"]
 
 func _in_space() -> bool:
@@ -1938,22 +2015,17 @@ func _level_up() -> void:
 
 
 func _set_level_sky() -> void:
-	var cols: Array = []
+	var raw: Array = []
 	for h in _sky_colors():
-		cols.append(Color(h))
+		raw.append(Color(h))
+	# Five-stop gradient: richer mid tones instead of a plain 3-color ramp.
+	var cols := [raw[0], raw[0].lerp(raw[1], 0.5), raw[1], raw[1].lerp(raw[2], 0.5), raw[2]]
 	sky_top = cols[0]
-	sky_tex = _gradient_tex(cols, [0.0, 0.6, 1.0])
+	sky_tex = _gradient_tex(cols, [0.0, 0.35, 0.62, 0.85, 1.0])
 
 
 func _puff(x: float, y: float, s: float) -> void:
-	_wxf(Vector2(x, y), 0, Vector2(s, s))
-	_fill_ellipse(Vector2(0, 10), 70, 18, Color(210 / 255.0, 190 / 255.0, 1, 0.6))
-	draw_circle(Vector2(-40, 0), 22, Color.WHITE)
-	draw_circle(Vector2(-12, -14), 30, Color.WHITE)
-	draw_circle(Vector2(22, -6), 26, Color.WHITE)
-	draw_circle(Vector2(48, 4), 18, Color.WHITE)
-	draw_rect(Rect2(-40, 0, 88, 16), Color.WHITE)
-	_world_apply()
+	_puff_alpha(x, y, s, 1.0)
 
 
 # ─── Background scenery ───────────────────────────────────────────────────
@@ -1975,6 +2047,7 @@ func _draw_station(sx: float, sy: float, sc: float) -> void:
 		draw_line(Vector2(cos(sp) * 58, sin(sp) * 20), Vector2(cos(sp) * 118, sin(sp) * 43), Color("5d6384"), 5, true)
 	draw_circle(Vector2(0, -30), 26, Color("8b86a8"))
 	draw_arc(Vector2(0, -30), 26, PI, TAU, 24, Color("c9cde0"), 3, true)
+	draw_arc(Vector2(-6, -34), 16, PI * 1.15, PI * 1.6, 12, Color(1, 1, 1, 0.55), 3.5, true)
 	for w in 10:
 		var wa := w * TAU / 10 + 0.3
 		var lit := sin(t * 2 + w * 1.7) > -0.2
@@ -1986,7 +2059,10 @@ func _draw_station(sx: float, sy: float, sc: float) -> void:
 
 
 func _draw_planet(px: float, py: float, pr: float) -> void:
+	# Atmosphere halo + night-side limb.
+	draw_texture_rect(_radial_glow_tex(Color(0.35, 0.62, 1, 0.5), Color(0.35, 0.62, 1, 0.0)), Rect2(px - pr * 1.4, py - pr * 1.4, pr * 2.8, pr * 2.8), false)
 	draw_circle(Vector2(px, py), pr, Color("1f6fd4"))
+	draw_arc(Vector2(px, py), pr - 12, PI * 1.05, PI * 1.8, 48, Color(0.04, 0.07, 0.28, 0.5), 24, true)
 	draw_arc(Vector2(px, py), pr, 0, TAU, 96, Color(0.55, 0.85, 1, 0.8), 10, true)
 	draw_arc(Vector2(px, py), pr - 26, PI * 1.15, PI * 1.75, 40, Color(1, 1, 1, 0.35), 14, true)
 	draw_arc(Vector2(px, py), pr - 60, PI * 0.1, PI * 0.5, 32, Color("7df0c8"), 10, true)
@@ -2002,6 +2078,19 @@ func _draw_scenery(dt: float) -> void:
 		hill_x += speed * dt * 0.1
 		city_x += speed * dt * 0.28
 	var night := _sky_is_night()
+	# Far skyline silhouette — slowest parallax, sits behind the hills.
+	var fw := 210.0
+	var foff := fmod(hill_x * 0.55, fw)
+	var fbase := int(floor(hill_x * 0.55 / fw))
+	var fcol := Color(0.34, 0.36, 0.62, 0.5) if night else Color(0.73, 0.78, 0.94, 0.55)
+	var fj := -1
+	while fj * fw - foff < W + fw:
+		var fidx := fbase + fj
+		var fx := fj * fw - foff
+		var fh := 36.0 + _hash01(fidx * 3 + 11) * 64.0
+		var fww := 120.0 + _hash01(fidx * 7 + 5) * 60.0
+		draw_rect(Rect2(fx, H - 40 - fh, fww, fh + 40), fcol)
+		fj += 1
 	for row in [0, 1]:
 		var w := 340.0
 		var rate: float = 1.0 + row * 0.4
@@ -2012,15 +2101,30 @@ func _draw_scenery(dt: float) -> void:
 			var idx := base + k
 			var cx := k * w - off
 			var r := 150.0 + _hash01(idx * 7 + row) * 90.0
+			var hp := Vector2(cx, H + 30 - row * 40)
 			var hcol := Color("2c6b58") if (row == 1 or night) else Color("7ed6a8")
 			if row == 1 and not night:
 				hcol = Color("5cb98a")
-			draw_circle(Vector2(cx, H + 30 - row * 40), r, hcol)
+			var hi := hcol.lightened(0.22)
+			var lo := hcol.darkened(0.20)
+			draw_circle(hp, r, hcol)
+			draw_polyline(_arc_pts(hp.x, hp.y, r, r, PI * 1.15, PI * 1.85, 24), hi, 5, true)
+			draw_polyline(_arc_pts(hp.x, hp.y, r, r, PI * 0.15, PI * 0.85, 24), lo, 6, true)
+			for b in 3:
+				if _hash01(idx * 17 + row * 5 + b) < 0.55:
+					var ba := PI * (1.15 + 0.7 * _hash01(idx * 23 + b * 7 + row))
+					var bp := hp + Vector2(cos(ba), sin(ba)) * (r - 5.0)
+					draw_circle(bp, 5 + _hash01(idx * 31 + b) * 4, lo)
+					if not night and _hash01(idx * 41 + b * 3) < 0.4:
+						draw_circle(bp + Vector2(0, -4), 1.6, Color("fff4fa"))
 			if _hash01(idx * 13 + row * 3) < 0.3:
 				var tx := cx + (_hash01(idx * 29) - 0.5) * 200.0
 				var ty: float = H - 60 - row * 40.0
-				draw_rect(Rect2(tx - 4, ty - 26, 8, 26), Color("2e2233") if night else Color("6b4a35"))
-				draw_circle(Vector2(tx, ty - 34), 15, Color("1d4a3a") if night else Color("2f9e5f"))
+				var trunk := Color("2e2233") if night else Color("6b4a35")
+				var leaf := Color("1d4a3a") if night else Color("2f9e5f")
+				draw_rect(Rect2(tx - 4, ty - 26, 8, 26), trunk)
+				draw_circle(Vector2(tx, ty - 34), 15, leaf)
+				draw_circle(Vector2(tx - 4, ty - 40), 9, leaf.lightened(0.16))
 			k += 1
 	var bw := 150.0
 	var coff := fmod(city_x, bw)
@@ -2033,15 +2137,49 @@ func _draw_scenery(dt: float) -> void:
 		var bh := 60.0 + _hash01(idx * 5 + 1) * 110.0
 		var bww: float = 86.0 + _hash01(idx * 5 + 3) * 44.0
 		var bx0 := bx + (bw - bww) / 2
-		draw_rect(Rect2(bx0, H - 40 - bh, bww, bh), bcol)
-		var rows := int((bh - 20) / 26)
+		var by0 := H - 40 - bh
+		var face := bcol.darkened(_hash01(idx * 3 + 7) * 0.12)
+		# Facade: sunlit roof edge, shaded street level, side shade.
+		draw_rect(Rect2(bx0, by0, bww, bh), face)
+		draw_rect(Rect2(bx0, by0, bww, 7), Color(1, 1, 1, 0.14 if not night else 0.05))
+		draw_rect(Rect2(bx0, H - 58, bww, 18), face.darkened(0.24))
+		draw_rect(Rect2(bx0, by0, 3, bh), face.darkened(0.16))
+		draw_rect(Rect2(bx0 + bww - 3, by0, 3, bh), Color(1, 1, 1, 0.09))
+		# Window grid, some lit: warm at night, sky-glint by day.
+		var rows := mini(int((bh - 26) / 26), 5)
+		var wxs := bx0 + (bww - 74.0) / 2.0
 		for wy in range(rows):
 			for wx in range(3):
-				if _hash01(idx * 31 + wy * 7 + wx) < (0.7 if night else 0.25):
-					var wcol := Color("ffe9a8") if night else Color(1, 1, 1, 0.7)
-					draw_rect(Rect2(bx0 + 14 + wx * 30, H - 40 - bh + 12 + wy * 26, 12, 16), wcol)
-		if _hash01(idx * 11 + 2) < 0.4:
-			draw_line(Vector2(bx + bw / 2, H - 40 - bh), Vector2(bx + bw / 2, H - 56 - bh), bcol, 3, true)
+				var wy0 := by0 + 14 + wy * 26
+				var wx0 := wxs + wx * 30.0
+				var lit := _hash01(idx * 31 + wy * 7 + wx) < (0.62 if night else 0.16)
+				var wcol: Color
+				if night:
+					wcol = Color("ffe9a8") if lit else Color("232347")
+				else:
+					wcol = Color(1, 1, 1, 0.8) if lit else Color(0.72, 0.83, 1.0, 0.9)
+				draw_rect(Rect2(wx0, wy0, 12, 16), wcol)
+				draw_rect(Rect2(wx0, wy0, 12, 16), face.darkened(0.25), false, 1.0)
+		# Roofline: cap plus an antenna beacon or a water tank.
+		draw_rect(Rect2(bx0 - 2, by0, bww + 4, 5), face.lightened(0.18))
+		var roof_roll := _hash01(idx * 11 + 2)
+		if roof_roll < 0.35:
+			var ax := bx + bw / 2
+			draw_line(Vector2(ax, by0), Vector2(ax, by0 - 16), face.darkened(0.1), 3, true)
+			var blink := 0.5 + 0.5 * sin(t * 4 + idx)
+			draw_circle(Vector2(ax, by0 - 18), 2.5, Color(1, 0.3, 0.37, 0.35 + 0.6 * blink))
+		elif roof_roll < 0.55:
+			var tx0 := bx0 + bww * 0.5
+			draw_line(Vector2(tx0 - 8, by0), Vector2(tx0 - 8, by0 - 13), face.darkened(0.3), 2, true)
+			draw_line(Vector2(tx0 + 8, by0), Vector2(tx0 + 8, by0 - 13), face.darkened(0.3), 2, true)
+			_fill_ellipse(Vector2(tx0, by0 - 19), 12, 9, face.darkened(0.12))
+		# Striped storefront awning on some sunny blocks.
+		if not night and _hash01(idx * 37 + 3) < 0.4:
+			var aw := mini(bww - 16.0, 64.0)
+			var ax0 := bx0 + (bww - aw) / 2.0
+			draw_rect(Rect2(ax0, H - 58, aw, 8), Color("ff6fb5"))
+			for si in 4:
+				draw_rect(Rect2(ax0 + si * aw / 4.0, H - 58, aw / 8.0, 8), Color(1, 1, 1, 0.65))
 		j += 1
 
 
@@ -2059,9 +2197,23 @@ func _draw_background(dt: float) -> void:
 		draw_circle(sp, 3.5, Color(1, 1, 1, sa))
 
 	# Sun / moon
-	var sun_col := Color(1, 250 / 255.0, 220 / 255.0, 0.9) if _sky_is_night() else Color(1, 238 / 255.0, 150 / 255.0, 0.9)
-	draw_circle(Vector2(W - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
-	draw_circle(Vector2(W - 140, 90), 42, sun_col)
+	var sun_p := Vector2(W - 140, 90)
+	if _sky_is_night():
+		# Pale moon: soft halo, cratered face, soft crescent shadow.
+		draw_texture_rect(_radial_glow_tex(Color(0.82, 0.88, 1, 0.55), Color(0.82, 0.88, 1, 0)), Rect2(sun_p - Vector2(84, 84), Vector2(168, 168)), false)
+		draw_circle(sun_p, 34, Color("f4f1ff"))
+		for cr in [[-9.0, -6.0, 6.0], [10.0, 4.0, 5.0], [-2.0, 12.0, 4.0], [6.0, -13.0, 3.0]]:
+			draw_circle(sun_p + Vector2(cr[0], cr[1]), cr[2], Color("d9d4ef"))
+		draw_texture_rect(_radial_glow_tex(Color(0.72, 0.74, 0.95, 0.95), Color(0.72, 0.74, 0.95, 0.0)), Rect2(sun_p - Vector2(32, 32) + Vector2(14, -8), Vector2(64, 64)), false)
+	else:
+		# Warm sun: layered glow halo around a bright core.
+		draw_texture_rect(_radial_glow_tex(Color(1, 0.93, 0.62, 0.9), Color(1, 0.85, 0.45, 0.0)), Rect2(sun_p - Vector2(115, 115), Vector2(230, 230)), false)
+		draw_circle(sun_p, 40, Color("fff3c4"))
+		_fill_ellipse(sun_p + Vector2(-10, -10), 22, 15, Color(1, 1, 1, 0.5))
+
+	# Warm haze pooling on the horizon behind the skyline (day skies only).
+	if not _sky_is_night():
+		draw_texture_rect(_radial_glow_tex(Color(1, 0.97, 0.88, 0.33), Color(1, 0.95, 0.85, 0.0)), Rect2(-140, H - 230, W + 280, 260), false)
 
 	# Faint rainbow arch — skyworlds only, never in deep space.
 	if not _in_space():
@@ -2090,22 +2242,37 @@ func _draw_background(dt: float) -> void:
 		# draw with alpha via modulated circles: puff uses fixed colors, wrap with canvas alpha
 		_puff_alpha(cl.x, cl.y, cl.s, old_a)
 
-	# Soft cloud floor — the reason she can never fall
+	# Puffy cloud floor — the reason she can never falls
 	var off := fmod(t * speed * 0.5, 80.0)
-	_wxf(Vector2(-off, 0), 0, Vector2.ONE)
-	draw_colored_polygon(floor_poly, Color(1, 1, 1, 0.9))
-	_world_apply()
+	var night := _sky_is_night()
+	var fcx := -40.0 - off
+	while fcx <= W + 120:
+		var fcp := Vector2(fcx, H - 8)
+		_fill_ellipse(fcp, 36, 36, Color(1, 1, 1, 0.94))
+		_fill_ellipse(fcp + Vector2(0, 14), 34, 24, Color(0.79, 0.79, 0.95, 0.5 if night else 0.34))
+		_fill_ellipse(fcp + Vector2(-7, -12), 20, 13, Color(1, 1, 1, 0.75))
+		fcx += 80
+	# Blue-grey valley shading between the puffs.
+	_fill_ellipse(Vector2(W / 2, H + 16), W * 0.62, 26, Color(0.72, 0.72, 0.92, 0.4))
 
 
 func _puff_alpha(x: float, y: float, s: float, a: float) -> void:
 	_wxf(Vector2(x, y), 0, Vector2(s, s))
-	_fill_ellipse(Vector2(0, 10), 70, 18, Color(210 / 255.0, 190 / 255.0, 1, 0.6 * a))
-	var w := Color(1, 1, 1, a)
-	draw_circle(Vector2(-40, 0), 22, w)
-	draw_circle(Vector2(-12, -14), 30, w)
-	draw_circle(Vector2(22, -6), 26, w)
-	draw_circle(Vector2(48, 4), 18, w)
-	draw_rect(Rect2(-40, 0, 88, 16), w)
+	# Flat base, then shaded lobes: lavender underside, white sunlit tops.
+	var base := Color(0.93, 0.93, 1.0, a)
+	_fill_ellipse(Vector2(4, 10), 70, 18, Color(0.82, 0.82, 0.96, 0.55 * a))
+	draw_rect(Rect2(-44, 2, 94, 12), base)
+	draw_circle(Vector2(-40, 2), 20, base)
+	draw_circle(Vector2(-12, -12), 28, base)
+	draw_circle(Vector2(22, -5), 25, base)
+	draw_circle(Vector2(48, 5), 17, base)
+	var under := Color(0.79, 0.79, 0.95, 0.5 * a)
+	draw_circle(Vector2(-38, 8), 17, under)
+	draw_circle(Vector2(8, 12), 22, under)
+	draw_circle(Vector2(46, 10), 13, under)
+	var top := Color(1, 1, 1, 0.85 * a)
+	draw_circle(Vector2(-16, -20), 16, top)
+	draw_circle(Vector2(16, -13), 13, top)
 	_world_apply()
 
 
@@ -2143,6 +2310,10 @@ func _draw_wing(front: bool, flap: float, body_rot: float) -> void:
 	var wing_off := Vector2(4 if front else 10, -16).rotated(body_rot)
 	_wxf(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65 + react_angle, _react_sc())
 	draw_colored_polygon(_wing_poly(), Color("ffe3f1") if front else Color("f5c3dd"))
+	# Soft lower shading, then feather separations on top.
+	_fill_ellipse(Vector2(-30, -18), 26, 12, Color("e8a9c9", 0.5))
+	for fn in [Vector2(-48, -34), Vector2(-44, -20), Vector2(-28, -8)]:
+		draw_line(Vector2(-4, -4), fn, Color("d9468f", 0.45), 1.5, true)
 	draw_polyline(_wing_poly(), Color("d9468f"), 2, true)
 
 
@@ -2176,9 +2347,12 @@ func _draw_unicorn() -> void:
 		var sy: float = 24 + leg[1] * 1.5
 		draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("b9bfd6"))
 		draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("5d6384"), false, 1.5)
+		draw_line(Vector2(sx - 4, sy - 1.6), Vector2(sx + 4, sy - 1.6), Color(1, 1, 1, 0.55), 1.2, true)
 
 	# Body
 	_fill_ellipse(Vector2.ZERO, 40, 22, Color("ff9ccf"))
+	_fill_ellipse(Vector2(3, 10), 33, 12, Color("ffc9e4"))
+	_fill_ellipse(Vector2(-6, -13), 28, 8, Color(0.87, 0.42, 0.62, 0.55))
 	draw_polyline(_arc_pts(0, 0, 40, 22, 0, TAU, 36), Color("d9468f"), 2.5, true)
 
 	# Neck
@@ -2202,6 +2376,8 @@ func _draw_unicorn() -> void:
 	var cat := PackedVector2Array([Vector2(-6, -7), Vector2(-4, -13), Vector2(-1, -9), Vector2(1, -9), Vector2(4, -13), Vector2(6, -7)])
 	cat.append_array(_arc_pts(0, -5, 6, 6, -0.2, PI + 0.2, 12))
 	draw_colored_polygon(cat, Color("ffd23f"))
+	# Diagonal shine sweeping the plate.
+	draw_colored_polygon(PackedVector2Array([Vector2(-24, -4), Vector2(-12, -22), Vector2(-5, -17), Vector2(-17, -1)]), Color(1, 1, 1, 0.20))
 
 	# Her rider: a little knight in shiny black armor, plume bouncing.
 	var bob := sin(t * 5.0) * 1.5
@@ -2260,7 +2436,11 @@ func _draw_unicorn() -> void:
 
 	# Rainbow mane
 	for i in 5:
-		draw_circle(Vector2(42 - i * 6, -44 + i * 8 + sin(t * 9 + i) * 1.5), 7, RAINBOW[i])
+		var lock := Vector2(42 - i * 6, -44 + i * 8 + sin(t * 9 + i) * 1.5)
+		draw_circle(lock, 7, RAINBOW[i])
+		draw_circle(lock + Vector2(0, 3.2), 4.6, RAINBOW[i].darkened(0.25))
+		if i == 0:
+			draw_circle(lock + Vector2(-2.4, -3), 2, Color(1, 1, 1, 0.75))
 
 	_draw_wing(true, flap, uni.tilt)
 	_world_apply()
@@ -2276,8 +2456,16 @@ func _ring_stroke(r: Ring, front: bool) -> void:
 	var rx := r.rx * rp
 	var ry := r.ry * rp
 	var pts := _arc_pts(r.x, r.y, rx, ry, start, end, 20)
+	# Halo behind gold/red rings so they pop against bright skies.
+	if r.gold or r.red:
+		var halo := Color(1, 0.85, 0.3, 0.30) if r.gold else Color(1, 0.3, 0.37, 0.28)
+		draw_texture_rect(_radial_glow_tex(halo, Color(halo.r, halo.g, halo.b, 0)), Rect2(r.x - rx * 1.5, r.y - ry * 1.5, rx * 3.0, ry * 3.0), false)
 	draw_polyline(pts, edge, 12, true)
 	draw_polyline(pts, col, 7, true)
+	# Specular glint along the upper arc, inner glow line.
+	if not front:
+		draw_polyline(_arc_pts(r.x, r.y - 1.5, rx, ry, start, end, 20), Color(1, 1, 1, 0.65), 2, true)
+	draw_polyline(_arc_pts(r.x, r.y, rx - 4, ry - 4, start, end, 20), Color(1, 1, 1, 0.28), 1.5, true)
 	if (r.gold or r.red) and front:
 		for i in 3:
 			var a := t * 3 + i * 2.1
@@ -2302,10 +2490,22 @@ func _draw_storm_cloud(c: StormCloud) -> void:
 		shade = Color.WHITE if c.hit_flash > 0 else Color("dceaff")
 	elif c.rain:
 		shade = Color.WHITE if c.hit_flash > 0 else (Color("7d8fc9") if c.hp == 1 else Color("5d6ba3"))
+	# Zappy tell: pulsing violet glow behind the whole cloud.
+	if c.zappy and c.hit_flash <= 0:
+		var zap_a := 0.22 + 0.16 * maxf(0.0, sin(t * 5 + c.phase))
+		draw_texture_rect(_radial_glow_tex(Color(0.72, 0.55, 1, zap_a), Color(0.72, 0.55, 1, 0)), Rect2(c.x - 62, c.y - 62, 124, 124), false)
+	# Body lobes + darker underside + sunlit tops.
 	draw_circle(Vector2(c.x - 22, c.y + 6), 20, shade)
 	draw_circle(Vector2(c.x, c.y - 8), 26, shade)
 	draw_circle(Vector2(c.x + 24, c.y + 4), 20, shade)
 	draw_circle(Vector2(c.x, c.y + 12), 22, shade)
+	var under := shade.darkened(0.28)
+	draw_circle(Vector2(c.x - 20, c.y + 16), 15, under)
+	draw_circle(Vector2(c.x + 4, c.y + 19), 17, under)
+	draw_circle(Vector2(c.x + 24, c.y + 14), 13, under)
+	if c.hit_flash <= 0:
+		draw_circle(Vector2(c.x - 4, c.y - 22), 13, Color(1, 1, 1, 0.22))
+		draw_circle(Vector2(c.x + 18, c.y - 10), 9, Color(1, 1, 1, 0.16))
 	if c.rain:
 		# Rain streaks scrolling down beneath.
 		var fall := fmod(t * 400.0, 50.0)
@@ -2370,7 +2570,12 @@ func _draw_quilt() -> void:
 	var y := -20.0
 	while y < VH + 20:
 		var rx := VW * 0.72 + sin((y + ground_y) * 0.012) * 90.0
-		draw_circle(Vector2(rx, y), 17, Color(0.45, 0.7, 1.0, 0.3))
+		draw_circle(Vector2(rx, y), 20, Color(0.35, 0.55, 0.9, 0.25))
+		y += 22.0
+	y = -20.0
+	while y < VH + 20:
+		var rx := VW * 0.72 + sin((y + ground_y) * 0.012) * 90.0
+		draw_circle(Vector2(rx, y), 15, Color(0.45, 0.7, 1.0, 0.35))
 		y += 22.0
 
 
@@ -2382,7 +2587,9 @@ func _draw_storm_top(c) -> void:
 		var a0: float = t * spin + c.phase + arm * TAU / 3
 		draw_arc(Vector2(c.x, c.y), c.r * (0.45 + arm * 0.2), a0, a0 + PI * 1.25, 26, shade, 10, true)
 	draw_circle(Vector2(c.x, c.y), c.r * 0.3, core)
+	draw_arc(Vector2(c.x, c.y), c.r * 0.3, 0, PI, 14, core.darkened(0.35), 3.5, true)
 	draw_arc(Vector2(c.x, c.y), c.r * 0.3, 0, TAU, 24, shade, 2, true)
+	draw_arc(Vector2(c.x, c.y), c.r * 0.72, PI * 1.15, PI * 1.85, 18, Color(1, 1, 1, 0.16), 5, true)
 	if c.lit:
 		draw_arc(Vector2(c.x, c.y), c.r + 5, 0, TAU, 40, Color("ffe45c"), 4, true)
 		var zx: float = c.x + sin(t * 30 + c.phase) * 8
@@ -2421,8 +2628,13 @@ func _draw_ring_top(r: Ring) -> void:
 	draw_circle(Vector2(r.x + 5, r.y + 9), r.rx + 5, Color(0.2, 0.15, 0.35, 0.12))
 	var edge := Color("c98f00") if r.gold else (Color("a31220") if r.red else Color("b3317a"))
 	var col := Color("ffd23f") if r.gold else (Color("ff4d5e") if r.red else (Color.WHITE if r.result == "hit" else Color("ff6fb5")))
+	if r.gold or r.red:
+		var halo2 := Color(1, 0.85, 0.3, 0.28) if r.gold else Color(1, 0.3, 0.37, 0.26)
+		draw_texture_rect(_radial_glow_tex(halo2, Color(halo2.r, halo2.g, halo2.b, 0)), Rect2(r.x - r.rx * 1.5, r.y - r.rx * 1.5, r.rx * 3.0, r.rx * 3.0), false)
 	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, edge, 12, true)
 	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, col, 7, true)
+	# Inner glint ring.
+	draw_arc(Vector2(r.x, r.y), r.rx, 0, TAU, 48, Color(1, 1, 1, 0.30), 1.5, true)
 	if r.gold:
 		for i in 3:
 			var a := t * 3 + i * 2.1
@@ -2461,6 +2673,8 @@ func _draw_pony_top() -> void:
 		draw_circle(hv, 4, Color("b9bfd6"))
 	# Body (foreshortened from above).
 	_fill_ellipse(Vector2.ZERO, 24, 38, Color("ff9ccf"))
+	_fill_ellipse(Vector2(0, 6), 17, 26, Color(0.87, 0.42, 0.62, 0.38))
+	_fill_ellipse(Vector2(-6, -18), 11, 14, Color(1, 1, 1, 0.30))
 	draw_polyline(_arc_pts(0, 0, 24, 38, 0, TAU, 36), Color("d9468f"), 2.5, true)
 	# Armor plate with the gold cat dot.
 	draw_rect(Rect2(-13, -16, 26, 34), Color("c9cde0"))
@@ -2500,6 +2714,11 @@ func _draw_pony_top() -> void:
 
 # ─── Cards ────────────────────────────────────────────────────────────────
 func _card(rect: Rect2) -> void:
+	# Drop shadow anchoring the card over the sky.
+	var shadow := StyleBoxFlat.new()
+	shadow.bg_color = Color(0.08, 0.04, 0.2, 0.35)
+	shadow.set_corner_radius_all(26)
+	draw_style_box(shadow, rect.grow(8).grow_individual(6, 10, 6, -2))
 	var glow := StyleBoxFlat.new()
 	glow.bg_color = Color(0, 0, 0, 0)
 	glow.border_color = Color(1, 111 / 255.0, 181 / 255.0, 0.45)
@@ -2512,6 +2731,12 @@ func _card(rect: Rect2) -> void:
 	sb.set_border_width_all(3)
 	sb.set_corner_radius_all(22)
 	draw_style_box(sb, rect)
+	# Faint glass sheen across the top edge.
+	var sheen := StyleBoxFlat.new()
+	sheen.bg_color = Color(1, 1, 1, 0.07)
+	sheen.corner_radius_top_left = 20
+	sheen.corner_radius_top_right = 20
+	draw_style_box(sheen, Rect2(rect.position + Vector2(4, 4), Vector2(rect.size.x - 8, rect.size.y * 0.4)))
 
 
 func _rainbow_title(cx: float, baseline_y: float, text: String, size: int) -> void:
@@ -2654,31 +2879,34 @@ func _draw_round_button(center: Vector2, glyph: String) -> void:
 
 
 # ─── HUD ──────────────────────────────────────────────────────────────────
+func _meter(r: Rect2, frac: float, col: Color) -> void:
+	draw_rect(r, Color(0.12, 0.07, 0.25, 0.42))
+	draw_rect(r, Color(1, 1, 1, 0.20), false, 1.0)
+	var fill := Rect2(r.position + Vector2(1.5, 1.5), Vector2((r.size.x - 3.0) * clampf(frac, 0.0, 1.0), r.size.y - 3.0))
+	draw_rect(fill, col)
+	draw_rect(Rect2(fill.position, Vector2(fill.size.x, maxf(1.5, fill.size.y * 0.45))), Color(1, 1, 1, 0.28))
+
+
 func _draw_hud() -> void:
 	_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
 	var hpk := clampf(hp / HP_MAX, 0.0, 1.0)
 	var hpcol := Color("7df08a") if hpk > 0.5 else (Color("ffd23f") if hpk > 0.25 else Color("ff4d5e"))
-	draw_rect(Rect2(22, 66, 110, 10), Color(1, 1, 1, 0.25))
-	draw_rect(Rect2(22, 66, 110 * hpk, 10), hpcol)
+	_meter(Rect2(22, 66, 110, 10), hpk, hpcol)
 	var mer_k := mer_spool if mer_spool > 0 else 1.0 - clampf(mer_cd / MERCD, 0.0, 1.0)
-	draw_rect(Rect2(22, 80, 110, 5), Color(1, 1, 1, 0.2))
-	draw_rect(Rect2(22, 80, 110 * clampf(mer_k, 0.0, 1.0), 5), Color("7df0ff"))
+	_meter(Rect2(22, 80, 110, 5), clampf(mer_k, 0.0, 1.0), Color("7df0ff"))
 	_stroke_text(Vector2(22, 112), "Level %d" % level, 16, Color("ffd9ef"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	# Horn heat bar + eye-beam charge pip.
-	draw_rect(Rect2(22, 120, 110, 8), Color(1, 1, 1, 0.25))
 	var heat_col := Color("ff4d5e") if overheated else Color("ffd23f")
-	draw_rect(Rect2(22, 120, 110 * clampf(heat, 0.0, 1.0), 8), heat_col)
+	_meter(Rect2(22, 120, 110, 8), heat, heat_col)
 	var beam_k := 1.0 if beam_t > 0 else 1.0 - clampf(beam_cd / BEAM_PERIOD, 0.0, 1.0)
-	draw_rect(Rect2(22, 132, 110, 6), Color(1, 1, 1, 0.25))
-	draw_rect(Rect2(22, 132, 110 * beam_k, 6), Color("ff4d5e"))
+	_meter(Rect2(22, 132, 110, 6), beam_k, Color("ff4d5e"))
 	if overheated and int(t * 4) % 2 == 0:
 		_stroke_text(Vector2(22, 150), "RELOADING…", 16, Color("9adcff"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	if boss != null:
 		var bt := maxi(0, int(ceil(boss_t)))
 		_stroke_text(Vector2(VW / 2, 40), "BOSS %d" % bt, 26, Color("ff4d5e") if bt <= 5 else Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 5)
 		var bfrac := clampf(float(boss.hp) / float(maxi(boss.max_hp, 1)), 0.0, 1.0)
-		draw_rect(Rect2(VW / 2 - 70, 50, 140, 8), Color(1, 1, 1, 0.25))
-		draw_rect(Rect2(VW / 2 - 70, 50, 140 * bfrac, 8), Color("b77bff"))
+		_meter(Rect2(VW / 2 - 70, 50, 140, 8), bfrac, Color("b77bff"))
 	if boss_kills > 0:
 		_stroke_text(Vector2(22, 166), "BOSS x%d" % boss_kills, 15, Color("c77bff"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	if combo > 1:
@@ -2821,15 +3049,23 @@ func _draw() -> void:
 		var col: Color = p.c
 		col.a = maxf(0, p.life / p.max_life)
 		if p.star:
-			draw_colored_polygon(_sparkle_poly(p.x, p.y, p.r + 1), col)
+			var core := col
+			core.v = minf(1.0, core.v + 0.55)
+			draw_colored_polygon(_sparkle_poly(p.x, p.y, p.r + 1), core)
+			draw_circle(Vector2(p.x, p.y), p.r * 0.28, Color(1, 1, 1, col.a * 0.9))
 		else:
 			draw_circle(Vector2(p.x, p.y), p.r * 0.7, col)
+			var hot := col
+			hot.v = minf(1.0, hot.v + 0.5)
+			draw_circle(Vector2(p.x - p.r * 0.15, p.y - p.r * 0.15), p.r * 0.34, Color(hot.r, hot.g, hot.b, col.a * 0.8))
 
 	for p in popups:
 		var col: Color = p.color
 		col.a = minf(1, p.life * 1.5)
 		_stroke_text(Vector2(p.x, p.y), p.text, 20, col, HORIZONTAL_ALIGNMENT_CENTER, 4, Color(42 / 255.0, 22 / 255.0, 80 / 255.0, 0.7))
 	_world_end()
+	# Soft vignette pulls focus toward her lane.
+	draw_texture_rect(_vignette_tex(), Rect2(0, 0, VW, VH), false)
 	if transitioning and trans_tex != null:
 		draw_texture_rect(trans_tex, Rect2(0, 0, VW, VH), false, Color(1, 1, 1, 1.0 - _view_ease()))
 

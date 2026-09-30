@@ -213,6 +213,17 @@ func ready() -> void:
 func boss() -> void:
 	_play("boss1", [{ "f": 220.0, "dur": 0.8, "wave": Wave.SAWTOOTH, "vol": 0.1, "slide": -120.0 }])
 
+func pony() -> void:
+	_play("pony", [{ "f": 700.0, "dur": 0.2, "wave": Wave.TRIANGLE, "vol": 0.1, "slide": 300.0 }])
+
+
+func powerup() -> void:
+	_play("power1", [
+		{ "f": 660.0, "dur": 0.12, "wave": Wave.TRIANGLE, "vol": 0.12 },
+		{ "f": 880.0, "dur": 0.12, "wave": Wave.TRIANGLE, "vol": 0.12, "delay": 0.1 },
+		{ "f": 1320.0, "dur": 0.2, "wave": Wave.TRIANGLE, "vol": 0.12, "delay": 0.2 },
+	])
+
 
 # Looping ambience beds on dedicated players (never stolen by one-shots).
 # Callers poll every frame; starting is idempotent and muting is honored.

@@ -70,8 +70,10 @@ const RELOAD_TIME := 3.0
 const BEAM_PERIOD := 6.0
 const BEAM_DUR := 3.0
 var heat := 0.0
-var size_pop := 0.0
+const SIZE_DUR := 2.2
+var size_age := 0.0
 var size_mul := 1.0
+var shock: Array = []
 var overheated := false
 var reload_t := 0.0
 var fire_ok := true
@@ -496,7 +498,7 @@ func reset() -> void:
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
-	size_pop = 0; size_mul = 1; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 4.0; boss_kills = 0; bolt_cd = 0
+	size_age = 0; size_mul = 1; shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 4.0; boss_kills = 0; bolt_cd = 0
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
@@ -511,6 +513,7 @@ func start() -> void:
 	reset()
 	state = "play"
 	paused = false
+	synth.pony()
 
 
 func toggle_pause() -> void:
@@ -612,8 +615,11 @@ func _game_update(dt: float) -> void:
 	_boss_update(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
-	if size_pop > 0:
-		size_pop -= dt
+	if size_age > 0:
+		size_age += dt
+		if size_age >= SIZE_DUR:
+			size_age = 0
+			size_mul = 1.0
 	react_angle += react_spin * dt
 	react_spin = move_toward(react_spin, 0.0, dt * 14.0)
 	# Settle back to upright — a resting tilt reads as stuck sideways.
@@ -820,8 +826,12 @@ func _start_reload() -> void:
 
 func _beam_origin() -> Vector2:
 	if vertical:
-		return Vector2(uni.x, uni.y - 70)
-	return Vector2(uni.x + 52, uni.y - 18)
+		return Vector2(uni.x, uni.y - 40)
+	var cc := cos(uni.tilt)
+	var ss := sin(uni.tilt)
+	var lx := 12.0
+	var ly := -47.0
+	return Vector2(uni.x + lx * cc - ly * ss, uni.y + lx * ss + ly * cc)
 
 
 # Heat, reload and the auto eye-beam. Sets fire_ok for the two fire sites.
@@ -856,7 +866,7 @@ func _tick_weapons(dt: float) -> void:
 
 func _beam_hit(dt: float) -> void:
 	if boss != null and not boss.dead and not boss.leaving:
-		var bin: bool = (absf(boss.x - uni.x) < 90 and boss.y < uni.y) if vertical else (boss.x > uni.x - 20 and absf(boss.y - (uni.y - 18)) < 90)
+		var bin: bool = (absf(boss.x - uni.x) < 90 and boss.y < uni.y) if vertical else (boss.x > uni.x - 20 and absf(boss.y - (uni.y - 47)) < 90)
 		if bin:
 			boss.beam_tick -= dt
 			if boss.beam_tick <= 0:
@@ -866,7 +876,7 @@ func _beam_hit(dt: float) -> void:
 	for c in clouds:
 		if c.dead:
 			continue
-		var in_beam: bool = (absf(c.x - uni.x) < 80 and c.y < uni.y) if vertical else (c.x > uni.x - 20 and absf(c.y - (uni.y - 18)) < 70)
+		var in_beam: bool = (absf(c.x - uni.x) < 80 and c.y < uni.y) if vertical else (c.x > uni.x - 20 and absf(c.y - (uni.y - 47)) < 70)
 		if in_beam:
 			c.dead = true
 			score += 25
@@ -990,6 +1000,7 @@ func _kill_boss() -> void:
 	_burst(boss.x, boss.y, 30, [Color("b77bff"), Color.WHITE], 180)
 	synth.level_up()
 	synth.poof()
+	synth.pony()
 	boss_kills += 1
 	boss = null
 	bolts = []
@@ -1252,6 +1263,9 @@ func _game_overhead(dt: float) -> void:
 
 
 func _update_particles(dt: float) -> void:
+	for s in shock:
+		s.life -= dt
+	shock = shock.filter(func(s): return s.life > 0)
 	for p in particles:
 		p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.life -= dt
 	particles = particles.filter(func(p): return p.life > 0)
@@ -1661,14 +1675,30 @@ func _wing_poly() -> PackedVector2Array:
 func _react_sc() -> Vector2:
 	return Vector2.ONE * (1.0 + 0.15 * react_pop) * _size_k()
 
+func _ease_back(x: float) -> float:
+	var c1 := 1.70158
+	var c3 := c1 + 1.0
+	return 1.0 + c3 * pow(x - 1.0, 3) + c1 * pow(x - 1.0, 2)
+
+
 func _size_k() -> float:
-	return lerpf(1.0, size_mul, clampf(size_pop / 1.8, 0.0, 1.0))
+	if size_age <= 0:
+		return 1.0
+	if size_age < 0.32:
+		return 1.0 + (size_mul - 1.0) * _ease_back(clampf(size_age / 0.32, 0.0, 1.0))
+	if size_age < 1.5:
+		return size_mul
+	var k := clampf((size_age - 1.5) / (SIZE_DUR - 1.5), 0.0, 1.0)
+	return lerpf(size_mul, 1.0, k * k * (3.0 - 2.0 * k))
 
 
 func _gold_hit() -> void:
 	react_spin = 9.0
 	size_mul = 0.7 if randf() < 0.5 else 1.3
-	size_pop = 1.8
+	size_age = 0.001
+	flash = maxf(flash, 0.12)
+	shock.append({ "x": uni.x, "y": uni.y, "life": 0.45, "max": 0.45 })
+	synth.powerup()
 func _draw_wing(front: bool, flap: float, body_rot: float) -> void:
 	var wing_off := Vector2(4 if front else 10, -16).rotated(body_rot)
 	_wxf(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65 + react_angle, _react_sc())
@@ -1732,6 +1762,25 @@ func _draw_unicorn() -> void:
 	var cat := PackedVector2Array([Vector2(-6, -7), Vector2(-4, -13), Vector2(-1, -9), Vector2(1, -9), Vector2(4, -13), Vector2(6, -7)])
 	cat.append_array(_arc_pts(0, -5, 6, 6, -0.2, PI + 0.2, 12))
 	draw_colored_polygon(cat, Color("ffd23f"))
+
+	# Her rider: a little knight in shiny black armor, plume bouncing.
+	var bob := sin(t * 5.0) * 1.5
+	draw_rect(Rect2(-14, -10 + bob, 10, 14), Color("23232e"))
+	draw_rect(Rect2(4, -8 + bob, 10, 14), Color("23232e"))
+	_fill_ellipse(Vector2(0, -28 + bob), 9, 14, Color("23232e"))
+	draw_polyline(_arc_pts(0, -28 + bob, 9, 14, 0, TAU, 20), Color("0f0f16"), 2, true)
+	draw_line(Vector2(-4, -38 + bob), Vector2(-6, -20 + bob), Color(1, 1, 1, 0.5), 2, true)
+	draw_circle(Vector2(0, -36 + bob), 6, Color("3a3a4e"))
+	draw_line(Vector2(4, -30 + bob), Vector2(20, -25), Color("23232e"), 5, true)
+	draw_circle(Vector2(20, -25), 3, Color("3a3a4e"))
+	draw_circle(Vector2(0, -46 + bob), 10, Color("23232e"))
+	draw_polyline(_arc_pts(0, -46 + bob, 10, 10, 0, TAU, 24), Color("0f0f16"), 2, true)
+	draw_arc(Vector2(0, -46 + bob), 10, PI * 0.9, PI * 1.6, 12, Color(1, 1, 1, 0.45), 2, true)
+	for pi in 3:
+		draw_circle(Vector2(-9 - pi * 5, -53 + bob - pi * 2 + sin(t * 7 + pi) * 1.5), 3.5, Color("ff6fb5"))
+	# Her eye glows — the beam leaves from here.
+	draw_circle(Vector2(7, -47 + bob), 2.8, Color("7df0ff"))
+	draw_circle(Vector2(7, -47 + bob), 1.2, Color.WHITE)
 
 	# Head
 	_wxf(Vector2(uni.x + 50 * cos(uni.tilt) + 36 * sin(uni.tilt), uni.y + 50 * sin(uni.tilt) - 36 * cos(uni.tilt)), uni.tilt + 0.35 + react_angle, _react_sc())
@@ -1927,6 +1976,16 @@ func _draw_pony_top() -> void:
 	draw_rect(Rect2(-13, -16, 26, 34), Color("c9cde0"))
 	draw_rect(Rect2(-13, -16, 26, 34), Color("5d6384"), false, 2)
 	draw_circle(Vector2.ZERO, 4, Color("ffd23f"))
+	# Rider from above: dark helm, shoulders, plume behind.
+	var bob2 := sin(t * 5.0) * 1.5
+	_fill_ellipse(Vector2(-14, 2), 7, 10, Color("23232e"))
+	_fill_ellipse(Vector2(14, 2), 7, 10, Color("23232e"))
+	draw_circle(Vector2(0, -4 + bob2 * 0.4), 11, Color("23232e"))
+	draw_polyline(_arc_pts(0, -4 + bob2 * 0.4, 11, 11, 0, TAU, 26), Color("0f0f16"), 2, true)
+	draw_arc(Vector2(0, -4 + bob2 * 0.4), 11, PI * 1.1, PI * 1.7, 12, Color(1, 1, 1, 0.45), 2, true)
+	draw_circle(Vector2(0, 10), 4, Color("ff6fb5"))
+	draw_circle(Vector2(-4, -9), 2.2, Color("7df0ff"))
+	draw_circle(Vector2(4, -9), 2.2, Color("7df0ff"))
 	# Head from above, snout forward.
 	_fill_ellipse(Vector2(0, -44), 15, 15, Color("ff9ccf"))
 	draw_polyline(_arc_pts(0, -44, 15, 15, 0, TAU, 28), Color("d9468f"), 2.5, true)
@@ -2213,6 +2272,11 @@ func _draw() -> void:
 		else:
 			_ring_stroke(r, true)
 
+	for s in shock:
+		var sk := clampf(s.life / s.max, 0.0, 1.0)
+		var scol := Color(1, 0.84, 0.25, sk)
+		draw_arc(Vector2(s.x, s.y), 14 + (1.0 - sk) * 95, 0, TAU, 48, scol, 6, true)
+		draw_arc(Vector2(s.x, s.y), 14 + (1.0 - sk) * 70, 0, TAU, 40, Color(1, 1, 1, sk * 0.8), 3, true)
 	for p in particles:
 		var col: Color = p.c
 		col.a = maxf(0, p.life / p.max_life)

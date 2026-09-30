@@ -31,6 +31,15 @@ var tilt_enabled := false
 var tilt_base := Vector3.ZERO
 const TILT_GAIN := 2.2
 const TILT_DEADZONE := 0.08
+# Feel: reactions, blinks, twitches and one shooting star. Mechanics untouched.
+var react_pop := 0.0
+var react_spin := 0.0
+var react_angle := 0.0
+var blink_timer := 3.0
+var blink_on := 0.0
+var ear_timer := 4.0
+var ear_tw := 0.0
+var shoot := {}
 # Settings card state and its test hook.
 var settings_open := false
 var _btn_tilt := Rect2()
@@ -418,6 +427,8 @@ func _add_joy_axis(action: String, axis: JoyAxis, value: float) -> void:
 
 func reset() -> void:
 	score = 0; hearts = 3; combo = 0; best_combo = 0; rings_passed = 0; level = 1; speed = 260
+	react_pop = 0; react_spin = 0; react_angle = 0
+	blink_timer = 3.0; blink_on = 0; ear_timer = 4.0; ear_tw = 0; shoot = {}
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
@@ -509,6 +520,30 @@ func _game_update(dt: float) -> void:
 	if flash > 0: flash -= dt
 	if hurt_timer > 0: hurt_timer -= dt
 	fire_cooldown = maxf(0, fire_cooldown - dt)
+	# Feel timers: reactions decay, ambient life goes on.
+	react_pop = maxf(0.0, react_pop - dt * 3.5)
+	react_angle += react_spin * dt
+	react_spin = move_toward(react_spin, 0.0, dt * 14.0)
+	if react_angle > PI * 4: react_angle -= PI * 4
+	if react_angle < -PI * 4: react_angle += PI * 4
+	blink_timer -= dt
+	if blink_timer <= 0:
+		blink_timer = randf_range(2.5, 5.5)
+		blink_on = 0.12
+	if blink_on > 0: blink_on -= dt
+	ear_timer -= dt
+	if ear_timer <= 0:
+		ear_timer = randf_range(3.0, 7.0)
+		ear_tw = 0.25
+	if ear_tw > 0: ear_tw -= dt
+	if shoot.is_empty():
+		if level >= 2 and randf() < dt / 12.0:
+			shoot = { "x": randf_range(W * 0.3, W + 100), "y": randf_range(40, H * 0.35), "life": 0.7 }
+	else:
+		shoot.x -= 700 * dt
+		shoot.y += 260 * dt
+		shoot.life -= dt
+		if shoot.life <= 0: shoot = {}
 
 	# Movement: pointer steers toward finger; keys/stick/dpad accelerate
 	if state == "play":
@@ -536,12 +571,15 @@ func _game_update(dt: float) -> void:
 		uni.vy = -absf(uni.vy) * 0.5 - 60
 		if state == "play":
 			_burst(uni.x, uni.y + 34, 4, [Color.WHITE, Color("ffd9ef")], 120)
+			react_pop = maxf(react_pop, 0.35)
 	if uni.y < 70:
 		uni.y = 70
 		uni.vy = absf(uni.vy) * 0.4
 
 	uni.tilt += (clampf(uni.vy / 900, -0.35, 0.35) - uni.tilt) * minf(1, dt * 8)
-	uni.flap += dt * (11.0 if state == "play" else 6.0)
+	# Wings beat harder on the climb, glide on the way down.
+	var flap_rate := 6.0 if state != "play" else clampf(11.0 - uni.vy / 80.0, 7.0, 16.0)
+	uni.flap += dt * flap_rate
 
 	# Rainbow sparkle trail
 	if randf() < 0.7:
@@ -591,6 +629,8 @@ func _game_update(dt: float) -> void:
 			r.done = true
 			if absf(uni.y - r.y) < r.ry - 12:
 				r.result = "hit"
+				react_pop = 1.0
+				if r.gold: react_spin = 7.0
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -632,6 +672,7 @@ func _game_update(dt: float) -> void:
 					synth.poof()
 		if not c.dead and hurt_timer <= 0 and Vector2(uni.x + 10 - c.x, uni.y - 10 - c.y).length() < c.r + 26:
 			c.dead = true; hearts -= 1; combo = 0; hurt_timer = 1.6; flash = 0.25
+			react_pop = 1.0; react_spin = -9.0
 			_burst(c.x, c.y, 20, [Color("6d6690"), Color("ffe45c")], 200)
 			synth.hurt()
 			Input.vibrate_handheld(300)
@@ -907,6 +948,11 @@ func _draw_background(dt: float) -> void:
 		for s in stars:
 			var a: float = 0.4 + 0.4 * sin(t * 2 + s.p)
 			draw_circle(Vector2(s.x, s.y), s.r, Color(1, 1, 1, a))
+	if not shoot.is_empty():
+		var sa: float = clampf(shoot.life / 0.7, 0.0, 1.0)
+		var sp := Vector2(shoot.x, shoot.y)
+		draw_line(sp, sp - Vector2(-80, 30).normalized() * 70 * sa, Color(1, 1, 1, 0.7 * sa), 3, true)
+		draw_circle(sp, 3.5, Color(1, 1, 1, sa))
 
 	# Sun / moon
 	var sun_col := Color(1, 250 / 255.0, 220 / 255.0, 0.9) if level >= 4 else Color(1, 238 / 255.0, 150 / 255.0, 0.9)
@@ -965,9 +1011,11 @@ func _wing_poly() -> PackedVector2Array:
 
 # Body pivots compose with the world transform through _wxf and always
 # return through _world_apply — draw_set_transform is absolute, not composed.
+func _react_sc() -> Vector2:
+	return Vector2.ONE * (1.0 + 0.15 * react_pop)
 func _draw_wing(front: bool, flap: float, body_rot: float) -> void:
 	var wing_off := Vector2(4 if front else 10, -16).rotated(body_rot)
-	_wxf(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65 + react_angle, _react_sc())
 	draw_colored_polygon(_wing_poly(), Color("ffe3f1") if front else Color("f5c3dd"))
 	draw_polyline(_wing_poly(), Color("d9468f"), 2, true)
 
@@ -978,7 +1026,7 @@ func _draw_unicorn() -> void:
 		return
 	var flap := sin(uni.flap)
 	var gallop := sin(t * 10)
-	_wxf(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
 
 	# Rainbow tail
 	for i in 6:
@@ -987,7 +1035,7 @@ func _draw_unicorn() -> void:
 		draw_polyline(pts, RAINBOW[i], 6, true)
 
 	_draw_wing(false, flap, uni.tilt)
-	_wxf(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
 
 	# Legs (galloping through the air)
 	var legs := [[-22, 1], [-12, -1], [18, -1], [28, 1]]
@@ -1027,7 +1075,7 @@ func _draw_unicorn() -> void:
 	draw_colored_polygon(cat, Color("ffd23f"))
 
 	# Head
-	_wxf(Vector2(uni.x + 50 * cos(uni.tilt) + 36 * sin(uni.tilt), uni.y + 50 * sin(uni.tilt) - 36 * cos(uni.tilt)), uni.tilt + 0.35, Vector2.ONE)
+	_wxf(Vector2(uni.x + 50 * cos(uni.tilt) + 36 * sin(uni.tilt), uni.y + 50 * sin(uni.tilt) - 36 * cos(uni.tilt)), uni.tilt + 0.35 + react_angle, _react_sc())
 	_fill_ellipse(Vector2.ZERO, 18, 14, Color("ff9ccf"))
 	draw_polyline(_arc_pts(0, 0, 18, 14, 0, TAU, 28), Color("d9468f"), 2.5, true)
 	_fill_ellipse(Vector2(16, 6), 12, 9, Color("ff9ccf"))
@@ -1037,14 +1085,18 @@ func _draw_unicorn() -> void:
 	draw_colored_polygon(PackedVector2Array([Vector2(-6, -12), Vector2(10, -10), Vector2(18, -1), Vector2(4, -6)]), Color("c9cde0"))
 	draw_polyline(PackedVector2Array([Vector2(-6, -12), Vector2(10, -10), Vector2(18, -1), Vector2(4, -6), Vector2(-6, -12)]), Color("5d6384"), 1.5, true)
 	draw_circle(Vector2(6, 6), 5, Color(1, 120 / 255.0, 170 / 255.0, 0.45))
-	_fill_ellipse(Vector2(2, -3), 4, 5, Color("2a1650"))
-	draw_circle(Vector2(3.5, -5), 1.6, Color.WHITE)
+	if blink_on > 0:
+		draw_line(Vector2(-2, -3), Vector2(6, -3), Color("2a1650"), 2, true)
+	else:
+		_fill_ellipse(Vector2(2, -3), 4, 5, Color("2a1650"))
+		draw_circle(Vector2(3.5, -5), 1.6, Color.WHITE)
 	draw_line(Vector2(-4, -9), Vector2(6, -7), Color("2a1650"), 2, true)
-	draw_colored_polygon(PackedVector2Array([Vector2(-8, -10), Vector2(-10, -24), Vector2(-1, -13)]), Color("ff9ccf"))
-	draw_polyline(PackedVector2Array([Vector2(-8, -10), Vector2(-10, -24), Vector2(-1, -13), Vector2(-8, -10)]), Color("d9468f"), 2, true)
+	var ear_tip := Vector2(-10, -24 - 6.0 * clampf(ear_tw / 0.25, 0.0, 1.0))
+	draw_colored_polygon(PackedVector2Array([Vector2(-8, -10), ear_tip, Vector2(-1, -13)]), Color("ff9ccf"))
+	draw_polyline(PackedVector2Array([Vector2(-8, -10), ear_tip, Vector2(-1, -13), Vector2(-8, -10)]), Color("d9468f"), 2, true)
 
 	# Golden horn (tip at local 64,-64) — back in body space
-	_wxf(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
 	var glow := 1.0 if fire_cooldown > 0.08 else 0.5 + 0.3 * sin(t * 6)
 	draw_circle(Vector2(64, -64), 10, Color(1, 240 / 255.0, 160 / 255.0, 0.35 * glow))
 	draw_colored_polygon(PackedVector2Array([Vector2(48, -48), Vector2(64, -64), Vector2(56, -44)]), Color("ffd23f"))
@@ -1066,17 +1118,25 @@ func _ring_stroke(r: Ring, front: bool) -> void:
 	var end := PI * 1.5 if front else PI / 2
 	var col := Color("ffd23f") if r.gold else (Color.WHITE if r.result == "hit" else Color("ff6fb5"))
 	var edge := Color("c98f00") if r.gold else Color("b3317a")
-	var pts := _arc_pts(r.x, r.y, r.rx, r.ry, start, end, 20)
+	var rp := 1.0 + 0.03 * sin(t * 4 + r.phase)
+	var rx := r.rx * rp
+	var ry := r.ry * rp
+	var pts := _arc_pts(r.x, r.y, rx, ry, start, end, 20)
 	draw_polyline(pts, edge, 12, true)
 	draw_polyline(pts, col, 7, true)
 	if r.gold and front:
 		for i in 3:
 			var a := t * 3 + i * 2.1
-			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * r.rx, r.y + sin(a) * r.ry, 4), Color.WHITE)
+			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * rx, r.y + sin(a) * ry, 4), Color.WHITE)
 
 
 # ─── Storm clouds ─────────────────────────────────────────────────────────
 func _draw_storm_cloud(c: StormCloud) -> void:
+	# Grumble shake just before the lightning shows.
+	var jx := 0.0
+	if sin(t * 5.0 + c.phase) > 0.2:
+		jx = 2.0 * sin(t * 40.0 + c.phase)
+	_wxf(Vector2(jx, 0), 0, Vector2.ONE)
 	var shade := Color.WHITE if c.hit_flash > 0 else (Color("8b86a8") if c.hp == 1 else Color("6d6690"))
 	draw_circle(Vector2(c.x - 22, c.y + 6), 20, shade)
 	draw_circle(Vector2(c.x, c.y - 8), 26, shade)
@@ -1095,6 +1155,7 @@ func _draw_storm_cloud(c: StormCloud) -> void:
 			Vector2(c.x + 8, c.y + 38), Vector2(c.x - 6, c.y + 58), Vector2(c.x - 1, c.y + 42),
 			Vector2(c.x - 8, c.y + 42),
 		]), Color("ffe45c"))
+	_world_apply()
 
 
 # ─── Cards ────────────────────────────────────────────────────────────────
@@ -1289,6 +1350,10 @@ func _draw() -> void:
 		draw_line(Vector2(l.x - 44, l.y), Vector2(l.x, l.y), glow, 7, true)
 		draw_line(Vector2(l.x - 30, l.y), Vector2(l.x, l.y), Color.WHITE, 3, true)
 
+	# Soft drop shadow on the cloud floor — fades as she climbs.
+	var sh_h := clampf(H - 60 - uni.y, 0.0, 600.0)
+	var sh_k := 1.0 - sh_h / 600.0
+	_fill_ellipse(Vector2(uni.x, H - 56), 46.0 * (0.5 + 0.5 * sh_k), 10.0, Color(0.35, 0.3, 0.55, 0.22 * sh_k))
 	_draw_unicorn()
 	for r in rings:
 		_ring_stroke(r, true)

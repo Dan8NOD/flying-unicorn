@@ -84,9 +84,6 @@ const RELOAD_TIME := 3.0
 const BEAM_PERIOD := 6.0
 const BEAM_DUR := 3.0
 var heat := 0.0
-const SIZE_DUR := 2.2
-var size_age := 0.0
-var size_mul := 1.0
 var shock: Array = []
 var overheated := false
 var reload_t := 0.0
@@ -525,7 +522,7 @@ func reset() -> void:
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
-	size_age = 0; size_mul = 1; shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 20.0; boss_kills = 0; bolt_cd = 0
+	shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 20.0; boss_kills = 0; bolt_cd = 0
 	mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false;
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
@@ -647,11 +644,6 @@ func _game_update(dt: float) -> void:
 	_update_rockets(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
-	if size_age > 0:
-		size_age += dt
-		if size_age >= SIZE_DUR:
-			size_age = 0
-			size_mul = 1.0
 	react_angle += react_spin * dt
 	react_spin = move_toward(react_spin, 0.0, dt * 14.0)
 	# Settle back to upright — a resting tilt reads as stuck sideways.
@@ -1875,31 +1867,16 @@ func _wing_poly() -> PackedVector2Array:
 
 # Body pivots compose with the world transform through _wxf and always
 # return through _world_apply — draw_set_transform is absolute, not composed.
-const CHAR_SCALE := 0.85
+const CHAR_SCALE := 0.8
 func _react_sc() -> Vector2:
 	return Vector2.ONE * CHAR_SCALE * (1.0 + 0.15 * react_pop) * _size_k()
 
-func _ease_back(x: float) -> float:
-	var c1 := 1.70158
-	var c3 := c1 + 1.0
-	return 1.0 + c3 * pow(x - 1.0, 3) + c1 * pow(x - 1.0, 2)
-
-
 func _size_k() -> float:
-	if size_age <= 0:
-		return 1.0
-	if size_age < 0.32:
-		return 1.0 + (size_mul - 1.0) * _ease_back(clampf(size_age / 0.32, 0.0, 1.0))
-	if size_age < 1.5:
-		return size_mul
-	var k := clampf((size_age - 1.5) / (SIZE_DUR - 1.5), 0.0, 1.0)
-	return lerpf(size_mul, 1.0, k * k * (3.0 - 2.0 * k))
+	return 1.0
 
 
 func _gold_hit() -> void:
 	react_spin = 9.0
-	size_mul = 0.7 if randf() < 0.5 else 1.3
-	size_age = 0.001
 	flash = maxf(flash, 0.12)
 	shock.append({ "x": uni.x, "y": uni.y, "life": 0.45, "max": 0.45 })
 	synth.powerup()

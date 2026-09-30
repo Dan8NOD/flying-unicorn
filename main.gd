@@ -1276,18 +1276,42 @@ func _draw_mermaid() -> void:
 	var thrash := 9.0 if spooling else 2.5
 	if spooling:
 		draw_circle(mp, 20 + mer_spool * 10, Color(0.55, 1, 1, 0.3 * mer_spool))
+		draw_arc(mp, 24 + mer_spool * 10, 0, TAU, 32, Color(1, 1, 1, 0.5 * mer_spool), 2, true)
 	var to_pony := (Vector2(uni.x, uni.y) - mp).normalized()
 	var back := -to_pony
 	var perp := Vector2(-back.y, back.x)
 	var w1 := sin(t * thrash) * 6.0
-	var tail := PackedVector2Array([mp + perp * 6, mp + back * 26 + perp * w1, mp + back * 12 - perp * 6])
-	draw_colored_polygon(tail, Color("2fbfa0"))
-	draw_colored_polygon(PackedVector2Array([mp + back * 24 + perp * (w1 + 8), mp + back * 24 + perp * (w1 - 8), mp + back * 38 + perp * w1]), Color("7df0c8"))
-	draw_circle(mp, 8, Color("ffd9c9"))
-	draw_circle(mp + to_pony * 4 + perp * 2, 1.8, Color("2a1650"))
-	for h in 3:
-		var hy: float = h * 7.0
-		draw_circle(mp - to_pony * (6 + hy * 0.4) + perp * (4 + sin(t * 4 + h) * 2.0), 4.5 - h, Color("ff6fb5"))
+	var w2 := sin(t * thrash + 1.2) * 8.0
+	# Tail: curved body, belly stripe, dorsal fin, notched fluke.
+	var tail := PackedVector2Array([mp + perp * 7, mp + back * 28 + perp * w1, mp + back * 13 - perp * 7])
+	draw_colored_polygon(tail, Color("1f9e85"))
+	draw_colored_polygon(PackedVector2Array([mp + perp * 2, mp + back * 24 + perp * w1, mp + back * 12 - perp * 2]), Color("7df0c8"))
+	draw_colored_polygon(PackedVector2Array([mp + back * 10 + perp * 4, mp + back * 20 + perp * (w1 * 0.5), mp + back * 12 + perp * 12]), Color("17806c"))
+	var fluke := mp + back * 28 + perp * w1
+	draw_colored_polygon(PackedVector2Array([fluke + perp * 8 + back * 2, fluke - perp * 8 + back * 2, fluke + back * 16 + perp * w2 * 0.4]), Color("2fbfa0"))
+	# Hair mass + five flowing strands behind the head.
+	var hair_base := mp + back * 8
+	draw_circle(hair_base, 9, Color("ff6fb5"))
+	for h in 5:
+		var hf: float = h - 2.0
+		var sway := sin(t * 4 + h * 1.3) * 3.0
+		draw_circle(hair_base + back * (6 + h * 3.0) + perp * (hf * 4.0 + sway), 4.5 - absf(hf) * 0.6, Color("ff9ccf"))
+	# Torso, shell top, reaching arm.
+	draw_circle(mp + to_pony * 2, 8, Color("ffd9c9"))
+	draw_circle(mp + to_pony * 5 + perp * -4, 3.2, Color("ff9ccf"))
+	draw_circle(mp + to_pony * 5 + perp * 4, 3.2, Color("ff9ccf"))
+	var hand := mp + to_pony * 14 + perp * 3 + Vector2(0, sin(t * 3) * 2)
+	draw_line(mp + to_pony * 6, hand, Color("ffd9c9"), 4, true)
+	draw_circle(hand, 2.5, Color("ffd9c9"))
+	# Happy face toward the pony, star hairpin, drifting bubbles.
+	var face := mp + to_pony * 3
+	draw_arc(face + perp * 1, 2.5, PI * 0.15, PI * 0.85, 10, Color("2a1650"), 1.5, true)
+	draw_circle(face - perp * 4 + to_pony * 1, 1.6, Color("ff9ccf"))
+	draw_colored_polygon(_sparkle_poly((face + back * 8 - perp * 6).x, (face + back * 8 - perp * 6).y, 4), Color("ffd23f"))
+	for bi in 2:
+		var bpos := mp + Vector2(sin(t * 2 + bi * 2.1) * 9, -20 - fmod(t * 18 + bi * 14, 30))
+		draw_circle(bpos, 2, Color(1, 1, 1, 0.5))
+		draw_arc(bpos, 2, 0, TAU, 10, Color(1, 1, 1, 0.7), 1, true)
 
 
 func _steer_laser(l, dt: float) -> void:
@@ -2350,6 +2374,25 @@ func _draw_quilt() -> void:
 		y += 22.0
 
 
+func _draw_storm_top(c) -> void:
+	var shade := Color.WHITE if c.hit_flash > 0 else (Color("dceaff") if c.gust else (Color("7d8fc9") if c.rain else Color("6d6690")))
+	var core := Color("3d3a5c") if c.hit_flash <= 0 else Color.WHITE
+	var spin := 1.6 if c.gust else 0.8
+	for arm in 3:
+		var a0: float = t * spin + c.phase + arm * TAU / 3
+		draw_arc(Vector2(c.x, c.y), c.r * (0.45 + arm * 0.2), a0, a0 + PI * 1.25, 26, shade, 10, true)
+	draw_circle(Vector2(c.x, c.y), c.r * 0.3, core)
+	draw_arc(Vector2(c.x, c.y), c.r * 0.3, 0, TAU, 24, shade, 2, true)
+	if c.lit:
+		draw_arc(Vector2(c.x, c.y), c.r + 5, 0, TAU, 40, Color("ffe45c"), 4, true)
+		var zx: float = c.x + sin(t * 30 + c.phase) * 8
+		draw_polyline(PackedVector2Array([Vector2(zx - 10, c.y - c.r), Vector2(zx + 6, c.y - 6), Vector2(zx - 6, c.y + 6), Vector2(zx + 10, c.y + c.r)]), Color("fff4b0"), 3, true)
+	if c.rain:
+		for di in 6:
+			var da: float = di * TAU / 6 + c.phase
+			draw_circle(Vector2(c.x + cos(da) * (c.r + 12), c.y + sin(da) * (c.r + 12)), 2.5, Color(0.6, 0.8, 1, 0.8))
+
+
 func _draw_over_bg() -> void:
 	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
 	if _in_space():
@@ -2375,6 +2418,7 @@ func _draw_over_bg() -> void:
 
 
 func _draw_ring_top(r: Ring) -> void:
+	draw_circle(Vector2(r.x + 5, r.y + 9), r.rx + 5, Color(0.2, 0.15, 0.35, 0.12))
 	var edge := Color("c98f00") if r.gold else (Color("a31220") if r.red else Color("b3317a"))
 	var col := Color("ffd23f") if r.gold else (Color("ff4d5e") if r.red else (Color.WHITE if r.result == "hit" else Color("ff6fb5")))
 	draw_arc(Vector2(r.x, r.y), r.rx + 4, 0, TAU, 48, edge, 12, true)
@@ -2383,6 +2427,9 @@ func _draw_ring_top(r: Ring) -> void:
 		for i in 3:
 			var a := t * 3 + i * 2.1
 			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * (r.rx + 4), r.y + sin(a) * (r.rx + 4), 4), Color.WHITE)
+	if r.red:
+		var ro2 := r.rx + 15 + sin(t * 7 + r.phase) * 2.5
+		draw_arc(Vector2(r.x, r.y), ro2, 0, TAU, 48, Color("ff4d5e"), 3, true)
 	if r.red:
 		var ro2 := r.rx + 16 + sin(t * 7 + r.phase) * 3
 		draw_arc(Vector2(r.x, r.y), ro2, 0, TAU, 48, Color("ff4d5e"), 3, true)
@@ -2678,7 +2725,10 @@ func _draw() -> void:
 		else:
 			_ring_stroke(r, false)
 	for c in clouds:
-		_draw_storm_cloud(c)
+		if vertical:
+			_draw_storm_top(c)
+		else:
+			_draw_storm_cloud(c)
 	for p in pickups:
 		var y: float = p.y + sin(t * 3 + p.phase) * 8
 		draw_circle(Vector2(p.x, y - 4), 22, Color(1, 1, 1, 0.5))

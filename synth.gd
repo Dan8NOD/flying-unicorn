@@ -12,6 +12,8 @@ enum Wave { SINE, SQUARE, TRIANGLE, SAWTOOTH }
 var muted := false
 var players: Array[AudioStreamPlayer] = []
 var _cache := {}
+var _files := {}
+var _loopers := {}
 
 func _init() -> void:
 	for i in 4:
@@ -59,8 +61,38 @@ func _render(notes: Array) -> AudioStreamWAV:
 	wav.data = bytes
 	return wav
 
+# Dropped-in audio wins: res://audio/<key>.mp3 (or .wav/.ogg) plays
+# instead of the synth render. Missing files fall back to the synth.
+func _file_stream(key: String) -> AudioStream:
+	if _files.has(key):
+		return _files[key]
+	for ext in ["mp3", "wav", "ogg"]:
+		var path := "res://audio/%s.%s" % [key, ext]
+		if ResourceLoader.exists(path):
+			var s: AudioStream = load(path)
+			if key.ends_with("_loop"):
+				if s is AudioStreamMP3 or s is AudioStreamOggVorbis:
+					s.loop = true
+				elif s is AudioStreamWAV:
+					s.loop_mode = AudioStreamWAV.LOOP_FORWARD
+			_files[key] = s
+			return s
+	_files[key] = null
+	return null
+
+
 func _play(key: String, notes: Array) -> void:
 	if muted:
+		return
+	var f := _file_stream(key)
+	if f:
+		for p in players:
+			if not p.playing:
+				p.stream = f
+				p.play()
+				return
+		players[0].stream = f
+		players[0].play()
 		return
 	if not _cache.has(key):
 		_cache[key] = _render(notes)
@@ -116,3 +148,51 @@ func level_up() -> void:
 		notes.append({ "f": f, "dur": 0.2, "wave": Wave.TRIANGLE, "vol": 0.1, "delay": i * 0.09 })
 		i += 1
 	_play("level", notes)
+
+
+func thunder() -> void:
+	_play("thunder", [{ "f": 90.0, "dur": 0.6, "wave": Wave.SINE, "vol": 0.14, "slide": -40.0 }])
+
+
+# Looping ambience beds on dedicated players (never stolen by one-shots).
+# Callers poll every frame; starting is idempotent and muting is honored.
+func _looper(cue: String) -> AudioStreamPlayer:
+	if not _loopers.has(cue):
+		var p := AudioStreamPlayer.new()
+		p.name = cue
+		add_child(p)
+		_loopers[cue] = p
+	return _loopers[cue]
+
+
+func start_rain() -> void:
+	_loop("rain_loop", -14.0)
+
+
+func stop_rain() -> void:
+	var p: AudioStreamPlayer = _loopers.get("rain_loop")
+	if p and p.playing:
+		p.stop()
+
+
+func start_wind() -> void:
+	_loop("wind_loop", -20.0)
+
+
+func stop_wind() -> void:
+	var p: AudioStreamPlayer = _loopers.get("wind_loop")
+	if p and p.playing:
+		p.stop()
+
+
+func _loop(cue: String, db: float) -> void:
+	if muted:
+		return
+	var p := _looper(cue)
+	if p.stream == null:
+		p.stream = _file_stream(cue)
+	if p.stream == null:
+		return
+	if not p.playing:
+		p.volume_db = db
+		p.play()

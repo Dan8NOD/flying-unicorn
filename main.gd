@@ -130,6 +130,9 @@ class StormCloud:
 	var phase := 0.0
 	var hit_flash := 0.0
 	var dead := false
+	var rain := false
+	var gust := false
+	var lit := false
 
 
 class Laser:
@@ -541,6 +544,9 @@ func _process(delta: float) -> void:
 	if not paused and not transitioning and not settings_open:
 		title_ms += dt * 1000
 		_game_update(dt)
+	else:
+		synth.stop_rain()
+		synth.stop_wind()
 	queue_redraw()
 
 
@@ -700,9 +706,13 @@ func _game_update(dt: float) -> void:
 
 	# Storm clouds
 	for c in clouds:
-		c.x -= speed * 0.85 * dt
+		c.x -= speed * (1.6 if c.gust else 0.85) * dt
 		c.y += sin(t * 2 + c.phase) * 30 * dt
 		if c.hit_flash > 0: c.hit_flash -= dt
+		var flash_now := sin(t * 5 + c.phase) > 0.3
+		if flash_now and not c.lit and c.x > -40 and c.x < W + 40:
+			synth.thunder()
+		c.lit = flash_now
 		for l in lasers:
 			if not l.dead and Vector2(l.x - c.x, l.y - c.y).length() < c.r + 8:
 				l.dead = true; c.hp -= 1; c.hit_flash = 0.08
@@ -713,6 +723,12 @@ func _game_update(dt: float) -> void:
 					_popup(c.x, c.y - 40, "+25 zap!", Color("ffe45c"))
 					_burst(c.x, c.y, 28, [Color.WHITE, Color("e8e0ff"), Color("ffe45c"), Color("b77bff")], 260)
 					synth.poof()
+		if not c.dead and c.gust and Vector2(uni.x - c.x, uni.y - c.y).length() < c.r + 26:
+			c.dead = true; score += 5
+			uni.vy += signf(uni.y - c.y) * 300
+			_popup(c.x, c.y - 40, "+5 whee!", Color("bfe9ff"))
+			_burst(c.x, c.y, 12, [Color.WHITE, Color("bfe9ff")], 180)
+			synth.poof()
 		if not c.dead and hurt_timer <= 0 and Vector2(uni.x + 10 - c.x, uni.y - 10 - c.y).length() < c.r + 26:
 			c.dead = true; hearts -= 1; combo = 0; hurt_timer = 1.6; flash = 0.25
 			react_pop = 1.0; react_spin = -9.0
@@ -733,7 +749,34 @@ func _game_update(dt: float) -> void:
 			synth.heart()
 	pickups = pickups.filter(func(p): return p.x > -40 and not p.dead)
 
+	_manage_ambience()
 	_update_particles(dt)
+
+
+func _roll_cloud_kind(c: StormCloud) -> void:
+	var roll := randf()
+	if level >= 3 and roll < 0.15:
+		c.gust = true
+		c.hp = 1
+	elif level >= 2 and roll < 0.5:
+		c.rain = true
+
+
+# Rain patter while a rain cloud is alive; wind bed through every round.
+func _manage_ambience() -> void:
+	var any_rain := false
+	for c in clouds:
+		if not c.dead and c.rain:
+			any_rain = true
+			break
+	if any_rain:
+		synth.start_rain()
+	else:
+		synth.stop_rain()
+	if state == "play":
+		synth.start_wind()
+	else:
+		synth.stop_wind()
 
 
 func _spawn_ring_top() -> void:
@@ -816,6 +859,7 @@ func _game_overhead(dt: float) -> void:
 	if cloud_timer <= 0:
 		var c := StormCloud.new()
 		c.x = randf_range(80, VW - 80); c.y = -90; c.phase = randf_range(0, 6)
+		_roll_cloud_kind(c)
 		clouds.append(c)
 		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
 	if hearts < 3 and randf() < dt * 0.04 and pickups.is_empty():
@@ -860,9 +904,19 @@ func _game_overhead(dt: float) -> void:
 
 	# Storm clouds drift down.
 	for c in clouds:
-		c.y += speed * 0.85 * dt
+		c.y += speed * (1.6 if c.gust else 0.85) * dt
 		c.x += sin(t * 2 + c.phase) * 30 * dt
 		if c.hit_flash > 0: c.hit_flash -= dt
+		var flash_now := sin(t * 5 + c.phase) > 0.3
+		if flash_now and not c.lit and c.y > -40 and c.y < VH + 40:
+			synth.thunder()
+		c.lit = flash_now
+		if not c.dead and c.gust and Vector2(uni.x - c.x, uni.y - c.y).length() < c.r + 26:
+			c.dead = true; score += 5
+			uni.vx += signf(uni.x - c.x) * 300
+			_popup(c.x, c.y - 40, "+5 whee!", Color("bfe9ff"))
+			_burst(c.x, c.y, 12, [Color.WHITE, Color("bfe9ff")], 180)
+			synth.poof()
 		for l in lasers:
 			if not l.dead and Vector2(l.x - c.x, l.y - c.y).length() < c.r + 8:
 				l.dead = true; c.hp -= 1; c.hit_flash = 0.08
@@ -893,6 +947,7 @@ func _game_overhead(dt: float) -> void:
 			synth.heart()
 	pickups = pickups.filter(func(p): return p.y < VH + 40 and not p.dead)
 
+	_manage_ambience()
 	_update_particles(dt)
 
 
@@ -929,6 +984,7 @@ func _spawn_ring() -> void:
 func _spawn_cloud() -> void:
 	var c := StormCloud.new()
 	c.x = W + 80; c.y = randf_range(80, H - 120); c.phase = randf_range(0, 6)
+	_roll_cloud_kind(c)
 	clouds.append(c)
 
 
@@ -961,6 +1017,9 @@ func _press_at(vp: Vector2) -> void:
 	# UI buttons first (screen space, above the card layer)
 	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
 		synth.muted = not synth.muted
+		if synth.muted:
+			synth.stop_rain()
+			synth.stop_wind()
 		_save_cfg()
 		return
 	if vp.distance_to(Vector2(VW - 33, 33)) < 26:
@@ -1344,10 +1403,26 @@ func _draw_storm_cloud(c: StormCloud) -> void:
 		jx = 2.0 * sin(t * 40.0 + c.phase)
 	_wxf(Vector2(jx, 0), 0, Vector2.ONE)
 	var shade := Color.WHITE if c.hit_flash > 0 else (Color("8b86a8") if c.hp == 1 else Color("6d6690"))
+	if c.gust:
+		shade = Color.WHITE if c.hit_flash > 0 else Color("dceaff")
+	elif c.rain:
+		shade = Color.WHITE if c.hit_flash > 0 else (Color("7d8fc9") if c.hp == 1 else Color("5d6ba3"))
 	draw_circle(Vector2(c.x - 22, c.y + 6), 20, shade)
 	draw_circle(Vector2(c.x, c.y - 8), 26, shade)
 	draw_circle(Vector2(c.x + 24, c.y + 4), 20, shade)
 	draw_circle(Vector2(c.x, c.y + 12), 22, shade)
+	if c.rain:
+		# Rain streaks scrolling down beneath.
+		var fall := fmod(t * 400.0, 50.0)
+		for i in 5:
+			var sx := c.x - 28 + i * 14
+			var sy := c.y + 28 + fmod(fall + i * 13, 50.0) - 50.0
+			draw_line(Vector2(sx, sy), Vector2(sx, sy + 22), Color(0.6, 0.8, 1.0, 0.6), 2, true)
+	if c.gust:
+		# Speed lines trailing behind the gust.
+		for i in 3:
+			var gy := c.y - 12 + i * 12
+			draw_line(Vector2(c.x - 44, gy), Vector2(c.x - 76 - (i * 8), gy), Color(1, 1, 1, 0.55), 3, true)
 	# Grumpy face
 	draw_circle(Vector2(c.x - 9, c.y), 3.5, Color("2a1650"))
 	draw_circle(Vector2(c.x + 9, c.y), 3.5, Color("2a1650"))

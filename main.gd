@@ -64,6 +64,17 @@ var speed := 260.0
 var ring_timer := 0.6
 var cloud_timer := 3.5
 var fire_cooldown := 0.0
+const FIRE_INTERVAL := 0.3
+const HEAT_TIME := 9.0
+const RELOAD_TIME := 3.0
+const BEAM_PERIOD := 6.0
+const BEAM_DUR := 3.0
+var heat := 0.0
+var overheated := false
+var reload_t := 0.0
+var fire_ok := true
+var beam_cd := BEAM_PERIOD
+var beam_t := 0.0
 var last_ring_y := H / 2
 var hurt_timer := 0.0
 var flash := 0.0
@@ -448,6 +459,7 @@ func reset() -> void:
 	over_fx_timer = 0
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
+	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
@@ -557,6 +569,7 @@ func _game_update(dt: float) -> void:
 	if flash > 0: flash -= dt
 	if hurt_timer > 0: hurt_timer -= dt
 	fire_cooldown = maxf(0, fire_cooldown - dt)
+	_tick_weapons(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
 	react_angle += react_spin * dt
@@ -646,14 +659,17 @@ func _game_update(dt: float) -> void:
 		return
 
 	# Firing (touch / space / gamepad)
-	var want_fire := pointer_down or Input.is_action_pressed("fire")
+	var want_fire := (pointer_down or Input.is_action_pressed("fire")) and fire_ok
 	if want_fire and fire_cooldown <= 0:
 		var tip := _horn_tip()
 		var l := Laser.new()
 		l.x = tip.x; l.y = tip.y
 		l.c = RAINBOW[lasers.size() % 6]
 		lasers.append(l)
-		fire_cooldown = 0.18
+		fire_cooldown = FIRE_INTERVAL
+		heat += FIRE_INTERVAL / HEAT_TIME
+		if heat >= 1.0:
+			_start_reload()
 		synth.laser()
 
 	# Spawning
@@ -752,6 +768,59 @@ func _game_update(dt: float) -> void:
 	_update_particles(dt)
 
 
+func _start_reload() -> void:
+	overheated = true
+	reload_t = RELOAD_TIME
+	heat = 1.0
+	synth.reload()
+	_popup(uni.x, uni.y - 110, "Reloading…", Color("9adcff"))
+
+
+func _beam_origin() -> Vector2:
+	if vertical:
+		return Vector2(uni.x, uni.y - 70)
+	return Vector2(uni.x + 52, uni.y - 18)
+
+
+# Heat, reload and the auto eye-beam. Sets fire_ok for the two fire sites.
+func _tick_weapons(dt: float) -> void:
+	var want_fire := state == "play" and (pointer_down or Input.is_action_pressed("fire"))
+	if overheated:
+		reload_t -= dt
+		heat = clampf(reload_t / RELOAD_TIME, 0.0, 1.0)
+		if reload_t <= 0:
+			overheated = false
+			heat = 0.0
+			synth.ready()
+	elif not want_fire:
+		heat = maxf(0.0, heat - dt / (HEAT_TIME * 0.5))
+	fire_ok = want_fire and not overheated
+	if state != "play":
+		return
+	if beam_t > 0:
+		beam_t -= dt
+		_beam_hit()
+		if beam_t <= 0:
+			beam_cd = BEAM_PERIOD - BEAM_DUR
+	elif beam_cd > 0:
+		beam_cd -= dt
+		if beam_cd <= 0:
+			beam_t = BEAM_DUR
+			synth.beam()
+			_popup(uni.x, uni.y - 130, "EYE BEAM!", Color("ff4d5e"))
+
+
+func _beam_hit() -> void:
+	for c in clouds:
+		if c.dead:
+			continue
+		var in_beam: bool = (absf(c.x - uni.x) < 80 and c.y < uni.y) if vertical else (c.x > uni.x - 20 and absf(c.y - (uni.y - 18)) < 70)
+		if in_beam:
+			c.dead = true
+			score += 25
+			_burst(c.x, c.y, 24, [Color.WHITE, Color("ff4d5e"), Color("ffd23f")], 260)
+
+
 func _roll_cloud_kind(c: StormCloud) -> void:
 	var roll := randf()
 	c.zappy = randf() < 1.0 / 9.0
@@ -847,12 +916,15 @@ func _game_overhead(dt: float) -> void:
 		return
 
 	# Firing upward.
-	if (pointer_down or Input.is_action_pressed("fire")) and fire_cooldown <= 0:
+	if (pointer_down or Input.is_action_pressed("fire")) and fire_ok and fire_cooldown <= 0:
 		var l := Laser.new()
 		l.x = uni.x; l.y = uni.y - 70
 		l.c = RAINBOW[lasers.size() % 6]
 		lasers.append(l)
-		fire_cooldown = 0.18
+		fire_cooldown = FIRE_INTERVAL
+		heat += FIRE_INTERVAL / HEAT_TIME
+		if heat >= 1.0:
+			_start_reload()
 		synth.laser()
 
 	# Spawning from the top.
@@ -1698,6 +1770,15 @@ func _draw_hud() -> void:
 	for i in 3:
 		draw_colored_polygon(_heart_poly(34 + i * 34, 76, 15), Color("ff4f9a") if i < hearts else Color(1, 1, 1, 0.35))
 	_stroke_text(Vector2(22, 112), "Level %d" % level, 16, Color("ffd9ef"), HORIZONTAL_ALIGNMENT_LEFT, 4)
+	# Horn heat bar + eye-beam charge pip.
+	draw_rect(Rect2(22, 120, 110, 8), Color(1, 1, 1, 0.25))
+	var heat_col := Color("ff4d5e") if overheated else Color("ffd23f")
+	draw_rect(Rect2(22, 120, 110 * clampf(heat, 0.0, 1.0), 8), heat_col)
+	var beam_k := 1.0 if beam_t > 0 else 1.0 - clampf(beam_cd / BEAM_PERIOD, 0.0, 1.0)
+	draw_rect(Rect2(22, 132, 110, 6), Color(1, 1, 1, 0.25))
+	draw_rect(Rect2(22, 132, 110 * beam_k, 6), Color("ff4d5e"))
+	if overheated and int(t * 4) % 2 == 0:
+		_stroke_text(Vector2(22, 150), "RELOADING…", 16, Color("9adcff"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	if combo > 1:
 		_stroke_text(Vector2(VW / 2, 40), "Combo x%d" % combo, 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
 	if level_banner > 0 and state == "play":
@@ -1751,6 +1832,16 @@ func _draw() -> void:
 			glow.a = 0.35
 			draw_line(Vector2(l.x - 44, l.y), Vector2(l.x, l.y), glow, 7, true)
 			draw_line(Vector2(l.x - 30, l.y), Vector2(l.x, l.y), Color.WHITE, 3, true)
+
+	# Eye beam: thick red lance with a white-hot core, flickering hard.
+	if beam_t > 0 and state == "play":
+		var o := _beam_origin()
+		var fl := 11.0 + 4.0 * sin(t * 40.0)
+		var far := Vector2(o.x, -40) if vertical else Vector2(W + 40, o.y)
+		draw_line(o, far, Color(1, 0.15, 0.2, 0.35), fl + 9, true)
+		draw_line(o, far, Color(1, 0.3, 0.35, 0.9), fl, true)
+		draw_line(o, far, Color.WHITE, 4, true)
+		draw_circle(o, 13, Color(1, 0.4, 0.45, 0.9))
 
 	if vertical:
 		_draw_pony_top()

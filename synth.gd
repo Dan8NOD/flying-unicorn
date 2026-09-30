@@ -104,7 +104,7 @@ func _variant_stream(key: String) -> AudioStream:
 	return s
 
 
-func _play(key: String, notes: Array, pitch := 1.0) -> void:
+func _play(key: String, notes: Array, pitch := 1.0, vol := 0.0) -> void:
 	if muted:
 		return
 	var v := _variant_stream(key)
@@ -113,10 +113,12 @@ func _play(key: String, notes: Array, pitch := 1.0) -> void:
 			if not p.playing:
 				p.stream = v
 				p.pitch_scale = pitch
+				p.volume_db = vol
 				p.play()
 				return
 		players[0].stream = v
 		players[0].pitch_scale = pitch
+		players[0].volume_db = vol
 		players[0].play()
 		return
 	var f := _file_stream(key)
@@ -125,10 +127,12 @@ func _play(key: String, notes: Array, pitch := 1.0) -> void:
 			if not p.playing:
 				p.stream = f
 				p.pitch_scale = pitch
+				p.volume_db = vol
 				p.play()
 				return
 		players[0].stream = f
 		players[0].pitch_scale = pitch
+		players[0].volume_db = vol
 		players[0].play()
 		return
 	if not _cache.has(key):
@@ -137,16 +141,18 @@ func _play(key: String, notes: Array, pitch := 1.0) -> void:
 		if not p.playing:
 			p.stream = _cache[key]
 			p.pitch_scale = pitch
+			p.volume_db = vol
 			p.play()
 			return
 	# all busy: steal the first
 	players[0].stream = _cache[key]
 	players[0].pitch_scale = pitch
+	players[0].volume_db = vol
 	players[0].play()
 
 # ─── sfx ────────────────────────────────────────────────────────────────────
 func laser() -> void:
-	_play("laser", [{ "f": 1200.0, "dur": 0.09, "wave": Wave.SQUARE, "vol": 0.035, "slide": -700.0 }])
+	_play("laser", [{ "f": 1200.0, "dur": 0.09, "wave": Wave.SQUARE, "vol": 0.035, "slide": -700.0 }], 1.0, -8.0)
 
 func ring(combo: int) -> void:
 	var b := 520.0 + mini(combo, 12) * 40.0
@@ -191,6 +197,18 @@ func level_up() -> void:
 
 func thunder() -> void:
 	_play("thunder", [{ "f": 90.0, "dur": 0.6, "wave": Wave.SINE, "vol": 0.14, "slide": -40.0 }])
+
+func reload() -> void:
+	_play("reload1", [
+		{ "f": 500.0, "dur": 0.5, "wave": Wave.SINE, "vol": 0.1, "slide": 900.0 },
+		{ "f": 1400.0, "dur": 0.12, "wave": Wave.TRIANGLE, "vol": 0.12, "delay": 0.55 },
+	])
+
+func beam() -> void:
+	_play("beam1", [{ "f": 140.0, "dur": 1.2, "wave": Wave.SAWTOOTH, "vol": 0.09, "slide": 60.0 }])
+
+func ready() -> void:
+	_play("ready", [{ "f": 880.0, "dur": 0.1, "wave": Wave.TRIANGLE, "vol": 0.1 }])
 
 
 # Looping ambience beds on dedicated players (never stolen by one-shots).

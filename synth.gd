@@ -81,8 +81,41 @@ func _file_stream(key: String) -> AudioStream:
 	return null
 
 
+# Numbered variants rotate for variety: laser1/laser2 alternate per
+# shot, thunder1/thunder2 pick at random per strike.
+var _rr := {}
+
+
+func _variant_stream(key: String) -> AudioStream:
+	var variants: Array = []
+	for n in range(1, 10):
+		var path := "res://audio/%s%d.mp3" % [key, n]
+		if ResourceLoader.exists(path):
+			variants.append(path)
+	if variants.is_empty():
+		return null
+	var i := int(_rr.get(key, 0))
+	_rr[key] = i + 1
+	var pick: String = variants[randi() % variants.size()] if key == "thunder" else variants[i % variants.size()]
+	if _files.has(pick):
+		return _files[pick]
+	var s: AudioStream = load(pick)
+	_files[pick] = s
+	return s
+
+
 func _play(key: String, notes: Array) -> void:
 	if muted:
+		return
+	var v := _variant_stream(key)
+	if v:
+		for p in players:
+			if not p.playing:
+				p.stream = v
+				p.play()
+				return
+		players[0].stream = v
+		players[0].play()
 		return
 	var f := _file_stream(key)
 	if f:

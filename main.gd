@@ -689,9 +689,7 @@ func _game_update(dt: float) -> void:
 				if r.gold: synth.gold()
 				else: synth.ring(combo)
 				if rings_passed % 10 == 0:
-					level += 1; speed *= 1.1; level_banner = 2
-					synth.level_up()
-					_set_level_sky()
+					_level_up()
 			else:
 				r.result = "miss"
 				if combo > 1:
@@ -755,11 +753,16 @@ func _game_update(dt: float) -> void:
 
 func _roll_cloud_kind(c: StormCloud) -> void:
 	var roll := randf()
-	if level >= 3 and roll < 0.15:
+	var gust_odds := 0.0
+	if level >= 3:
+		gust_odds = 0.15 + 0.02 * mini(level - 3, 5)
+	if level >= 3 and roll < gust_odds:
 		c.gust = true
 		c.hp = 1
 	elif level >= 2 and roll < 0.5:
 		c.rain = true
+	if level >= 5 and randf() < 0.3:
+		c.hp = 2
 
 
 # Rain patter while a rain cloud is alive; wind bed through every round.
@@ -789,7 +792,7 @@ func _spawn_ring_top() -> void:
 	var rad := 46.0 if r.gold else 58.0
 	r.rx = rad
 	r.ry = rad
-	r.bob = randf_range(20, 40) if level >= 3 and randf() < 0.5 else 0.0
+	r.bob = randf_range(20, 40 + 8 * mini(level - 3, 4)) if (level >= 3 and randf() < 0.5) or level >= 6 else 0.0
 	r.phase = randf_range(0, 6)
 	rings.append(r)
 
@@ -887,9 +890,7 @@ func _game_overhead(dt: float) -> void:
 				if r.gold: synth.gold()
 				else: synth.ring(combo)
 				if rings_passed % 10 == 0:
-					level += 1; speed *= 1.1; level_banner = 2
-					synth.level_up()
-					_set_level_sky()
+					_level_up()
 			else:
 				r.result = "miss"
 				if combo > 1:
@@ -975,7 +976,7 @@ func _spawn_ring() -> void:
 	r.base_y = r.y
 	last_ring_y = r.y
 	r.ry = 50.0 if r.gold else 62.0
-	r.bob = randf_range(30, 60) if level >= 3 and randf() < 0.5 else 0.0
+	r.bob = randf_range(30, 60 + 8 * mini(level - 3, 4)) if (level >= 3 and randf() < 0.5) or level >= 6 else 0.0
 	r.phase = randf_range(0, 6)
 	r.x = W + 60
 	rings.append(r)
@@ -1176,14 +1177,37 @@ func _gradient_tex(colors: Array, locs: Array, w := 8, h := 270) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
+const LEVEL_NAMES := ["Blueberry Skies", "Sunset Glow", "Dusky Dreams", "Starry Night", "Northern Lights", "Candy Storm", "Cotton Candy", "Rainbow Road"]
+
+
+func _sky_pal() -> int:
+	return (level - 1) % 8
+
+
+func _sky_is_night() -> bool:
+	return _sky_pal() in [2, 3, 4]
+
+
 func _sky_colors() -> Array:
 	var palettes := [
 		["6ec8ff", "b9e6ff", "ffe3f3"],
 		["8a7cff", "ff9ccf", "ffd6a0"],
 		["4b3aa8", "b566d9", "ff9cc2"],
 		["241a66", "5a3aa8", "c46fd4"],
+		["0e2a52", "1f7a6d", "7df0c8"],
+		["ff6f91", "c65bd4", "5a2a8a"],
+		["ffb3d9", "ffd6ec", "fff4fa"],
+		["7fe3ff", "d6b3ff", "ffe9a8"],
 	]
-	return palettes[mini(level - 1, 3) % 4]
+	return palettes[_sky_pal()]
+
+
+func _level_up() -> void:
+	level += 1
+	speed = 260.0 * pow(1.07, mini(level - 1, 14))
+	level_banner = 2.4
+	synth.level_up()
+	_set_level_sky()
 
 
 func _set_level_sky() -> void:
@@ -1209,7 +1233,7 @@ func _puff(x: float, y: float, s: float) -> void:
 func _draw_background(dt: float) -> void:
 	draw_texture_rect(sky_tex, Rect2(0, 0, W, H), false)
 
-	if level >= 3:
+	if _sky_is_night():
 		for s in stars:
 			var a: float = 0.4 + 0.4 * sin(t * 2 + s.p)
 			draw_circle(Vector2(s.x, s.y), s.r, Color(1, 1, 1, a))
@@ -1220,7 +1244,7 @@ func _draw_background(dt: float) -> void:
 		draw_circle(sp, 3.5, Color(1, 1, 1, sa))
 
 	# Sun / moon
-	var sun_col := Color(1, 250 / 255.0, 220 / 255.0, 0.9) if level >= 4 else Color(1, 238 / 255.0, 150 / 255.0, 0.9)
+	var sun_col := Color(1, 250 / 255.0, 220 / 255.0, 0.9) if _sky_is_night() else Color(1, 238 / 255.0, 150 / 255.0, 0.9)
 	draw_circle(Vector2(W - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
 	draw_circle(Vector2(W - 140, 90), 42, sun_col)
 
@@ -1446,7 +1470,7 @@ func _draw_over_bg() -> void:
 		var gx := (i + 0.5) * VW / 8 + sin(t * 0.3 + i * 2.1) * 20
 		var gy := fmod(i * VH / 8 + t * 15, VH + 200) - 100
 		_puff_alpha(gx, gy, 0.9, 0.5)
-	if level >= 3:
+	if _sky_is_night():
 		for s in stars:
 			var sx: float = s.x * VW / 960.0
 			var sy: float = s.y * VH / 540.0
@@ -1679,7 +1703,7 @@ func _draw_hud() -> void:
 		col.a = minf(1, level_banner)
 		var ol := INK
 		ol.a = minf(1, level_banner)
-		_stroke_text(Vector2(VW / 2, VH / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d!" % level, 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
+		_stroke_text(Vector2(VW / 2, VH / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d — %s!" % [level, LEVEL_NAMES[(level - 1) % 8]], 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
 	_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 	_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 	_draw_round_button(Vector2(VW - 141, 33), "⚙")

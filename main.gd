@@ -75,6 +75,9 @@ var reload_t := 0.0
 var fire_ok := true
 var beam_cd := BEAM_PERIOD
 var beam_t := 0.0
+var hill_x := 0.0
+var city_x := 0.0
+var ground_y := 0.0
 var last_ring_y := H / 2
 var hurt_timer := 0.0
 var flash := 0.0
@@ -872,6 +875,8 @@ func _spawn_ring_top() -> void:
 # on a fixed rail while the world scrolls down. Scoring, combo, levels,
 # clouds and pickups mirror the side view one-to-one.
 func _game_overhead(dt: float) -> void:
+	if state == "play" and not paused:
+		ground_y += speed * dt * 0.25
 	# Movement: strafe; rail height is fixed.
 	if state == "play":
 		if pointer_down:
@@ -1304,6 +1309,61 @@ func _puff(x: float, y: float, s: float) -> void:
 
 
 # ─── Background scenery ───────────────────────────────────────────────────
+func _hash01(n: int) -> float:
+	var x := (n * 1103515245 + 12345) & 0x7fffffff
+	return float(x) / 2147483647.0
+
+
+# Side view: slow countryside hills, quicker line-art city skyline.
+func _draw_scenery(dt: float) -> void:
+	var moving := state == "play" and not paused
+	if moving:
+		hill_x += speed * dt * 0.1
+		city_x += speed * dt * 0.28
+	var night := _sky_is_night()
+	for row in [0, 1]:
+		var w := 340.0
+		var rate: float = 1.0 + row * 0.4
+		var off := fmod(hill_x * rate, w)
+		var base := int(floor(hill_x * rate / w))
+		var k := -1
+		while k * w - off < W + w:
+			var idx := base + k
+			var cx := k * w - off
+			var r := 150.0 + _hash01(idx * 7 + row) * 90.0
+			var hcol := Color("2c6b58") if (row == 1 or night) else Color("7ed6a8")
+			if row == 1 and not night:
+				hcol = Color("5cb98a")
+			draw_circle(Vector2(cx, H + 30 - row * 40), r, hcol)
+			if _hash01(idx * 13 + row * 3) < 0.3:
+				var tx := cx + (_hash01(idx * 29) - 0.5) * 200.0
+				var ty: float = H - 60 - row * 40.0
+				draw_rect(Rect2(tx - 4, ty - 26, 8, 26), Color("2e2233") if night else Color("6b4a35"))
+				draw_circle(Vector2(tx, ty - 34), 15, Color("1d4a3a") if night else Color("2f9e5f"))
+			k += 1
+	var bw := 150.0
+	var coff := fmod(city_x, bw)
+	var cbase := int(floor(city_x / bw))
+	var bcol := Color("3d3d75") if night else Color("8fa3d9")
+	var j := -1
+	while j * bw - coff < W + bw:
+		var idx := cbase + j
+		var bx := j * bw - coff
+		var bh := 60.0 + _hash01(idx * 5 + 1) * 110.0
+		var bww: float = 86.0 + _hash01(idx * 5 + 3) * 44.0
+		var bx0 := bx + (bw - bww) / 2
+		draw_rect(Rect2(bx0, H - 40 - bh, bww, bh), bcol)
+		var rows := int((bh - 20) / 26)
+		for wy in range(rows):
+			for wx in range(3):
+				if _hash01(idx * 31 + wy * 7 + wx) < (0.7 if night else 0.25):
+					var wcol := Color("ffe9a8") if night else Color(1, 1, 1, 0.7)
+					draw_rect(Rect2(bx0 + 14 + wx * 30, H - 40 - bh + 12 + wy * 26, 12, 16), wcol)
+		if _hash01(idx * 11 + 2) < 0.4:
+			draw_line(Vector2(bx + bw / 2, H - 40 - bh), Vector2(bx + bw / 2, H - 56 - bh), bcol, 3, true)
+		j += 1
+
+
 func _draw_background(dt: float) -> void:
 	draw_texture_rect(sky_tex, Rect2(0, 0, W, H), false)
 
@@ -1328,6 +1388,8 @@ func _draw_background(dt: float) -> void:
 		var col: Color = RAINBOW[i]
 		col.a = 0.16
 		draw_polyline(pts, col, 9, true)
+
+	_draw_scenery(dt)
 
 	# Parallax clouds
 	var moving := state == "play" and not paused
@@ -1538,8 +1600,48 @@ func _draw_storm_cloud(c: StormCloud) -> void:
 
 
 # ─── Overhead portrait view ─────────────────────────────────────────────
+const QUILT := ["a8e6a3", "ffd6ec", "fff4b0", "b3ddff", "e6c3ff", "ffb3b3"]
+
+
+# Overhead: handmade patchwork quilt of fields far below, with a
+# winding river and the odd tiny farmhouse. Scrolls with the world.
+func _draw_quilt() -> void:
+	var cell := 140.0
+	var night := _sky_is_night()
+	var r0 := int(floor(ground_y / cell))
+	var off := fmod(ground_y, cell)
+	var j := -1
+	while j * cell - off < VH + cell:
+		var i := -1
+		while i * cell < VW + cell:
+			var idx := (r0 + j) * 131 + i * 17
+			var col := Color(QUILT[int(_hash01(idx) * 6) % 6])
+			if night:
+				col = col.darkened(0.55)
+			col.a = 0.3
+			var px := i * cell
+			var py := j * cell - off
+			draw_rect(Rect2(px + 3, py + 3, cell - 6, cell - 6), col)
+			var stitch := col.darkened(0.25)
+			stitch.a = 0.35
+			draw_rect(Rect2(px + 3, py + 3, cell - 6, cell - 6), stitch, false, 2.0)
+			if _hash01(idx * 3 + 5) < 0.12:
+				var hx := px + cell / 2 + sin(float(idx)) * 5.0
+				var hy := py + cell / 2
+				draw_rect(Rect2(hx - 14, hy - 6, 28, 20), Color(1, 1, 1, 0.5))
+				draw_colored_polygon([Vector2(hx - 18, hy - 6), Vector2(hx + 18, hy - 6), Vector2(hx, hy - 22)], Color(0.85, 0.27, 0.56, 0.5))
+			i += 1
+		j += 1
+	var y := -20.0
+	while y < VH + 20:
+		var rx := VW * 0.72 + sin((y + ground_y) * 0.012) * 90.0
+		draw_circle(Vector2(rx, y), 17, Color(0.45, 0.7, 1.0, 0.3))
+		y += 22.0
+
+
 func _draw_over_bg() -> void:
 	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
+	_draw_quilt()
 	for i in 8:
 		var gx := (i + 0.5) * VW / 8 + sin(t * 0.3 + i * 2.1) * 20
 		var gy := fmod(i * VH / 8 + t * 15, VH + 200) - 100

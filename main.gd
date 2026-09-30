@@ -15,6 +15,28 @@ var RAINBOW: Array[Color] = []
 # and art were authored in.
 var VW := 960.0
 var VH := 540.0
+# Portrait mode: the 960x540 world is drawn rotated so travel points up.
+var vertical := false
+# Current sky top color, also used to paint portrait margin bars.
+var sky_top := Color("6ec8ff")
+# Animated orientation: the world eases between landscape and portrait over
+# TRANS_DUR while gameplay stays frozen, so an accidental tilt never
+# whips the playfield around mid-flight.
+var view_t := 0.0
+var view_target := 0.0
+var transitioning := false
+const TRANS_DUR := 0.9
+# Tilt steering (accelerometer, calibrated when switched on).
+var tilt_enabled := false
+var tilt_base := Vector3.ZERO
+const TILT_GAIN := 2.2
+const TILT_DEADZONE := 0.08
+# Settings card state and its test hook.
+var settings_open := false
+var _btn_tilt := Rect2()
+var _btn_close := Rect2()
+var _elapsed := 0.0
+var _shot_settings_at := -1.0
 
 # ─── Game state ───────────────────────────────────────────────────────────
 var state := "title"          # title | play | over
@@ -148,6 +170,7 @@ func _ready() -> void:
 	if cfg.load("user://flying_unicorn.cfg") == OK:
 		best = int(cfg.get_value("game", "best", 0))
 	var muted_saved = cfg.get_value("game", "muted", false)
+	tilt_enabled = bool(cfg.get_value("game", "tilt", false))
 	synth = SynthClass.new()
 	synth.muted = bool(muted_saved)
 	add_child(synth)
@@ -155,9 +178,9 @@ func _ready() -> void:
 	_read_viewport_size()
 	get_tree().root.size_changed.connect(_on_resize)
 	for i in 7:
-		bg_clouds.append({ "x": randf_range(0, VW), "y": randf_range(30, VH - 60), "s": randf_range(0.5, 1.1), "layer": i % 2 })
+		bg_clouds.append({ "x": randf_range(0, W), "y": randf_range(30, H - 60), "s": randf_range(0.5, 1.1), "layer": i % 2 })
 	for i in 40:
-		stars.append({ "x": randf_range(0, VW), "y": randf_range(0, VH * 0.6), "r": randf_range(0.6, 1.8), "p": randf_range(0, 6) })
+		stars.append({ "x": randf_range(0, W), "y": randf_range(0, H * 0.6), "r": randf_range(0.6, 1.8), "p": randf_range(0, 6) })
 
 	_layout()
 
@@ -182,13 +205,38 @@ func _parse_args() -> void:
 			_autostart = true
 		elif a.begins_with("--screenshot-title="):
 			_shot_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--shot-settings="):
+			_shot_settings_at = float(a.get_slice("=", 1))
 
 
 func _save_cfg() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "best", best)
 	cfg.set_value("game", "muted", synth.muted)
+	cfg.set_value("game", "tilt", tilt_enabled)
 	cfg.save("user://flying_unicorn.cfg")
+
+
+# Tilt steering from the accelerometer (public motion API, no private
+# access). Steers the same axis the finger steers, so it works in both
+# orientations. Baseline is captured when switched on; the sign is tuned
+# on device (one-line change in the return below if inverted).
+func _tilt_steer() -> float:
+	var a := Input.get_accelerometer()
+	if a.length() < 0.5:
+		return 0.0
+	var v := (a.x - tilt_base.x) * TILT_GAIN
+	if absf(v) < TILT_DEADZONE:
+		return 0.0
+	return clampf(v - signf(v) * TILT_DEADZONE, -1.0, 1.0)
+
+
+func _toggle_tilt() -> void:
+	tilt_enabled = not tilt_enabled
+	if tilt_enabled:
+		var a := Input.get_accelerometer()
+		tilt_base = a if a.length() > 0.5 else Vector3.ZERO
+	_save_cfg()
 
 
 # ─── Responsive layout ────────────────────────────────────────────────
@@ -204,25 +252,95 @@ func _on_resize() -> void:
 
 func _layout() -> void:
 	_read_viewport_size()
-	uni.x = maxf(110.0, VW * 0.2)
-	uni.y = clampf(uni.y, 70.0, VH - 60.0)
-	last_ring_y = clampf(last_ring_y, 90.0, VH - 110.0)
+	# Portrait screens play the same 960x540 world rotated 90 degrees, so
+	# gameplay tuning never forks: logic bounds stay in W/H, only the
+	# screen mapping changes.
+	vertical = VH > VW
+	uni.x = 190.0 if vertical else maxf(110.0, VW * 0.2)
+	uni.y = clampf(uni.y, 70.0, H - 60.0)
+	last_ring_y = clampf(last_ring_y, 90.0, H - 110.0)
 	# Cloud floor scallop polygon (period 80, drawn shifted by -off)
 	floor_poly = PackedVector2Array()
-	floor_poly.append(Vector2(-80, VH))
+	floor_poly.append(Vector2(-80, H))
 	var cx := -40.0
-	while cx <= VW + 160:
+	while cx <= W + 160:
 		for j in 12:
 			var a := PI + PI * float(j) / 11.0
-			floor_poly.append(Vector2(cx + 34 * cos(a), VH - 8 + 34 * sin(a)))
+			floor_poly.append(Vector2(cx + 34 * cos(a), H - 8 + 34 * sin(a)))
 		cx += 80
-	floor_poly.append(Vector2(VW + 160, VH))
+	floor_poly.append(Vector2(W + 160, H))
 	for cl in bg_clouds:
-		cl.x = clampf(cl.x, -140.0, VW + 200.0)
-		cl.y = clampf(cl.y, 30.0, VH - 60.0)
+		cl.x = clampf(cl.x, -140.0, W + 200.0)
+		cl.y = clampf(cl.y, 30.0, H - 60.0)
 	for st in stars:
-		st.x = clampf(st.x, 0.0, VW)
-		st.y = clampf(st.y, 0.0, VH * 0.6)
+		st.x = clampf(st.x, 0.0, W)
+		st.y = clampf(st.y, 0.0, H * 0.6)
+
+
+# Portrait world mapping: logic +x (travel) points at the top of the
+# screen. HUD, cards and buttons stay upright in screen space.
+# During a rotation the angle, scale and center all ease together.
+func _view_ease() -> float:
+	var t := clampf(view_t, 0.0, 1.0)
+	return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+
+
+func _view_theta() -> float:
+	return -PI / 2 * _view_ease()
+
+
+func _view_scale() -> float:
+	var e := _view_ease()
+	return lerpf(minf(1.0, minf(VW / 960.0, VH / 540.0)), minf(VW / 540.0, VH / 960.0), e)
+
+
+var _wxf_p := Vector2.ZERO
+var _wxf_r := 0.0
+var _wxf_s := Vector2.ONE
+
+
+func _world_begin() -> void:
+	if not vertical:
+		_wxf_p = Vector2.ZERO
+		_wxf_r = 0.0
+		_wxf_s = Vector2.ONE
+		return
+	var s := _view_scale()
+	var th := _view_theta()
+	_wxf_p = _world_center() - s * Vector2(480, 270).rotated(th)
+	_wxf_r = th
+	_wxf_s = Vector2(s, s)
+	_world_apply()
+
+
+func _world_end() -> void:
+	if vertical:
+		draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
+
+# Re-apply the world transform after a local pivot. draw_set_transform is
+# absolute, never composed, so every world-space pivot below must go
+# through _wxf and return through here.
+func _world_apply() -> void:
+	draw_set_transform(_wxf_p, _wxf_r, _wxf_s)
+
+
+func _wxf(pos: Vector2, rot: float, sc: Vector2) -> void:
+	draw_set_transform(_wxf_p + (_wxf_s * pos).rotated(_wxf_r), _wxf_r + rot, _wxf_s * sc)
+
+
+# Screen point the logic world centers on. Portrait sits below middle so
+# the camera looks over the top of her head at what's coming.
+func _world_center() -> Vector2:
+	var e := _view_ease()
+	return Vector2(VW / 2, VH / 2).lerp(Vector2(VW / 2, VH * 0.62), e)
+
+
+# Map a screen-space touch into world logic coordinates for steering.
+func _to_logic(vp: Vector2) -> Vector2:
+	var s := _view_scale()
+	var sc := _world_center()
+	return Vector2(480, 270) + ((vp - sc) / s).rotated(-_view_theta())
 
 
 # Cards are authored in the 960x540 design space. Returns [screen_center, fit]
@@ -301,10 +419,10 @@ func _add_joy_axis(action: String, axis: JoyAxis, value: float) -> void:
 func reset() -> void:
 	score = 0; hearts = 3; combo = 0; best_combo = 0; rings_passed = 0; level = 1; speed = 260
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
-	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = VH / 2
+	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
-	uni.y = VH / 2; uni.vy = 0
+	uni.y = H / 2; uni.vy = 0
 	_set_level_sky()
 
 
@@ -343,6 +461,20 @@ func _notification(what: int) -> void:
 # ─── Update ───────────────────────────────────────────────────────────────
 func _process(delta: float) -> void:
 	var dt: float = minf(0.05, delta)
+	_elapsed += delta
+	if _shot_settings_at >= 0 and _elapsed >= _shot_settings_at:
+		_shot_settings_at = -1
+		settings_open = true
+	# Gradual orientation tilt; gameplay freezes mid-spin so an
+	# accidental rotation never whips the playfield around.
+	var want := 1.0 if vertical else 0.0
+	if want != view_target:
+		view_target = want
+		transitioning = true
+	if transitioning:
+		view_t = move_toward(view_t, view_target, delta / TRANS_DUR)
+		if view_t == view_target:
+			transitioning = false
 
 	# Screenshot test hook
 	if _shot_at >= 0:
@@ -358,14 +490,14 @@ func _process(delta: float) -> void:
 		start()
 
 	if state == "title":
-		uni.y = VH / 2 + sin(title_ms / 600.0) * 40
+		uni.y = H / 2 + sin(title_ms / 600.0) * 40
 	if state == "over":
-		uni.y += (VH - 110 - uni.y) * minf(1, dt * 1.5)
+		uni.y += (H - 110 - uni.y) * minf(1, dt * 1.5)
 	if over_card_timer > 0:
 		over_card_timer -= dt
 		if over_card_timer <= 0 and state == "over":
 			over_card_visible = true
-	if not paused:
+	if not paused and not transitioning and not settings_open:
 		title_ms += dt * 1000
 		_game_update(dt)
 	queue_redraw()
@@ -381,7 +513,7 @@ func _game_update(dt: float) -> void:
 	# Movement: pointer steers toward finger; keys/stick/dpad accelerate
 	if state == "play":
 		if pointer_y != null:
-			var target: float = clampf(pointer_y, 50, VH - 60)
+			var target: float = clampf(pointer_y, 50, H - 60)
 			uni.vy += (target - uni.y) * 14 * dt
 			uni.vy *= pow(0.02, dt)
 		else:
@@ -391,14 +523,16 @@ func _game_update(dt: float) -> void:
 			if down: uni.vy += 1500 * dt
 			if not up and not down:
 				uni.vy *= pow(0.04, dt)
+			if tilt_enabled and not up and not down:
+				uni.vy += _tilt_steer() * 1500 * dt
 	else:
 		uni.vy *= pow(0.04, dt)
 	uni.vy = clampf(uni.vy, -520, 520)
 	uni.y += uni.vy * dt
 
 	# A magic pony never falls: bounce softly off the sky ceiling and cloud floor
-	if uni.y > VH - 60:
-		uni.y = VH - 60
+	if uni.y > H - 60:
+		uni.y = H - 60
 		uni.vy = -absf(uni.vy) * 0.5 - 60
 		if state == "play":
 			_burst(uni.x, uni.y + 34, 4, [Color.WHITE, Color("ffd9ef")], 120)
@@ -445,7 +579,7 @@ func _game_update(dt: float) -> void:
 		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
 	if hearts < 3 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
-		pk.x = VW + 40; pk.y = randf_range(90, VH - 120); pk.phase = randf_range(0, 6)
+		pk.x = W + 40; pk.y = randf_range(90, H - 120); pk.phase = randf_range(0, 6)
 		pickups.append(pk)
 
 	# Rings
@@ -479,7 +613,7 @@ func _game_update(dt: float) -> void:
 	# Lasers
 	for l in lasers:
 		l.x += 900 * dt
-	lasers = lasers.filter(func(l): return l.x < VW + 40 and not l.dead)
+	lasers = lasers.filter(func(l): return l.x < W + 40 and not l.dead)
 
 	# Storm clouds
 	for c in clouds:
@@ -538,19 +672,19 @@ func _horn_tip() -> Vector2:
 func _spawn_ring() -> void:
 	var r := Ring.new()
 	r.gold = randf() < 0.12
-	r.y = clampf(last_ring_y + randf_range(-170, 170), 90, VH - 110)
+	r.y = clampf(last_ring_y + randf_range(-170, 170), 90, H - 110)
 	r.base_y = r.y
 	last_ring_y = r.y
 	r.ry = 50.0 if r.gold else 62.0
 	r.bob = randf_range(30, 60) if level >= 3 and randf() < 0.5 else 0.0
 	r.phase = randf_range(0, 6)
-	r.x = VW + 60
+	r.x = W + 60
 	rings.append(r)
 
 
 func _spawn_cloud() -> void:
 	var c := StormCloud.new()
-	c.x = VW + 80; c.y = randf_range(80, VH - 120); c.phase = randf_range(0, 6)
+	c.x = W + 80; c.y = randf_range(80, H - 120); c.phase = randf_range(0, 6)
 	clouds.append(c)
 
 
@@ -588,7 +722,18 @@ func _press_at(vp: Vector2) -> void:
 	if vp.distance_to(Vector2(VW - 33, 33)) < 26:
 		toggle_pause()
 		return
+	if vp.distance_to(Vector2(VW - 141, 33)) < 26:
+		settings_open = not settings_open
+		return
 	var dp := _card_point(vp)
+	if settings_open:
+		if _btn_tilt.has_point(dp):
+			_toggle_tilt()
+			return
+		if _btn_close.has_point(dp):
+			settings_open = false
+			return
+		return
 	if state == "title":
 		if _btn_play.has_point(dp):
 			start()
@@ -608,7 +753,7 @@ func _press_at(vp: Vector2) -> void:
 			toggle_pause()
 			return
 	pointer_down = true
-	pointer_y = vp.y
+	pointer_y = _to_logic(vp).y
 
 
 func _input(event: InputEvent) -> void:
@@ -620,7 +765,7 @@ func _input(event: InputEvent) -> void:
 			pointer_y = null
 	elif event is InputEventScreenDrag:
 		if pointer_down:
-			pointer_y = _to_virtual(event.position).y
+			pointer_y = _to_logic(_to_virtual(event.position)).y
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_press_at(_to_virtual(event.position))
@@ -629,7 +774,7 @@ func _input(event: InputEvent) -> void:
 			pointer_y = null
 	elif event is InputEventMouseMotion:
 		if pointer_down:
-			pointer_y = _to_virtual(event.position).y
+			pointer_y = _to_logic(_to_virtual(event.position)).y
 
 
 # ─── Drawing helpers ──────────────────────────────────────────────────────
@@ -739,23 +884,24 @@ func _set_level_sky() -> void:
 	var cols: Array = []
 	for h in _sky_colors():
 		cols.append(Color(h))
+	sky_top = cols[0]
 	sky_tex = _gradient_tex(cols, [0.0, 0.6, 1.0])
 
 
 func _puff(x: float, y: float, s: float) -> void:
-	draw_set_transform(Vector2(x, y), 0, Vector2(s, s))
+	_wxf(Vector2(x, y), 0, Vector2(s, s))
 	_fill_ellipse(Vector2(0, 10), 70, 18, Color(210 / 255.0, 190 / 255.0, 1, 0.6))
 	draw_circle(Vector2(-40, 0), 22, Color.WHITE)
 	draw_circle(Vector2(-12, -14), 30, Color.WHITE)
 	draw_circle(Vector2(22, -6), 26, Color.WHITE)
 	draw_circle(Vector2(48, 4), 18, Color.WHITE)
 	draw_rect(Rect2(-40, 0, 88, 16), Color.WHITE)
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	_world_apply()
 
 
 # ─── Background scenery ───────────────────────────────────────────────────
 func _draw_background(dt: float) -> void:
-	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
+	draw_texture_rect(sky_tex, Rect2(0, 0, W, H), false)
 
 	if level >= 3:
 		for s in stars:
@@ -764,12 +910,12 @@ func _draw_background(dt: float) -> void:
 
 	# Sun / moon
 	var sun_col := Color(1, 250 / 255.0, 220 / 255.0, 0.9) if level >= 4 else Color(1, 238 / 255.0, 150 / 255.0, 0.9)
-	draw_circle(Vector2(VW - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
-	draw_circle(Vector2(VW - 140, 90), 42, sun_col)
+	draw_circle(Vector2(W - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
+	draw_circle(Vector2(W - 140, 90), 42, sun_col)
 
 	# Faint rainbow arch
 	for i in 6:
-		var pts := _arc_pts(VW * 0.35, VH + 120, VH * 0.67 - i * 9, VH * 0.67 - i * 9, PI * 1.08, PI * 1.92, 40)
+		var pts := _arc_pts(W * 0.35, H + 120, 360 - i * 9, 360 - i * 9, PI * 1.08, PI * 1.92, 40)
 		var col: Color = RAINBOW[i]
 		col.a = 0.16
 		draw_polyline(pts, col, 9, true)
@@ -780,22 +926,22 @@ func _draw_background(dt: float) -> void:
 		if moving or state == "title":
 			cl.x -= (0.35 if cl.layer else 0.18) * speed * dt * (0.4 if state == "title" else 1.0)
 		if cl.x < -140:
-			cl.x = VW + randf_range(40, 200)
-			cl.y = randf_range(30, VH - 60)
+			cl.x = W + randf_range(40, 200)
+			cl.y = randf_range(30, H - 60)
 		var old_a := 0.85 if cl.layer else 0.55
-		draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+		_world_apply()
 		# draw with alpha via modulated circles: puff uses fixed colors, wrap with canvas alpha
 		_puff_alpha(cl.x, cl.y, cl.s, old_a)
 
 	# Soft cloud floor — the reason she can never fall
 	var off := fmod(t * speed * 0.5, 80.0)
-	draw_set_transform(Vector2(-off, 0), 0, Vector2.ONE)
+	_wxf(Vector2(-off, 0), 0, Vector2.ONE)
 	draw_colored_polygon(floor_poly, Color(1, 1, 1, 0.9))
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	_world_apply()
 
 
 func _puff_alpha(x: float, y: float, s: float, a: float) -> void:
-	draw_set_transform(Vector2(x, y), 0, Vector2(s, s))
+	_wxf(Vector2(x, y), 0, Vector2(s, s))
 	_fill_ellipse(Vector2(0, 10), 70, 18, Color(210 / 255.0, 190 / 255.0, 1, 0.6 * a))
 	var w := Color(1, 1, 1, a)
 	draw_circle(Vector2(-40, 0), 22, w)
@@ -803,7 +949,7 @@ func _puff_alpha(x: float, y: float, s: float, a: float) -> void:
 	draw_circle(Vector2(22, -6), 26, w)
 	draw_circle(Vector2(48, 4), 18, w)
 	draw_rect(Rect2(-40, 0, 88, 16), w)
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	_world_apply()
 
 
 # ─── Unicorn ──────────────────────────────────────────────────────────────
@@ -817,10 +963,11 @@ func _wing_poly() -> PackedVector2Array:
 	return pts
 
 
-# Leaves the body transform active — draw_set_transform is absolute, not composed.
+# Body pivots compose with the world transform through _wxf and always
+# return through _world_apply — draw_set_transform is absolute, not composed.
 func _draw_wing(front: bool, flap: float, body_rot: float) -> void:
 	var wing_off := Vector2(4 if front else 10, -16).rotated(body_rot)
-	draw_set_transform(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65, Vector2.ONE)
 	draw_colored_polygon(_wing_poly(), Color("ffe3f1") if front else Color("f5c3dd"))
 	draw_polyline(_wing_poly(), Color("d9468f"), 2, true)
 
@@ -831,7 +978,7 @@ func _draw_unicorn() -> void:
 		return
 	var flap := sin(uni.flap)
 	var gallop := sin(t * 10)
-	draw_set_transform(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
 
 	# Rainbow tail
 	for i in 6:
@@ -840,7 +987,7 @@ func _draw_unicorn() -> void:
 		draw_polyline(pts, RAINBOW[i], 6, true)
 
 	_draw_wing(false, flap, uni.tilt)
-	draw_set_transform(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
 
 	# Legs (galloping through the air)
 	var legs := [[-22, 1], [-12, -1], [18, -1], [28, 1]]
@@ -880,7 +1027,7 @@ func _draw_unicorn() -> void:
 	draw_colored_polygon(cat, Color("ffd23f"))
 
 	# Head
-	draw_set_transform(Vector2(uni.x + 50 * cos(uni.tilt) + 36 * sin(uni.tilt), uni.y + 50 * sin(uni.tilt) - 36 * cos(uni.tilt)), uni.tilt + 0.35, Vector2.ONE)
+	_wxf(Vector2(uni.x + 50 * cos(uni.tilt) + 36 * sin(uni.tilt), uni.y + 50 * sin(uni.tilt) - 36 * cos(uni.tilt)), uni.tilt + 0.35, Vector2.ONE)
 	_fill_ellipse(Vector2.ZERO, 18, 14, Color("ff9ccf"))
 	draw_polyline(_arc_pts(0, 0, 18, 14, 0, TAU, 28), Color("d9468f"), 2.5, true)
 	_fill_ellipse(Vector2(16, 6), 12, 9, Color("ff9ccf"))
@@ -897,7 +1044,7 @@ func _draw_unicorn() -> void:
 	draw_polyline(PackedVector2Array([Vector2(-8, -10), Vector2(-10, -24), Vector2(-1, -13), Vector2(-8, -10)]), Color("d9468f"), 2, true)
 
 	# Golden horn (tip at local 64,-64) — back in body space
-	draw_set_transform(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
+	_wxf(Vector2(uni.x, uni.y), uni.tilt, Vector2.ONE)
 	var glow := 1.0 if fire_cooldown > 0.08 else 0.5 + 0.3 * sin(t * 6)
 	draw_circle(Vector2(64, -64), 10, Color(1, 240 / 255.0, 160 / 255.0, 0.35 * glow))
 	draw_colored_polygon(PackedVector2Array([Vector2(48, -48), Vector2(64, -64), Vector2(56, -44)]), Color("ffd23f"))
@@ -910,7 +1057,7 @@ func _draw_unicorn() -> void:
 		draw_circle(Vector2(42 - i * 6, -44 + i * 8 + sin(t * 9 + i) * 1.5), 7, RAINBOW[i])
 
 	_draw_wing(true, flap, uni.tilt)
-	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	_world_apply()
 
 
 # ─── Rings ────────────────────────────────────────────────────────────────
@@ -1066,6 +1213,28 @@ func _draw_pause_card() -> void:
 	_btn_resume = _play_button(Vector2(W / 2, H / 2 - 110 + 148), "Keep Flying")
 
 
+func _toggle_button(center: Vector2, text: String, on: bool) -> Rect2:
+	var rect := Rect2(center - Vector2(55, 20), Vector2(110, 40))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("5fe08b") if on else Color(93 / 255.0, 99 / 255.0, 132 / 255.0, 1)
+	sb.border_color = Color.WHITE
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(20)
+	draw_style_box(sb, rect)
+	_text_c(center + Vector2(0, 5), text, 16, Color.WHITE)
+	return rect
+
+
+func _draw_settings_card() -> void:
+	_card(Rect2(W / 2 - 200, H / 2 - 150, 400, 300))
+	_rainbow_title(W / 2, H / 2 - 150 + 44, "Settings", 36)
+	_text_c(Vector2(W / 2, H / 2 - 150 + 82), "Hold your device how you play,", 14, Color("ffd9ef"))
+	_text_c(Vector2(W / 2, H / 2 - 150 + 102), "then switch tilt on.", 14, Color("ffd9ef"))
+	draw_string(font, Vector2(W / 2 - 170, H / 2 - 150 + 148), "Tilt steering", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+	_btn_tilt = _toggle_button(Vector2(W / 2 + 105, H / 2 - 150 + 140), "On" if tilt_enabled else "Off", tilt_enabled)
+	_btn_close = _play_button(Vector2(W / 2, H / 2 - 150 + 216), "Close")
+
+
 func _draw_round_button(center: Vector2, glyph: String) -> void:
 	draw_circle(center, 21, Color(42 / 255.0, 22 / 255.0, 80 / 255.0, 0.55))
 	draw_arc(center, 21, 0, TAU, 32, Color(1, 1, 1, 0.7), 2, true)
@@ -1088,6 +1257,9 @@ func _draw_hud() -> void:
 		_stroke_text(Vector2(VW / 2, VH / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d!" % level, 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
 	_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 	_draw_round_button(Vector2(VW - 33, 33), "❚❚")
+	_draw_round_button(Vector2(VW - 141, 33), "⚙")
+	if transitioning and state == "play":
+		_pill(Vector2(VW / 2, 76), "TURNING…")
 
 
 # ─── Draw ─────────────────────────────────────────────────────────────────
@@ -1095,6 +1267,10 @@ func _draw() -> void:
 	var dt := get_process_delta_time()
 	if paused:
 		dt = 0
+	if vertical:
+		# Paint the fit margins first; the world layer covers the rest.
+		draw_rect(Rect2(0, 0, VW, VH), sky_top)
+	_world_begin()
 	_draw_background(dt)
 
 	for r in rings:
@@ -1129,6 +1305,7 @@ func _draw() -> void:
 		var col: Color = p.color
 		col.a = minf(1, p.life * 1.5)
 		_stroke_text(Vector2(p.x, p.y), p.text, 20, col, HORIZONTAL_ALIGNMENT_CENTER, 4, Color(42 / 255.0, 22 / 255.0, 80 / 255.0, 0.7))
+	_world_end()
 
 	if flash > 0:
 		draw_rect(Rect2(0, 0, VW, VH), Color(1, 1, 1, minf(1, flash * 1.6)))
@@ -1147,6 +1324,10 @@ func _draw() -> void:
 	elif state == "play" and paused:
 		_card_begin()
 		_draw_pause_card()
+		_card_end()
+	if settings_open:
+		_card_begin()
+		_draw_settings_card()
 		_card_end()
 
 

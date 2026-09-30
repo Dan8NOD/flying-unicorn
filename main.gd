@@ -10,6 +10,12 @@ const INK := Color(42.0 / 255, 22.0 / 255, 80.0 / 255, 0.75)
 
 var RAINBOW: Array[Color] = []
 
+# Live viewport size in points. Follows rotation and window resizes; all
+# layout bounds read VW/VH. W/H stay as the 960x540 design space the cards
+# and art were authored in.
+var VW := 960.0
+var VH := 540.0
+
 # ─── Game state ───────────────────────────────────────────────────────────
 var state := "title"          # title | play | over
 var paused := false
@@ -146,21 +152,14 @@ func _ready() -> void:
 	synth.muted = bool(muted_saved)
 	add_child(synth)
 
+	_read_viewport_size()
+	get_tree().root.size_changed.connect(_on_resize)
 	for i in 7:
-		bg_clouds.append({ "x": randf_range(0, W), "y": randf_range(30, H - 60), "s": randf_range(0.5, 1.1), "layer": i % 2 })
+		bg_clouds.append({ "x": randf_range(0, VW), "y": randf_range(30, VH - 60), "s": randf_range(0.5, 1.1), "layer": i % 2 })
 	for i in 40:
-		stars.append({ "x": randf_range(0, W), "y": randf_range(0, H * 0.6), "r": randf_range(0.6, 1.8), "p": randf_range(0, 6) })
+		stars.append({ "x": randf_range(0, VW), "y": randf_range(0, VH * 0.6), "r": randf_range(0.6, 1.8), "p": randf_range(0, 6) })
 
-	# Cloud floor scallop polygon (period 80, drawn shifted by -off)
-	floor_poly = PackedVector2Array()
-	floor_poly.append(Vector2(-80, H))
-	var cx := -40.0
-	while cx <= W + 160:
-		for j in 12:
-			var a := PI + PI * float(j) / 11.0
-			floor_poly.append(Vector2(cx + 34 * cos(a), H - 8 + 34 * sin(a)))
-		cx += 80
-	floor_poly.append(Vector2(W + 160, H))
+	_layout()
 
 	btn_tex = _rounded_gradient_tex(Color("ff6fb5"), Color("b77bff"), Vector2i(190, 48), 24)
 	_set_level_sky()
@@ -190,6 +189,63 @@ func _save_cfg() -> void:
 	cfg.set_value("game", "best", best)
 	cfg.set_value("game", "muted", synth.muted)
 	cfg.save("user://flying_unicorn.cfg")
+
+
+# ─── Responsive layout ────────────────────────────────────────────────
+func _read_viewport_size() -> void:
+	var s := get_viewport_rect().size
+	VW = maxf(320.0, s.x)
+	VH = maxf(320.0, s.y)
+
+
+func _on_resize() -> void:
+	_layout()
+
+
+func _layout() -> void:
+	_read_viewport_size()
+	uni.x = maxf(110.0, VW * 0.2)
+	uni.y = clampf(uni.y, 70.0, VH - 60.0)
+	last_ring_y = clampf(last_ring_y, 90.0, VH - 110.0)
+	# Cloud floor scallop polygon (period 80, drawn shifted by -off)
+	floor_poly = PackedVector2Array()
+	floor_poly.append(Vector2(-80, VH))
+	var cx := -40.0
+	while cx <= VW + 160:
+		for j in 12:
+			var a := PI + PI * float(j) / 11.0
+			floor_poly.append(Vector2(cx + 34 * cos(a), VH - 8 + 34 * sin(a)))
+		cx += 80
+	floor_poly.append(Vector2(VW + 160, VH))
+	for cl in bg_clouds:
+		cl.x = clampf(cl.x, -140.0, VW + 200.0)
+		cl.y = clampf(cl.y, 30.0, VH - 60.0)
+	for st in stars:
+		st.x = clampf(st.x, 0.0, VW)
+		st.y = clampf(st.y, 0.0, VH * 0.6)
+
+
+# Cards are authored in the 960x540 design space. Returns [screen_center, fit]
+# so a card always fits with a 24pt margin, at 1:1 whenever it fits.
+func _card_fit() -> Array:
+	var c := Vector2(VW / 2, VH / 2)
+	var s := minf(1.0, minf((VW - 24.0) / 460.0, (VH - 24.0) / 520.0))
+	return [c, s]
+
+
+func _card_begin() -> void:
+	var f := _card_fit()
+	draw_set_transform(f[0] - f[1] * Vector2(480, 270), 0, Vector2(f[1], f[1]))
+
+
+func _card_end() -> void:
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+
+
+# Map a screen-space touch into card design coordinates for hit-testing.
+func _card_point(vp: Vector2) -> Vector2:
+	var f := _card_fit()
+	return Vector2(480, 270) + (vp - f[0]) / f[1]
 
 
 func _setup_input() -> void:
@@ -245,10 +301,10 @@ func _add_joy_axis(action: String, axis: JoyAxis, value: float) -> void:
 func reset() -> void:
 	score = 0; hearts = 3; combo = 0; best_combo = 0; rings_passed = 0; level = 1; speed = 260
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
-	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
+	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = VH / 2
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
-	uni.y = H / 2; uni.vy = 0
+	uni.y = VH / 2; uni.vy = 0
 	_set_level_sky()
 
 
@@ -302,9 +358,9 @@ func _process(delta: float) -> void:
 		start()
 
 	if state == "title":
-		uni.y = H / 2 + sin(title_ms / 600.0) * 40
+		uni.y = VH / 2 + sin(title_ms / 600.0) * 40
 	if state == "over":
-		uni.y += (H - 110 - uni.y) * minf(1, dt * 1.5)
+		uni.y += (VH - 110 - uni.y) * minf(1, dt * 1.5)
 	if over_card_timer > 0:
 		over_card_timer -= dt
 		if over_card_timer <= 0 and state == "over":
@@ -325,7 +381,7 @@ func _game_update(dt: float) -> void:
 	# Movement: pointer steers toward finger; keys/stick/dpad accelerate
 	if state == "play":
 		if pointer_y != null:
-			var target: float = clampf(pointer_y, 50, H - 60)
+			var target: float = clampf(pointer_y, 50, VH - 60)
 			uni.vy += (target - uni.y) * 14 * dt
 			uni.vy *= pow(0.02, dt)
 		else:
@@ -341,8 +397,8 @@ func _game_update(dt: float) -> void:
 	uni.y += uni.vy * dt
 
 	# A magic pony never falls: bounce softly off the sky ceiling and cloud floor
-	if uni.y > H - 60:
-		uni.y = H - 60
+	if uni.y > VH - 60:
+		uni.y = VH - 60
 		uni.vy = -absf(uni.vy) * 0.5 - 60
 		if state == "play":
 			_burst(uni.x, uni.y + 34, 4, [Color.WHITE, Color("ffd9ef")], 120)
@@ -389,7 +445,7 @@ func _game_update(dt: float) -> void:
 		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
 	if hearts < 3 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
-		pk.x = W + 40; pk.y = randf_range(90, H - 120); pk.phase = randf_range(0, 6)
+		pk.x = VW + 40; pk.y = randf_range(90, VH - 120); pk.phase = randf_range(0, 6)
 		pickups.append(pk)
 
 	# Rings
@@ -423,7 +479,7 @@ func _game_update(dt: float) -> void:
 	# Lasers
 	for l in lasers:
 		l.x += 900 * dt
-	lasers = lasers.filter(func(l): return l.x < W + 40 and not l.dead)
+	lasers = lasers.filter(func(l): return l.x < VW + 40 and not l.dead)
 
 	# Storm clouds
 	for c in clouds:
@@ -482,19 +538,19 @@ func _horn_tip() -> Vector2:
 func _spawn_ring() -> void:
 	var r := Ring.new()
 	r.gold = randf() < 0.12
-	r.y = clampf(last_ring_y + randf_range(-170, 170), 90, H - 110)
+	r.y = clampf(last_ring_y + randf_range(-170, 170), 90, VH - 110)
 	r.base_y = r.y
 	last_ring_y = r.y
 	r.ry = 50.0 if r.gold else 62.0
 	r.bob = randf_range(30, 60) if level >= 3 and randf() < 0.5 else 0.0
 	r.phase = randf_range(0, 6)
-	r.x = W + 60
+	r.x = VW + 60
 	rings.append(r)
 
 
 func _spawn_cloud() -> void:
 	var c := StormCloud.new()
-	c.x = W + 80; c.y = randf_range(80, H - 120); c.phase = randf_range(0, 6)
+	c.x = VW + 80; c.y = randf_range(80, VH - 120); c.phase = randf_range(0, 6)
 	clouds.append(c)
 
 
@@ -524,30 +580,31 @@ func _to_virtual(screen_pos: Vector2) -> Vector2:
 
 
 func _press_at(vp: Vector2) -> void:
-	# UI buttons first
-	if vp.distance_to(Vector2(W - 87, 33)) < 26:
+	# UI buttons first (screen space, above the card layer)
+	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
 		synth.muted = not synth.muted
 		_save_cfg()
 		return
-	if vp.distance_to(Vector2(W - 33, 33)) < 26:
+	if vp.distance_to(Vector2(VW - 33, 33)) < 26:
 		toggle_pause()
 		return
+	var dp := _card_point(vp)
 	if state == "title":
-		if _btn_play.has_point(vp):
+		if _btn_play.has_point(dp):
 			start()
 			return
-		if _teaser_rect.has_point(vp):
+		if _teaser_rect.has_point(dp):
 			OS.shell_open("https://fatcatcruz.itch.io/fat-cat-cruz")
 			return
 	if state == "over" and over_card_visible:
-		if _btn_again.has_point(vp):
+		if _btn_again.has_point(dp):
 			start()
 			return
-		if _teaser_over_rect.has_point(vp):
+		if _teaser_over_rect.has_point(dp):
 			OS.shell_open("https://fatcatcruz.itch.io/fat-cat-cruz")
 			return
 	if state == "play" and paused:
-		if _btn_resume.has_point(vp):
+		if _btn_resume.has_point(dp):
 			toggle_pause()
 			return
 	pointer_down = true
@@ -698,7 +755,7 @@ func _puff(x: float, y: float, s: float) -> void:
 
 # ─── Background scenery ───────────────────────────────────────────────────
 func _draw_background(dt: float) -> void:
-	draw_texture_rect(sky_tex, Rect2(0, 0, W, H), false)
+	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
 
 	if level >= 3:
 		for s in stars:
@@ -707,12 +764,12 @@ func _draw_background(dt: float) -> void:
 
 	# Sun / moon
 	var sun_col := Color(1, 250 / 255.0, 220 / 255.0, 0.9) if level >= 4 else Color(1, 238 / 255.0, 150 / 255.0, 0.9)
-	draw_circle(Vector2(W - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
-	draw_circle(Vector2(W - 140, 90), 42, sun_col)
+	draw_circle(Vector2(VW - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
+	draw_circle(Vector2(VW - 140, 90), 42, sun_col)
 
 	# Faint rainbow arch
 	for i in 6:
-		var pts := _arc_pts(W * 0.35, H + 120, 360 - i * 9, 360 - i * 9, PI * 1.08, PI * 1.92, 40)
+		var pts := _arc_pts(VW * 0.35, VH + 120, VH * 0.67 - i * 9, VH * 0.67 - i * 9, PI * 1.08, PI * 1.92, 40)
 		var col: Color = RAINBOW[i]
 		col.a = 0.16
 		draw_polyline(pts, col, 9, true)
@@ -723,8 +780,8 @@ func _draw_background(dt: float) -> void:
 		if moving or state == "title":
 			cl.x -= (0.35 if cl.layer else 0.18) * speed * dt * (0.4 if state == "title" else 1.0)
 		if cl.x < -140:
-			cl.x = W + randf_range(40, 200)
-			cl.y = randf_range(30, H - 60)
+			cl.x = VW + randf_range(40, 200)
+			cl.y = randf_range(30, VH - 60)
 		var old_a := 0.85 if cl.layer else 0.55
 		draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 		# draw with alpha via modulated circles: puff uses fixed colors, wrap with canvas alpha
@@ -1022,15 +1079,15 @@ func _draw_hud() -> void:
 		draw_colored_polygon(_heart_poly(34 + i * 34, 76, 15), Color("ff4f9a") if i < hearts else Color(1, 1, 1, 0.35))
 	_stroke_text(Vector2(22, 112), "Level %d" % level, 16, Color("ffd9ef"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	if combo > 1:
-		_stroke_text(Vector2(W / 2, 40), "Combo x%d" % combo, 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
+		_stroke_text(Vector2(VW / 2, 40), "Combo x%d" % combo, 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
 	if level_banner > 0 and state == "play":
 		var col := Color("ffe45c")
 		col.a = minf(1, level_banner)
 		var ol := INK
 		ol.a = minf(1, level_banner)
-		_stroke_text(Vector2(W / 2, H / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d!" % level, 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
-	_draw_round_button(Vector2(W - 87, 33), "🔇" if synth.muted else "🔊")
-	_draw_round_button(Vector2(W - 33, 33), "❚❚")
+		_stroke_text(Vector2(VW / 2, VH / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d!" % level, 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
+	_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
+	_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 
 
 # ─── Draw ─────────────────────────────────────────────────────────────────
@@ -1074,17 +1131,23 @@ func _draw() -> void:
 		_stroke_text(Vector2(p.x, p.y), p.text, 20, col, HORIZONTAL_ALIGNMENT_CENTER, 4, Color(42 / 255.0, 22 / 255.0, 80 / 255.0, 0.7))
 
 	if flash > 0:
-		draw_rect(Rect2(0, 0, W, H), Color(1, 1, 1, minf(1, flash * 1.6)))
+		draw_rect(Rect2(0, 0, VW, VH), Color(1, 1, 1, minf(1, flash * 1.6)))
 
 	if state == "play" or state == "over":
 		_draw_hud()
 
 	if state == "title":
+		_card_begin()
 		_draw_title_card()
+		_card_end()
 	elif state == "over" and over_card_visible:
+		_card_begin()
 		_draw_over_card()
+		_card_end()
 	elif state == "play" and paused:
+		_card_begin()
 		_draw_pause_card()
+		_card_end()
 
 
 # ─── Screenshot test hook ─────────────────────────────────────────────────

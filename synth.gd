@@ -210,6 +210,9 @@ func beam() -> void:
 func ready() -> void:
 	_play("ready", [{ "f": 880.0, "dur": 0.1, "wave": Wave.TRIANGLE, "vol": 0.1 }])
 
+func boss() -> void:
+	_play("boss1", [{ "f": 220.0, "dur": 0.8, "wave": Wave.SAWTOOTH, "vol": 0.1, "slide": -120.0 }])
+
 
 # Looping ambience beds on dedicated players (never stolen by one-shots).
 # Callers poll every frame; starting is idempotent and muting is honored.

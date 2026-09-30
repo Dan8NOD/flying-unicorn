@@ -70,6 +70,8 @@ const RELOAD_TIME := 3.0
 const BEAM_PERIOD := 6.0
 const BEAM_DUR := 3.0
 var heat := 0.0
+var size_pop := 0.0
+var size_mul := 1.0
 var overheated := false
 var reload_t := 0.0
 var fire_ok := true
@@ -78,6 +80,12 @@ var beam_t := 0.0
 var hill_x := 0.0
 var city_x := 0.0
 var ground_y := 0.0
+var boss: Boss = null
+var bolts: Array = []
+var boss_t := 0.0
+var boss_spawn_t := 4.0
+var boss_kills := 0
+var bolt_cd := 0.0
 var last_ring_y := H / 2
 var hurt_timer := 0.0
 var flash := 0.0
@@ -148,6 +156,31 @@ class StormCloud:
 	var gust := false
 	var lit := false
 	var zappy := false
+
+
+class Bolt:
+	var x: float
+	var y: float
+	var vx: float
+	var vy: float
+	var dead := false
+
+
+class Boss:
+	var x: float
+	var y: float
+	var hp := 6
+	var max_hp := 6
+	var phase := 0.0
+	var vx := 0.0
+	var vy := 0.0
+	var retarget := 0.0
+	var enter := true
+	var leaving := false
+	var shielded := false
+	var hit_flash := 0.0
+	var beam_tick := 0.0
+	var dead := false
 
 
 class Laser:
@@ -463,6 +496,7 @@ func reset() -> void:
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
+	size_pop = 0; size_mul = 1; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 4.0; boss_kills = 0; bolt_cd = 0
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
@@ -496,6 +530,8 @@ func game_over() -> void:
 	over_card_timer = 1.2
 	over_card_visible = false
 	over_fx_timer = 0
+	boss = null
+	bolts = []
 
 
 var _had_focus := false
@@ -573,8 +609,11 @@ func _game_update(dt: float) -> void:
 	if hurt_timer > 0: hurt_timer -= dt
 	fire_cooldown = maxf(0, fire_cooldown - dt)
 	_tick_weapons(dt)
+	_boss_update(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
+	if size_pop > 0:
+		size_pop -= dt
 	react_angle += react_spin * dt
 	react_spin = move_toward(react_spin, 0.0, dt * 14.0)
 	# Settle back to upright — a resting tilt reads as stuck sideways.
@@ -699,7 +738,7 @@ func _game_update(dt: float) -> void:
 			if absf(uni.y - r.y) < r.ry - 12:
 				r.result = "hit"
 				react_pop = 1.0
-				if r.gold: react_spin = 7.0
+				if r.gold: _gold_hit()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -802,18 +841,28 @@ func _tick_weapons(dt: float) -> void:
 		return
 	if beam_t > 0:
 		beam_t -= dt
-		_beam_hit()
+		_beam_hit(dt)
 		if beam_t <= 0:
 			beam_cd = BEAM_PERIOD - BEAM_DUR
 	elif beam_cd > 0:
 		beam_cd -= dt
 		if beam_cd <= 0:
 			beam_t = BEAM_DUR
+			if boss != null:
+				boss.beam_tick = 0.0
 			synth.beam()
 			_popup(uni.x, uni.y - 130, "EYE BEAM!", Color("ff4d5e"))
 
 
-func _beam_hit() -> void:
+func _beam_hit(dt: float) -> void:
+	if boss != null and not boss.dead and not boss.leaving:
+		var bin: bool = (absf(boss.x - uni.x) < 90 and boss.y < uni.y) if vertical else (boss.x > uni.x - 20 and absf(boss.y - (uni.y - 18)) < 90)
+		if bin:
+			boss.beam_tick -= dt
+			if boss.beam_tick <= 0:
+				boss.beam_tick = 0.6
+				_damage_boss(1)
+				_burst(boss.x, boss.y, 10, [Color.WHITE, Color("ff4d5e")], 220)
 	for c in clouds:
 		if c.dead:
 			continue
@@ -822,6 +871,176 @@ func _beam_hit() -> void:
 			c.dead = true
 			score += 25
 			_burst(c.x, c.y, 24, [Color.WHITE, Color("ff4d5e"), Color("ffd23f")], 260)
+
+
+func _spawn_boss() -> void:
+	var nb := Boss.new()
+	nb.hp = 5 + level
+	nb.max_hp = nb.hp
+	nb.phase = randf_range(0, 6)
+	if vertical:
+		nb.x = VW / 2
+		nb.y = -80
+	else:
+		nb.x = W + 80
+		nb.y = H * 0.25
+	boss = nb
+	boss_t = 15.0
+	bolt_cd = 1.5
+	_popup(clampf(nb.x, 140, (VW if vertical else W) - 140), 150, "BOSS! 15s!", Color("c77bff"))
+	synth.boss()
+
+
+func _boss_update(dt: float) -> void:
+	if state != "play":
+		return
+	if boss == null:
+		boss_spawn_t -= dt
+		if boss_spawn_t <= 0:
+			_spawn_boss()
+		return
+	var b := boss
+	if b.hit_flash > 0:
+		b.hit_flash -= dt
+	var ramp := 1.0 + 0.3 * (1.0 - clampf(boss_t / 15.0, 0.0, 1.0))
+	if b.leaving:
+		if vertical:
+			b.y += 420 * dt
+		else:
+			b.x += 420 * dt
+		_update_bolts(dt, false)
+		if (b.y > VH + 100) if vertical else (b.x > W + 100):
+			boss = null
+		return
+	boss_t -= dt
+	if boss_t <= 7.5 and not b.shielded:
+		b.shielded = true
+		b.hp += 2
+		b.max_hp += 2
+		_popup(b.x, b.y - 70, "Shield up!", Color("b77bff"))
+	if boss_t <= 0:
+		_boss_escape()
+		return
+	if b.enter:
+		if vertical:
+			b.y += 130 * dt
+			if b.y >= 150:
+				b.enter = false
+		else:
+			b.x -= 130 * dt
+			if b.x <= W - 170:
+				b.enter = false
+	else:
+		b.retarget -= dt
+		if b.retarget <= 0:
+			b.retarget = randf_range(1.5, 3.0)
+			b.vx = randf_range(-55, 55)
+			b.vy = randf_range(-40, 40)
+		b.x += (b.vx * ramp + sin(t * 1.7 + b.phase) * 20) * dt
+		b.y += (b.vy * ramp + cos(t * 1.3 + b.phase) * 16) * dt
+		if vertical:
+			b.x = clampf(b.x, 70, VW - 70)
+			b.y = clampf(b.y, 100, VH * 0.4)
+		else:
+			b.x = clampf(b.x, W * 0.45, W - 100)
+			b.y = clampf(b.y, 80, H * 0.45)
+	bolt_cd -= dt
+	if bolt_cd <= 0 and not b.enter:
+		bolt_cd = 1.6
+		var base := Vector2(uni.x - b.x, uni.y - b.y).angle()
+		for k in [-1, 0, 1]:
+			var nb := Bolt.new()
+			nb.x = b.x
+			nb.y = b.y + 20
+			var ang: float = base + k * 0.18
+			nb.vx = cos(ang) * 330
+			nb.vy = sin(ang) * 330
+			bolts.append(nb)
+		synth.zap()
+	_laser_vs_boss()
+	_update_bolts(dt, true)
+
+
+func _laser_vs_boss() -> void:
+	if boss == null or boss.dead or boss.leaving:
+		return
+	for l in lasers:
+		if not l.dead and Vector2(l.x - boss.x, l.y - boss.y).length() < 64:
+			l.dead = true
+			_damage_boss(1)
+			_burst(l.x, l.y, 6, [Color.WHITE, Color("c77bff")], 160)
+
+
+func _damage_boss(n: int) -> void:
+	if boss == null or boss.dead:
+		return
+	boss.hp -= n
+	boss.hit_flash = 0.08
+	if boss.hp <= 0:
+		_kill_boss()
+	else:
+		synth.zap()
+
+
+func _kill_boss() -> void:
+	var pts := 100 + 25 * level
+	score += pts
+	_popup(boss.x, boss.y - 70, "BOSS DOWN! +%d" % pts, Color("ffd23f"))
+	_burst(boss.x, boss.y, 60, [Color.WHITE, Color("c77bff"), Color("ffd23f"), Color("ff4d5e")], 320)
+	_burst(boss.x, boss.y, 30, [Color("b77bff"), Color.WHITE], 180)
+	synth.level_up()
+	synth.poof()
+	boss_kills += 1
+	boss = null
+	bolts = []
+
+
+func _boss_escape() -> void:
+	boss.leaving = true
+	_popup(boss.x, boss.y - 70, "Boss got away…", Color("9adcff"))
+
+
+func _update_bolts(dt: float, can_hit: bool) -> void:
+	for bl in bolts:
+		bl.x += bl.vx * dt
+		bl.y += bl.vy * dt
+		if can_hit and not bl.dead and hurt_timer <= 0 and Vector2(uni.x - bl.x, uni.y - bl.y).length() < 30:
+			bl.dead = true
+			_hurt_player()
+	bolts = bolts.filter(func(bl): return not bl.dead and bl.x > -60 and bl.x < (VW if vertical else W) + 60 and bl.y > -60 and bl.y < (VH if vertical else H) + 60)
+
+
+func _hurt_player() -> void:
+	hearts -= 1
+	combo = 0
+	hurt_timer = 1.6
+	flash = 0.25
+	react_pop = 1.0
+	react_spin = -9.0
+	_burst(uni.x, uni.y, 20, [Color("c77bff"), Color("ffe45c")], 200)
+	synth.hurt()
+	Input.vibrate_handheld(300)
+	if hearts <= 0:
+		game_over()
+
+
+func _draw_boss() -> void:
+	_wxf(Vector2(boss.x, boss.y), sin(t * 2 + boss.phase) * 0.08, Vector2.ONE)
+	_fill_ellipse(Vector2(0, 28), 54, 14, Color(0.7, 0.3, 1, 0.25))
+	draw_circle(Vector2(0, -12), 20, Color.WHITE if boss.hit_flash > 0 else Color("c9cde0"))
+	draw_arc(Vector2(0, -12), 20, PI, TAU, 24, Color("5d6384"), 2.5, true)
+	draw_circle(Vector2(6, -18), 6, Color(1, 1, 1, 0.6))
+	_fill_ellipse(Vector2.ZERO, 56, 24, Color.WHITE if boss.hit_flash > 0 else Color("8b86a8"))
+	draw_polyline(_arc_pts(0, 0, 56, 24, 0, TAU, 40), Color("3d3a5c"), 3, true)
+	_fill_ellipse(Vector2.ZERO, 26, 11, Color("1a1430"))
+	draw_polyline(_arc_pts(0, 0, 26, 11, 0, TAU, 28), Color("b77bff"), 2.5, true)
+	for i in 3:
+		var la := t * 3 + i * TAU / 3.0
+		var lc := Color("ff4d5e") if i == 0 else (Color("ffd23f") if i == 1 else Color("7df0c8"))
+		draw_circle(Vector2(cos(la) * 44, sin(la) * 18), 5, lc)
+	var frac := clampf(float(boss.hp) / float(maxi(boss.max_hp, 1)), 0.0, 1.0)
+	draw_arc(Vector2.ZERO, 70, -PI / 2, -PI / 2 + TAU * frac, 44, Color("b77bff"), 5, true)
+	_world_apply()
 
 
 func _roll_cloud_kind(c: StormCloud) -> void:
@@ -859,7 +1078,8 @@ func _manage_ambience() -> void:
 func _spawn_ring_top() -> void:
 	var r := Ring.new()
 	r.gold = randf() < 0.12
-	r.x = clampf(last_ring_x + randf_range(-140, 140), 70, VW - 70)
+	var rspread: float = randf_range(-220, 220) if boss != null else randf_range(-140, 140)
+	r.x = clampf(last_ring_x + rspread, 70, VW - 70)
 	last_ring_x = r.x
 	r.y = -70
 	r.base_y = r.y
@@ -959,7 +1179,7 @@ func _game_overhead(dt: float) -> void:
 			if Vector2(uni.x - r.x, uni.y - r.y).length() < r.rx - 10:
 				r.result = "hit"
 				react_pop = 1.0
-				if r.gold: react_spin = 7.0
+				if r.gold: _gold_hit()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -1051,7 +1271,7 @@ func _horn_tip() -> Vector2:
 func _spawn_ring() -> void:
 	var r := Ring.new()
 	r.gold = randf() < 0.12
-	r.y = clampf(last_ring_y + randf_range(-170, 170), 90, H - 110)
+	r.y = clampf(last_ring_y + randf_range(-260, 260) if boss != null else last_ring_y + randf_range(-170, 170), 90, H - 110)
 	r.base_y = r.y
 	last_ring_y = r.y
 	r.ry = 50.0 if r.gold else 62.0
@@ -1283,6 +1503,8 @@ func _sky_colors() -> Array:
 
 func _level_up() -> void:
 	level += 1
+	if boss == null:
+		boss_spawn_t = 4.0
 	speed = 260.0 * pow(1.07, mini(level - 1, 14))
 	level_banner = 2.4
 	synth.level_up()
@@ -1437,7 +1659,16 @@ func _wing_poly() -> PackedVector2Array:
 # Body pivots compose with the world transform through _wxf and always
 # return through _world_apply — draw_set_transform is absolute, not composed.
 func _react_sc() -> Vector2:
-	return Vector2.ONE * (1.0 + 0.15 * react_pop)
+	return Vector2.ONE * (1.0 + 0.15 * react_pop) * _size_k()
+
+func _size_k() -> float:
+	return lerpf(1.0, size_mul, clampf(size_pop / 1.8, 0.0, 1.0))
+
+
+func _gold_hit() -> void:
+	react_spin = 9.0
+	size_mul = 0.7 if randf() < 0.5 else 1.3
+	size_pop = 1.8
 func _draw_wing(front: bool, flap: float, body_rot: float) -> void:
 	var wing_off := Vector2(4 if front else 10, -16).rotated(body_rot)
 	_wxf(Vector2(uni.x, uni.y) + wing_off, body_rot - 0.35 + flap * 0.65 + react_angle, _react_sc())
@@ -1462,16 +1693,19 @@ func _draw_unicorn() -> void:
 	_draw_wing(false, flap, uni.tilt)
 	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
 
-	# Legs (galloping through the air)
-	var legs := [[-22, 1], [-12, -1], [18, -1], [28, 1]]
+	# Legs folded back for flight — no more sky-gallop, just a sleepy ripple.
+	var fold := sin(t * 3.0) * 2.0
+	var legs := [[-24, 0], [-12, 1], [14, 2], [26, 3]]
 	for leg in legs:
-		var hx: float = leg[0] + gallop * 8 * leg[1] - 6
-		draw_line(Vector2(leg[0], 12), Vector2(hx, 34), Color("ff9ccf"), 9, true)
-	# Armored hooves
+		var sx: float = leg[0] - 24 + fold * (1 + leg[1] * 0.3)
+		var sy: float = 24 + leg[1] * 1.5
+		draw_line(Vector2(leg[0], 12), Vector2(sx, sy), Color("ff9ccf"), 9, true)
+	# Armored hooves tucked at the folded ends
 	for leg in legs:
-		var hx: float = leg[0] + gallop * 8 * leg[1] - 6
-		draw_rect(Rect2(hx - 5.5, 31, 11, 8), Color("b9bfd6"))
-		draw_rect(Rect2(hx - 5.5, 31, 11, 8), Color("5d6384"), false, 1.5)
+		var sx: float = leg[0] - 24 + fold * (1 + leg[1] * 0.3)
+		var sy: float = 24 + leg[1] * 1.5
+		draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("b9bfd6"))
+		draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("5d6384"), false, 1.5)
 
 	# Body
 	_fill_ellipse(Vector2.ZERO, 40, 22, Color("ff9ccf"))
@@ -1818,7 +2052,7 @@ func _draw_over_card() -> void:
 	var y := H / 2 - 200 + 40
 	_rainbow_title(W / 2, y, _over_title(), 40)
 	y += 50
-	_text_c(Vector2(W / 2, y), "She floated down safe on a fluffy cloud. Best combo: x%d" % best_combo, 15, Color("ffd9ef"))
+	_text_c(Vector2(W / 2, y), "She floated down safe on a fluffy cloud. Best combo: x%d · Bosses: %d" % [best_combo, boss_kills], 15, Color("ffd9ef"))
 	y += 42
 	_text_c(Vector2(W / 2, y), str(score), 40, Color("ffd23f"))
 	y += 38
@@ -1881,6 +2115,14 @@ func _draw_hud() -> void:
 	draw_rect(Rect2(22, 132, 110 * beam_k, 6), Color("ff4d5e"))
 	if overheated and int(t * 4) % 2 == 0:
 		_stroke_text(Vector2(22, 150), "RELOADING…", 16, Color("9adcff"), HORIZONTAL_ALIGNMENT_LEFT, 4)
+	if boss != null:
+		var bt := maxi(0, int(ceil(boss_t)))
+		_stroke_text(Vector2(VW / 2, 40), "BOSS %d" % bt, 26, Color("ff4d5e") if bt <= 5 else Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 5)
+		var bfrac := clampf(float(boss.hp) / float(maxi(boss.max_hp, 1)), 0.0, 1.0)
+		draw_rect(Rect2(VW / 2 - 70, 50, 140, 8), Color(1, 1, 1, 0.25))
+		draw_rect(Rect2(VW / 2 - 70, 50, 140 * bfrac, 8), Color("b77bff"))
+	if boss_kills > 0:
+		_stroke_text(Vector2(22, 166), "BOSS x%d" % boss_kills, 15, Color("c77bff"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	if combo > 1:
 		_stroke_text(Vector2(VW / 2, 40), "Combo x%d" % combo, 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
 	if level_banner > 0 and state == "play":
@@ -1944,6 +2186,14 @@ func _draw() -> void:
 		draw_line(o, far, Color(1, 0.3, 0.35, 0.9), fl, true)
 		draw_line(o, far, Color.WHITE, 4, true)
 		draw_circle(o, 13, Color(1, 0.4, 0.45, 0.9))
+
+	# Boss saucer and its purple bolts.
+	if boss != null:
+		_draw_boss()
+	for bl in bolts:
+		draw_circle(Vector2(bl.x, bl.y), 9, Color(0.72, 0.48, 1, 0.4))
+		draw_circle(Vector2(bl.x, bl.y), 5, Color("c77bff"))
+		draw_circle(Vector2(bl.x, bl.y), 2.5, Color.WHITE)
 
 	if vertical:
 		_draw_pony_top()

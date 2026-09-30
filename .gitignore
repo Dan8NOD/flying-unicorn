@@ -1,0 +1,14 @@
+# Godot 4
+.godot/
+/android/
+
+# Build outputs
+build/
+*.ipa
+*.xcarchive
+
+# macOS
+.DS_Store
+
+# Editor backups
+*~

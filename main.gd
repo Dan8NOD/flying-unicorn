@@ -690,12 +690,14 @@ func _game_update(dt: float) -> void:
 		_game_overhead(dt)
 		return
 
-	# Movement: pointer steers toward finger; keys/stick/dpad accelerate
+	# Movement: pointer steers toward finger; keys/stick/dpad accelerate.
+	# Stick and keys also fly her back and forth; touch keeps her lane.
 	if state == "play" and dash_t <= 0:
 		if pointer_y != null:
 			var target: float = clampf(pointer_y, 50, H - 60)
 			uni.vy += (target - uni.y) * 14 * dt
 			uni.vy *= pow(0.02, dt)
+			uni.vx *= pow(0.04, dt)
 		else:
 			var up := Input.is_action_pressed("fly_up")
 			var down := Input.is_action_pressed("fly_down")
@@ -705,10 +707,25 @@ func _game_update(dt: float) -> void:
 				uni.vy *= pow(0.04, dt)
 			if tilt_enabled and not up and not down:
 				uni.vy += _tilt_steer() * 1500 * dt
+			var left := Input.is_action_pressed("fly_left")
+			var right := Input.is_action_pressed("fly_right")
+			if left: uni.vx -= 1500 * dt
+			if right: uni.vx += 1500 * dt
+			if not left and not right:
+				uni.vx *= pow(0.04, dt)
 	else:
 		uni.vy *= pow(0.04, dt)
+		uni.vx *= pow(0.04, dt)
 	uni.vy = clampf(uni.vy, -520, 520)
 	uni.y += uni.vy * dt
+	uni.vx = clampf(uni.vx, -460, 460)
+	uni.x += uni.vx * dt
+	if uni.x < 60:
+		uni.x = 60
+		uni.vx = absf(uni.vx) * 0.5
+	if uni.x > W - 200:
+		uni.x = W - 200
+		uni.vx = -absf(uni.vx) * 0.5
 
 	# A magic pony never falls: bounce softly off the sky ceiling and cloud floor
 	if uni.y > H - 60:
@@ -1365,7 +1382,7 @@ func _dash_step(dt: float) -> void:
 		var v := d.normalized() * 560.0
 		uni.vx = v.x
 		uni.vy = v.y
-	for k in 2:
+	for k in 5:
 		var tp := Particle.new()
 		tp.x = uni.x + randf_range(-14, 14)
 		tp.y = uni.y + randf_range(-14, 14)
@@ -2083,10 +2100,14 @@ func _wing_poly() -> PackedVector2Array:
 # return through _world_apply — draw_set_transform is absolute, not composed.
 const CHAR_SCALE := 0.8
 func _react_sc() -> Vector2:
-	return Vector2.ONE * CHAR_SCALE * (1.0 + 0.15 * react_pop) * _size_k()
+	return Vector2.ONE * CHAR_SCALE * (1.0 + 0.15 * react_pop) * _size_k() * _dash_stretch()
 
 func _size_k() -> float:
 	return 1.0
+
+
+func _dash_stretch() -> Vector2:
+	return Vector2(1.22, 0.84) if dash_t > 0 else Vector2.ONE
 
 
 func _gold_hit() -> void:
@@ -2171,8 +2192,9 @@ func _draw_unicorn() -> void:
 	draw_circle(Vector2(0, -46 + bob), 10, Color("23232e"))
 	draw_polyline(_arc_pts(0, -46 + bob, 10, 10, 0, TAU, 24), Color("0f0f16"), 2, true)
 	draw_arc(Vector2(0, -46 + bob), 10, PI * 0.9, PI * 1.6, 12, Color(1, 1, 1, 0.45), 2, true)
+	var pspread := 1.8 if dash_t > 0 else 1.0
 	for pi in 3:
-		draw_circle(Vector2(-9 - pi * 5, -53 + bob - pi * 2 + sin(t * 7 + pi) * 1.5), 3.5, Color("ff6fb5"))
+		draw_circle(Vector2(-9 * pspread - pi * 5 * pspread, -53 + bob - pi * 2 + sin(t * 7 + pi) * 1.5), 3.5, Color("ff6fb5"))
 	# Side pouch with rocket tips peeking out.
 	draw_rect(Rect2(-8, 6, 24, 15), Color("8a5a3b"))
 	draw_rect(Rect2(-8, 6, 24, 6), Color("6e452c"))
@@ -2510,7 +2532,7 @@ func _draw_title_card() -> void:
 		"🎯 Rings in a row build your combo",
 		"🌟 Gold rings fire rockets · red rings call her eye-beam",
 		"⛈️ Storm clouds drain her health — zap them first!",
-		"🎮 Gamepad works too · tilt in Settings ⚙",
+		"🎮 Gamepad: stick flies her around · tilt in Settings ⚙",
 	]
 	for it in items:
 		draw_string(font, Vector2(W / 2 - 176, y), it, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("f3e9ff"))
@@ -2714,6 +2736,11 @@ func _draw() -> void:
 		zpts.append(zp3)
 		draw_polyline(zpts, Color(0.55, 1, 1, ak), 3, true)
 		draw_polyline(zpts, Color(1, 1, 1, ak * 0.7), 1.5, true)
+	if dash_t > 0 and state == "play":
+		for si in 5:
+			var sly: float = uni.y + randf_range(-44, 44)
+			var slx: float = uni.x - 80 - si * 38
+			draw_line(Vector2(slx, sly), Vector2(slx - 64, sly), Color(1, 1, 1, 0.5), 3, true)
 
 	_draw_mermaid()
 	if vertical:

@@ -61,7 +61,8 @@ const MER_RANGE := 250.0
 const MER_HEAL := 12.0
 const ROCKET_CD := 4.0
 var hp := HP_MAX
-var mer_angle := 0.0
+var mer_px := 90.0
+var mer_py := 325.0
 var mer_cd := 2.0
 var mer_spool := 0.0
 var mer_lock = null
@@ -98,7 +99,8 @@ var ground_y := 0.0
 var boss: Boss = null
 var bolts: Array = []
 var boss_t := 0.0
-var boss_spawn_t := 4.0
+const BOSS_GAP := 180.0
+var boss_spawn_t := 20.0
 var boss_kills := 0
 var bolt_cd := 0.0
 var last_ring_y := H / 2
@@ -523,8 +525,8 @@ func reset() -> void:
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
-	size_age = 0; size_mul = 1; shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 4.0; boss_kills = 0; bolt_cd = 0
-	mer_angle = 0; mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false;
+	size_age = 0; size_mul = 1; shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 20.0; boss_kills = 0; bolt_cd = 0
+	mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false;
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
@@ -1034,10 +1036,12 @@ func _kill_boss() -> void:
 	boss_kills += 1
 	boss = null
 	bolts = []
+	boss_spawn_t = BOSS_GAP
 
 
 func _boss_escape() -> void:
 	boss.leaving = true
+	boss_spawn_t = BOSS_GAP
 	_popup(boss.x, boss.y - 70, "Boss got away…", Color("9adcff"))
 
 
@@ -1099,7 +1103,7 @@ func _hurt_cloud(c, n: int) -> void:
 
 
 func _mer_pos() -> Vector2:
-	return Vector2(uni.x + cos(mer_angle) * 78, uni.y + sin(mer_angle) * 52)
+	return Vector2(mer_px, mer_py + sin(t * 3.0) * 6.0)
 
 
 func _nearest_foe(mp: Vector2):
@@ -1122,7 +1126,10 @@ func _nearest_foe(mp: Vector2):
 # Mermaid Medic, FCC-style: 1s spool tell, then a 5s-cycle
 # discharge that zaps the locked foe and heals the pony.
 func _mermaid_update(dt: float) -> void:
-	mer_angle += dt * 2.2
+	var anchor := Vector2(uni.x - 90, uni.y + 40) if vertical else Vector2(uni.x - 100, uni.y + 55)
+	var k := minf(1.0, dt * 3.0)
+	mer_px = lerpf(mer_px, anchor.x, k)
+	mer_py = lerpf(mer_py, anchor.y, k)
 	if state != "play":
 		return
 	var mp := _mer_pos()
@@ -1715,8 +1722,6 @@ func _sky_colors() -> Array:
 
 func _level_up() -> void:
 	level += 1
-	if boss == null:
-		boss_spawn_t = 4.0
 	speed = 260.0 * pow(1.07, mini(level - 1, 14))
 	level_banner = 2.4
 	synth.level_up()
@@ -1870,8 +1875,9 @@ func _wing_poly() -> PackedVector2Array:
 
 # Body pivots compose with the world transform through _wxf and always
 # return through _world_apply — draw_set_transform is absolute, not composed.
+const CHAR_SCALE := 0.85
 func _react_sc() -> Vector2:
-	return Vector2.ONE * (1.0 + 0.15 * react_pop) * _size_k()
+	return Vector2.ONE * CHAR_SCALE * (1.0 + 0.15 * react_pop) * _size_k()
 
 func _ease_back(x: float) -> float:
 	var c1 := 1.70158

@@ -40,6 +40,8 @@ var blink_on := 0.0
 var ear_timer := 4.0
 var ear_tw := 0.0
 var shoot := {}
+var over_fx_timer := 0.0
+var _force_over_at := -1.0
 # Settings card state and its test hook.
 var settings_open := false
 var _btn_tilt := Rect2()
@@ -218,6 +220,8 @@ func _parse_args() -> void:
 			_shot_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--shot-settings="):
 			_shot_settings_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--force-over="):
+			_force_over_at = float(a.get_slice("=", 1))
 
 
 func _save_cfg() -> void:
@@ -437,6 +441,7 @@ func reset() -> void:
 	score = 0; hearts = 3; combo = 0; best_combo = 0; rings_passed = 0; level = 1; speed = 260
 	react_pop = 0; react_spin = 0; react_angle = 0
 	blink_timer = 3.0; blink_on = 0; ear_timer = 4.0; ear_tw = 0; shoot = {}
+	over_fx_timer = 0
 	rings = []; clouds = []; lasers = []; particles = []; pickups = []; popups = []
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
@@ -467,8 +472,11 @@ func game_over() -> void:
 	if over_is_best:
 		best = score
 		_save_cfg()
+		# Best-score fanfare around her.
+		_burst(uni.x, uni.y, 40, [Color("ffd23f"), Color("fff4b0"), Color.WHITE, Color("ff6fb5")], 260)
 	over_card_timer = 1.2
 	over_card_visible = false
+	over_fx_timer = 0
 
 
 var _had_focus := false
@@ -488,6 +496,12 @@ func _process(delta: float) -> void:
 	if _shot_settings_at >= 0 and _elapsed >= _shot_settings_at:
 		_shot_settings_at = -1
 		settings_open = true
+	if _force_over_at >= 0 and _elapsed >= _force_over_at:
+		_force_over_at = -1
+		if state == "title":
+			start()
+		hearts = 0
+		game_over()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
 	# accidental rotation never whips the playfield around.
 	var want := 1.0 if vertical else 0.0
@@ -556,6 +570,11 @@ func _game_update(dt: float) -> void:
 		ear_timer = randf_range(3.0, 7.0)
 		ear_tw = 0.25
 	if ear_tw > 0: ear_tw -= dt
+	# Gentle landing sparkles while she floats down to the card.
+	over_fx_timer -= dt
+	if state == "over" and not over_card_visible and over_fx_timer <= 0:
+		over_fx_timer = 0.15
+		_burst(uni.x + randf_range(-30, 30), uni.y + randf_range(-10, 30), 3, [Color.WHITE, Color("ffd9ef"), Color("ffd23f")], 90)
 	if shoot.is_empty():
 		if level >= 2 and randf() < dt / 12.0:
 			shoot = { "x": randf_range(W * 0.3, W + 100), "y": randf_range(40, H * 0.35), "life": 0.7 }
@@ -1477,7 +1496,7 @@ func _teaser(center: Vector2) -> Rect2:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(14)
 	draw_style_box(sb, rect)
-	_text_c(center + Vector2(0, -2), "Try the main game demo", 14, Color.WHITE)
+	_text_c(center + Vector2(0, -2), "Also try Fat Cat Cruz", 14, Color.WHITE)
 	_text_c(center + Vector2(0, 18), "Five minutes, robots, no download →", 13, Color("ffd9ef"))
 	return rect
 
@@ -1494,12 +1513,11 @@ func _draw_title_card() -> void:
 	_text_c(Vector2(W / 2, y), "A magic pony never falls!", 15, Color("ffd9ef"))
 	y += 30
 	var items := [
-		"⬆️⬇️ Arrows / W S or drag to fly",
-		"✨ Space or hold your finger to fire horn lasers",
+		"☝️ Drag to fly · hold to fire horn lasers",
 		"🎯 Rings in a row build your combo",
 		"🌟 Golden rings are worth extra",
 		"⛈️ Storm clouds take a heart — zap them first!",
-		"🎮 Stick / D-pad to fly · A to fire",
+		"🎮 Gamepad works too · tilt in Settings ⚙",
 	]
 	for it in items:
 		draw_string(font, Vector2(W / 2 - 176, y), it, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("f3e9ff"))
@@ -1510,17 +1528,29 @@ func _draw_title_card() -> void:
 	_teaser_rect = _teaser(Vector2(W / 2, y + 29))
 
 
+func _over_title() -> String:
+	if score >= 1500:
+		return "Rainbow Legend!"
+	if score >= 600:
+		return "Sky Superstar!"
+	if score >= 150:
+		return "What a Flight!"
+	return "Sweet Dreams!"
+
+
 func _draw_over_card() -> void:
 	_card(Rect2(W / 2 - 220, H / 2 - 200, 440, 400))
 	var y := H / 2 - 200 + 40
-	_rainbow_title(W / 2, y, "What a Flight!", 44)
+	_rainbow_title(W / 2, y, _over_title(), 40)
 	y += 50
 	_text_c(Vector2(W / 2, y), "She floated down safe on a fluffy cloud. Best combo: x%d" % best_combo, 15, Color("ffd9ef"))
 	y += 42
 	_text_c(Vector2(W / 2, y), str(score), 40, Color("ffd23f"))
 	y += 38
 	_text_c(Vector2(W / 2, y), "✨ New best score! ✨" if over_is_best else "Best: %d" % best, 15, Color("ffd9ef"))
-	y += 36
+	y += 30
+	_text_c(Vector2(W / 2, y), "The End … or is it?", 14, Color("f3e9ff"))
+	y += 30
 	_btn_again = _play_button(Vector2(W / 2, y + 24), "Fly Again ✨")
 	y += 72
 	_teaser_over_rect = _teaser(Vector2(W / 2, y + 29))
@@ -1587,9 +1617,9 @@ func _draw() -> void:
 	var dt := get_process_delta_time()
 	if paused:
 		dt = 0
-	if vertical:
-		# Paint the fit margins first; the world layer covers the rest.
-		draw_rect(Rect2(0, 0, VW, VH), sky_top)
+	# Sky base across the whole viewport; the world layer covers the middle.
+	# (Kills the dark margin bars on wide/tall screens.)
+	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
 	_world_begin()
 	if vertical:
 		_draw_over_bg()
@@ -1623,12 +1653,16 @@ func _draw() -> void:
 
 	if vertical:
 		_draw_pony_top()
+		if state == "over" and over_card_visible:
+			_puff(uni.x, uni.y + 56, 1.6)
 	else:
 		# Soft drop shadow on the cloud floor — fades as she climbs.
 		var sh_h := clampf(H - 60 - uni.y, 0.0, 600.0)
 		var sh_k := 1.0 - sh_h / 600.0
 		_fill_ellipse(Vector2(uni.x, H - 56), 46.0 * (0.5 + 0.5 * sh_k), 10.0, Color(0.35, 0.3, 0.55, 0.22 * sh_k))
 		_draw_unicorn()
+		if state == "over" and over_card_visible:
+			_puff(uni.x, uni.y + 44, 1.6)
 	for r in rings:
 		if vertical:
 			_draw_ring_top(r)

@@ -1149,7 +1149,7 @@ func _nearest_foe(mp: Vector2, max_d := MER_RANGE):
 # Mermaid Medic, FCC-style: 1s spool tell, then a 5s-cycle
 # discharge that zaps the locked foe and heals the pony.
 func _mermaid_update(dt: float) -> void:
-	var anchor := Vector2(uni.x - 90, uni.y + 40) if vertical else Vector2(uni.x - 100, uni.y + 55)
+	var anchor := Vector2(uni.x + 75, uni.y - 55) if vertical else Vector2(uni.x + 95, uni.y + 20)
 	var k := minf(1.0, dt * 3.0)
 	mer_px = lerpf(mer_px, anchor.x, k)
 	mer_py = lerpf(mer_py, anchor.y, k)

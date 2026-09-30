@@ -55,7 +55,20 @@ var paused := false
 var t := 0.0
 var title_ms := 0.0
 var score := 0
-var hearts := 3
+const HP_MAX := 100.0
+const MERCD := 4.0
+const MER_RANGE := 250.0
+const MER_HEAL := 12.0
+const ROCKET_CD := 4.0
+var hp := HP_MAX
+var mer_angle := 0.0
+var mer_cd := 2.0
+var mer_spool := 0.0
+var mer_lock = null
+var arcs: Array = []
+var rockets: Array = []
+var rocket_cd := 0.0
+var _rocket_tap := false
 var combo := 0
 var best_combo := 0
 var rings_passed := 0
@@ -182,6 +195,15 @@ class Boss:
 	var shielded := false
 	var hit_flash := 0.0
 	var beam_tick := 0.0
+	var dead := false
+
+
+class Rocket:
+	var x: float
+	var y: float
+	var vx: float
+	var vy: float
+	var life := 3.0
 	var dead := false
 
 
@@ -456,6 +478,9 @@ func _setup_input() -> void:
 	_add_key("fire", KEY_X)
 	_add_key("fire", KEY_K)
 	_add_joy_button("fire", JOY_BUTTON_A)
+	_add_action("rockets")
+	_add_key("rockets", KEY_R)
+	_add_joy_button("rockets", JOY_BUTTON_Y)
 	_add_joy_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
 	_add_action("pause_game")
 	_add_key("pause_game", KEY_P)
@@ -491,7 +516,7 @@ func _add_joy_axis(action: String, axis: JoyAxis, value: float) -> void:
 
 
 func reset() -> void:
-	score = 0; hearts = 3; combo = 0; best_combo = 0; rings_passed = 0; level = 1; speed = 260
+	score = 0; hp = HP_MAX; combo = 0; best_combo = 0; rings_passed = 0; level = 1; speed = 260
 	react_pop = 0; react_spin = 0; react_angle = 0
 	blink_timer = 3.0; blink_on = 0; ear_timer = 4.0; ear_tw = 0; shoot = {}
 	over_fx_timer = 0
@@ -499,6 +524,7 @@ func reset() -> void:
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
 	size_age = 0; size_mul = 1; shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 4.0; boss_kills = 0; bolt_cd = 0
+	mer_angle = 0; mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false;
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
@@ -535,6 +561,8 @@ func game_over() -> void:
 	over_fx_timer = 0
 	boss = null
 	bolts = []
+	rockets = []
+	arcs = []
 
 
 var _had_focus := false
@@ -558,7 +586,7 @@ func _process(delta: float) -> void:
 		_force_over_at = -1
 		if state == "title":
 			start()
-		hearts = 0
+		hp = 0.0
 		game_over()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
 	# accidental rotation never whips the playfield around.
@@ -613,6 +641,8 @@ func _game_update(dt: float) -> void:
 	fire_cooldown = maxf(0, fire_cooldown - dt)
 	_tick_weapons(dt)
 	_boss_update(dt)
+	_mermaid_update(dt)
+	_update_rockets(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
 	if size_age > 0:
@@ -729,7 +759,7 @@ func _game_update(dt: float) -> void:
 	if cloud_timer <= 0:
 		_spawn_cloud()
 		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
-	if hearts < 3 and randf() < dt * 0.04 and pickups.is_empty():
+	if hp < 70.0 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
 		pk.x = W + 40; pk.y = randf_range(90, H - 120); pk.phase = randf_range(0, 6)
 		pickups.append(pk)
@@ -793,12 +823,12 @@ func _game_update(dt: float) -> void:
 			_burst(c.x, c.y, 12, [Color.WHITE, Color("bfe9ff")], 180)
 			synth.poof()
 		if not c.dead and hurt_timer <= 0 and Vector2(uni.x + 10 - c.x, uni.y - 10 - c.y).length() < c.r + 26:
-			c.dead = true; hearts -= 1; combo = 0; hurt_timer = 1.6; flash = 0.25
+			c.dead = true; hp = maxf(0.0, hp - 34.0); combo = 0; hurt_timer = 1.6; flash = 0.25
 			react_pop = 1.0; react_spin = -9.0
 			_burst(c.x, c.y, 20, [Color("6d6690"), Color("ffe45c")], 200)
 			synth.hurt()
 			Input.vibrate_handheld(300)
-			if hearts <= 0:
+			if hp <= 0:
 				game_over()
 	clouds = clouds.filter(func(c): return c.x > -80 and not c.dead)
 
@@ -806,8 +836,8 @@ func _game_update(dt: float) -> void:
 	for p in pickups:
 		p.x -= speed * 0.9 * dt
 		if Vector2(uni.x - p.x, uni.y - 10 - p.y).length() < 40:
-			p.dead = true; hearts = mini(3, hearts + 1)
-			_popup(p.x, p.y - 30, "+1 heart", Color("ff6fb5"))
+			p.dead = true; hp = minf(HP_MAX, hp + 30.0)
+			_popup(p.x, p.y - 30, "+30 HP", Color("ff6fb5"))
 			_burst(p.x, p.y, 16, [Color("ff6fb5"), Color.WHITE], 180)
 			synth.heart()
 	pickups = pickups.filter(func(p): return p.x > -40 and not p.dead)
@@ -1021,8 +1051,8 @@ func _update_bolts(dt: float, can_hit: bool) -> void:
 	bolts = bolts.filter(func(bl): return not bl.dead and bl.x > -60 and bl.x < (VW if vertical else W) + 60 and bl.y > -60 and bl.y < (VH if vertical else H) + 60)
 
 
-func _hurt_player() -> void:
-	hearts -= 1
+func _hurt_player(amount := 25.0) -> void:
+	hp = maxf(0.0, hp - amount)
 	combo = 0
 	hurt_timer = 1.6
 	flash = 0.25
@@ -1031,7 +1061,7 @@ func _hurt_player() -> void:
 	_burst(uni.x, uni.y, 20, [Color("c77bff"), Color("ffe45c")], 200)
 	synth.hurt()
 	Input.vibrate_handheld(300)
-	if hearts <= 0:
+	if hp <= 0:
 		game_over()
 
 
@@ -1052,6 +1082,168 @@ func _draw_boss() -> void:
 	var frac := clampf(float(boss.hp) / float(maxi(boss.max_hp, 1)), 0.0, 1.0)
 	draw_arc(Vector2.ZERO, 70, -PI / 2, -PI / 2 + TAU * frac, 44, Color("b77bff"), 5, true)
 	_world_apply()
+
+
+func _hurt_cloud(c, n: int) -> void:
+	if c.dead:
+		return
+	c.hp -= n
+	c.hit_flash = 0.08
+	_burst(c.x, c.y, 8, [Color.WHITE, Color("ffe45c")], 180)
+	if c.hp <= 0:
+		c.dead = true
+		score += 25
+		_popup(c.x, c.y - 40, "+25 zap!", Color("ffe45c"))
+		_burst(c.x, c.y, 28, [Color.WHITE, Color("e8e0ff"), Color("ffe45c"), Color("b77bff")], 260)
+		synth.poof()
+
+
+func _mer_pos() -> Vector2:
+	return Vector2(uni.x + cos(mer_angle) * 78, uni.y + sin(mer_angle) * 52)
+
+
+func _nearest_foe(mp: Vector2):
+	var best = null
+	var best_d := MER_RANGE
+	for c in clouds:
+		if c.dead:
+			continue
+		var d := Vector2(c.x - mp.x, c.y - mp.y).length()
+		if d < best_d:
+			best_d = d
+			best = c
+	if boss != null and not boss.dead and not boss.leaving:
+		var bd := Vector2(boss.x - mp.x, boss.y - mp.y).length()
+		if bd < best_d:
+			best = boss
+	return best
+
+
+# Mermaid Medic, FCC-style: 1s spool tell, then a 5s-cycle
+# discharge that zaps the locked foe and heals the pony.
+func _mermaid_update(dt: float) -> void:
+	mer_angle += dt * 2.2
+	if state != "play":
+		return
+	var mp := _mer_pos()
+	if mer_cd > 0:
+		mer_cd -= dt
+		mer_spool = 0
+		mer_lock = null
+		return
+	if mer_lock == null or not is_instance_valid(mer_lock) or mer_lock.dead:
+		mer_lock = _nearest_foe(mp)
+		mer_spool = 0
+	if mer_lock == null:
+		return
+	if mer_spool <= 0:
+		synth.ready()
+	mer_spool += dt
+	if mer_spool >= 1.0:
+		_discharge(mp)
+
+
+func _discharge(mp: Vector2) -> void:
+	var tgt = mer_lock
+	mer_lock = null
+	mer_spool = 0
+	mer_cd = MERCD
+	if tgt == null or not is_instance_valid(tgt) or tgt.dead:
+		return
+	arcs.append({ "ax": mp.x, "ay": mp.y, "bx": tgt.x, "by": tgt.y, "life": 0.22, "max": 0.22 })
+	if tgt is Boss:
+		_damage_boss(2)
+	else:
+		_hurt_cloud(tgt, 2)
+	hp = minf(HP_MAX, hp + MER_HEAL)
+	_burst(uni.x, uni.y, 8, [Color("7df0c8"), Color.WHITE], 120)
+	synth.zap()
+
+
+func _fire_rockets() -> void:
+	if state != "play" or rocket_cd > 0:
+		return
+	rocket_cd = ROCKET_CD
+	for k in [-1, 0, 1]:
+		var r := Rocket.new()
+		if vertical:
+			r.x = uni.x + k * 22
+			r.y = uni.y - 30
+			r.vx = 0
+			r.vy = -820
+		else:
+			r.x = uni.x + 34
+			r.y = uni.y + k * 16
+			r.vx = 820
+			r.vy = 0
+		rockets.append(r)
+	synth.rocket()
+
+
+func _rocket_boom(x: float, y: float) -> void:
+	_burst(x, y, 30, [Color.WHITE, Color("ffb13d"), Color("ff4d5e")], 300)
+	_burst(x, y, 14, [Color("7a7a8a"), Color.WHITE], 160)
+	for c in clouds:
+		if not c.dead and Vector2(c.x - x, c.y - y).length() < 85:
+			_hurt_cloud(c, 1)
+	synth.poof()
+
+
+func _update_rockets(dt: float) -> void:
+	if state == "play":
+		rocket_cd = maxf(0.0, rocket_cd - dt)
+		if Input.is_action_just_pressed("rockets") or _rocket_tap:
+			_rocket_tap = false
+			_fire_rockets()
+	for r in rockets:
+		r.x += r.vx * dt
+		r.y += r.vy * dt
+		r.life -= dt
+		var tp := Particle.new()
+		tp.x = r.x
+		tp.y = r.y
+		tp.vx = -r.vx * 0.08 + randf_range(-30, 30)
+		tp.vy = -r.vy * 0.08 + randf_range(-30, 30)
+		tp.life = 0.35
+		tp.max_life = 0.35
+		tp.r = randf_range(3, 6)
+		tp.c = Color("ffb13d") if randf() < 0.6 else Color("ff4d5e")
+		tp.star = false
+		particles.append(tp)
+		if r.life <= 0:
+			r.dead = true
+			continue
+		for c in clouds:
+			if not c.dead and Vector2(r.x - c.x, r.y - c.y).length() < 44:
+				r.dead = true
+				_rocket_boom(r.x, r.y)
+				_hurt_cloud(c, 3)
+				break
+		if not r.dead and boss != null and not boss.dead and not boss.leaving and Vector2(r.x - boss.x, r.y - boss.y).length() < 72:
+			r.dead = true
+			_rocket_boom(r.x, r.y)
+			_damage_boss(2)
+	rockets = rockets.filter(func(r): return not r.dead and r.x > -60 and r.x < (VW if vertical else W) + 60 and r.y > -60 and r.y < (VH if vertical else H) + 60)
+
+
+func _draw_mermaid() -> void:
+	var mp := _mer_pos()
+	var spooling := mer_spool > 0
+	var thrash := 9.0 if spooling else 2.5
+	if spooling:
+		draw_circle(mp, 20 + mer_spool * 10, Color(0.55, 1, 1, 0.3 * mer_spool))
+	var to_pony := (Vector2(uni.x, uni.y) - mp).normalized()
+	var back := -to_pony
+	var perp := Vector2(-back.y, back.x)
+	var w1 := sin(t * thrash) * 6.0
+	var tail := PackedVector2Array([mp + perp * 6, mp + back * 26 + perp * w1, mp + back * 12 - perp * 6])
+	draw_colored_polygon(tail, Color("2fbfa0"))
+	draw_colored_polygon(PackedVector2Array([mp + back * 24 + perp * (w1 + 8), mp + back * 24 + perp * (w1 - 8), mp + back * 38 + perp * w1]), Color("7df0c8"))
+	draw_circle(mp, 8, Color("ffd9c9"))
+	draw_circle(mp + to_pony * 4 + perp * 2, 1.8, Color("2a1650"))
+	for h in 3:
+		var hy: float = h * 7.0
+		draw_circle(mp - to_pony * (6 + hy * 0.4) + perp * (4 + sin(t * 4 + h) * 2.0), 4.5 - h, Color("ff6fb5"))
 
 
 func _roll_cloud_kind(c: StormCloud) -> void:
@@ -1175,7 +1367,7 @@ func _game_overhead(dt: float) -> void:
 		_roll_cloud_kind(c)
 		clouds.append(c)
 		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
-	if hearts < 3 and randf() < dt * 0.04 and pickups.is_empty():
+	if hp < 70.0 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
 		pk.x = randf_range(90, VW - 90); pk.y = -50; pk.phase = randf_range(0, 6)
 		pickups.append(pk)
@@ -1239,12 +1431,12 @@ func _game_overhead(dt: float) -> void:
 					_burst(c.x, c.y, 28, [Color.WHITE, Color("e8e0ff"), Color("ffe45c"), Color("b77bff")], 260)
 					synth.poof()
 		if not c.dead and hurt_timer <= 0 and Vector2(uni.x - c.x, uni.y - c.y).length() < c.r + 26:
-			c.dead = true; hearts -= 1; combo = 0; hurt_timer = 1.6; flash = 0.25
+			c.dead = true; hp = maxf(0.0, hp - 34.0); combo = 0; hurt_timer = 1.6; flash = 0.25
 			react_pop = 1.0; react_spin = -9.0
 			_burst(c.x, c.y, 20, [Color("6d6690"), Color("ffe45c")], 200)
 			synth.hurt()
 			Input.vibrate_handheld(300)
-			if hearts <= 0:
+			if hp <= 0:
 				game_over()
 	clouds = clouds.filter(func(c): return c.y < VH + 80 and not c.dead)
 
@@ -1252,8 +1444,8 @@ func _game_overhead(dt: float) -> void:
 	for p in pickups:
 		p.y += speed * 0.9 * dt
 		if Vector2(uni.x - p.x, uni.y - 10 - p.y).length() < 40:
-			p.dead = true; hearts = mini(3, hearts + 1)
-			_popup(p.x, p.y - 30, "+1 heart", Color("ff6fb5"))
+			p.dead = true; hp = minf(HP_MAX, hp + 30.0)
+			_popup(p.x, p.y - 30, "+30 HP", Color("ff6fb5"))
 			_burst(p.x, p.y, 16, [Color("ff6fb5"), Color.WHITE], 180)
 			synth.heart()
 	pickups = pickups.filter(func(p): return p.y < VH + 40 and not p.dead)
@@ -1263,6 +1455,9 @@ func _game_overhead(dt: float) -> void:
 
 
 func _update_particles(dt: float) -> void:
+	for a in arcs:
+		a.life -= dt
+	arcs = arcs.filter(func(a): return a.life > 0)
 	for s in shock:
 		s.life -= dt
 	shock = shock.filter(func(s): return s.life > 0)
@@ -1329,6 +1524,9 @@ func _to_virtual(screen_pos: Vector2) -> Vector2:
 
 func _press_at(vp: Vector2) -> void:
 	# UI buttons first (screen space, above the card layer)
+	if vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
+		_rocket_tap = true
+		return
 	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
 		synth.muted = not synth.muted
 		if synth.muted:
@@ -1778,6 +1976,11 @@ func _draw_unicorn() -> void:
 	draw_arc(Vector2(0, -46 + bob), 10, PI * 0.9, PI * 1.6, 12, Color(1, 1, 1, 0.45), 2, true)
 	for pi in 3:
 		draw_circle(Vector2(-9 - pi * 5, -53 + bob - pi * 2 + sin(t * 7 + pi) * 1.5), 3.5, Color("ff6fb5"))
+	# Side pouch with rocket tips peeking out.
+	draw_rect(Rect2(-8, 6, 24, 15), Color("8a5a3b"))
+	draw_rect(Rect2(-8, 6, 24, 6), Color("6e452c"))
+	for ti in 3:
+		draw_colored_polygon(PackedVector2Array([Vector2(-2 + ti * 8, 6), Vector2(2 + ti * 8, 6), Vector2(ti * 8, -2)]), Color("ff4d5e"))
 	# Her eye glows — the beam leaves from here.
 	draw_circle(Vector2(7, -47 + bob), 2.8, Color("7df0ff"))
 	draw_circle(Vector2(7, -47 + bob), 1.2, Color.WHITE)
@@ -1984,6 +2187,10 @@ func _draw_pony_top() -> void:
 	draw_polyline(_arc_pts(0, -4 + bob2 * 0.4, 11, 11, 0, TAU, 26), Color("0f0f16"), 2, true)
 	draw_arc(Vector2(0, -4 + bob2 * 0.4), 11, PI * 1.1, PI * 1.7, 12, Color(1, 1, 1, 0.45), 2, true)
 	draw_circle(Vector2(0, 10), 4, Color("ff6fb5"))
+	draw_rect(Rect2(-32, 2, 14, 20), Color("8a5a3b"))
+	draw_rect(Rect2(-32, 2, 14, 7), Color("6e452c"))
+	draw_rect(Rect2(18, 2, 14, 20), Color("8a5a3b"))
+	draw_rect(Rect2(18, 2, 14, 7), Color("6e452c"))
 	draw_circle(Vector2(-4, -9), 2.2, Color("7df0ff"))
 	draw_circle(Vector2(4, -9), 2.2, Color("7df0ff"))
 	# Head from above, snout forward.
@@ -2081,7 +2288,7 @@ func _draw_title_card() -> void:
 	_text_c(Vector2(W / 2, y), "A magic pony never falls!", 15, Color("ffd9ef"))
 	y += 30
 	var items := [
-		"☝️ Drag to fly · hold to fire horn lasers",
+		"☝️ Drag to fly · hold to fire · 🚀 rockets",
 		"🎯 Rings in a row build your combo",
 		"🌟 Golden rings are worth extra",
 		"⛈️ Storm clouds take a heart — zap them first!",
@@ -2162,8 +2369,13 @@ func _draw_round_button(center: Vector2, glyph: String) -> void:
 # ─── HUD ──────────────────────────────────────────────────────────────────
 func _draw_hud() -> void:
 	_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
-	for i in 3:
-		draw_colored_polygon(_heart_poly(34 + i * 34, 76, 15), Color("ff4f9a") if i < hearts else Color(1, 1, 1, 0.35))
+	var hpk := clampf(hp / HP_MAX, 0.0, 1.0)
+	var hpcol := Color("7df08a") if hpk > 0.5 else (Color("ffd23f") if hpk > 0.25 else Color("ff4d5e"))
+	draw_rect(Rect2(22, 66, 110, 10), Color(1, 1, 1, 0.25))
+	draw_rect(Rect2(22, 66, 110 * hpk, 10), hpcol)
+	var mer_k := mer_spool if mer_spool > 0 else 1.0 - clampf(mer_cd / MERCD, 0.0, 1.0)
+	draw_rect(Rect2(22, 80, 110, 5), Color(1, 1, 1, 0.2))
+	draw_rect(Rect2(22, 80, 110 * clampf(mer_k, 0.0, 1.0), 5), Color("7df0ff"))
 	_stroke_text(Vector2(22, 112), "Level %d" % level, 16, Color("ffd9ef"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 	# Horn heat bar + eye-beam charge pip.
 	draw_rect(Rect2(22, 120, 110, 8), Color(1, 1, 1, 0.25))
@@ -2193,6 +2405,9 @@ func _draw_hud() -> void:
 	_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 	_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 	_draw_round_button(Vector2(VW - 141, 33), "⚙")
+	_draw_round_button(Vector2(VW - 44, VH - 100), "🚀")
+	if rocket_cd > 0:
+		draw_arc(Vector2(VW - 44, VH - 100), 26, -PI / 2, -PI / 2 + TAU * (1.0 - rocket_cd / ROCKET_CD), 32, Color("ffd23f"), 4, true)
 	if transitioning and state == "play":
 		_pill(Vector2(VW / 2, 76), "TURNING…")
 
@@ -2221,7 +2436,8 @@ func _draw() -> void:
 	for p in pickups:
 		var y: float = p.y + sin(t * 3 + p.phase) * 8
 		draw_circle(Vector2(p.x, y - 4), 22, Color(1, 1, 1, 0.5))
-		draw_colored_polygon(_heart_poly(p.x, y, 18), Color("ff4f9a"))
+		draw_colored_polygon(_sparkle_poly(p.x, y, 20), Color("7df0c8"))
+		draw_circle(Vector2(p.x, y), 6, Color.WHITE)
 
 	# Lasers
 	for l in lasers:
@@ -2253,7 +2469,29 @@ func _draw() -> void:
 		draw_circle(Vector2(bl.x, bl.y), 9, Color(0.72, 0.48, 1, 0.4))
 		draw_circle(Vector2(bl.x, bl.y), 5, Color("c77bff"))
 		draw_circle(Vector2(bl.x, bl.y), 2.5, Color.WHITE)
+	for r in rockets:
+		var rang := Vector2(r.vx, r.vy).angle()
+		_wxf(Vector2(r.x, r.y), rang, Vector2.ONE)
+		draw_colored_polygon(PackedVector2Array([Vector2(14, 0), Vector2(2, -6), Vector2(-8, -6), Vector2(-8, 6), Vector2(2, 6)]), Color("c9cde0"))
+		draw_colored_polygon(PackedVector2Array([Vector2(14, 0), Vector2(4, -4), Vector2(4, 4)]), Color("ff4d5e"))
+		var fl := 10.0 + sin(t * 50 + r.x) * 4.0
+		draw_colored_polygon(PackedVector2Array([Vector2(-8, -4), Vector2(-8 - fl, 0), Vector2(-8, 4)]), Color("ffb13d"))
+		_world_apply()
+	for za in arcs:
+		var ak := clampf(za.life / za.max, 0.0, 1.0)
+		var zp0 := Vector2(za.ax, za.ay)
+		var zp3 := Vector2(za.bx, za.by)
+		var zd := zp3 - zp0
+		var zn := Vector2(-zd.y, zd.x).normalized() if zd.length() > 1 else Vector2.ZERO
+		var zpts := PackedVector2Array([zp0])
+		for zk in [1, 2]:
+			var zp: float = zk / 3.0
+			zpts.append(zp0.lerp(zp3, zp) + zn * sin(t * 90 + zk * 7 + za.ax) * 14)
+		zpts.append(zp3)
+		draw_polyline(zpts, Color(0.55, 1, 1, ak), 3, true)
+		draw_polyline(zpts, Color(1, 1, 1, ak * 0.7), 1.5, true)
 
+	_draw_mermaid()
 	if vertical:
 		_draw_pony_top()
 		if state == "over" and over_card_visible:
@@ -2263,6 +2501,7 @@ func _draw() -> void:
 		var sh_h := clampf(H - 60 - uni.y, 0.0, 600.0)
 		var sh_k := 1.0 - sh_h / 600.0
 		_fill_ellipse(Vector2(uni.x, H - 56), 46.0 * (0.5 + 0.5 * sh_k), 10.0, Color(0.35, 0.3, 0.55, 0.22 * sh_k))
+		_draw_mermaid()
 		_draw_unicorn()
 		if state == "over" and over_card_visible:
 			_puff(uni.x, uni.y + 44, 1.6)

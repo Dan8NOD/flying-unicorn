@@ -673,7 +673,7 @@ func _game_update(dt: float) -> void:
 		over_fx_timer = 0.15
 		_burst(uni.x + randf_range(-30, 30), uni.y + randf_range(-10, 30), 3, [Color.WHITE, Color("ffd9ef"), Color("ffd23f")], 90)
 	if shoot.is_empty():
-		if level >= 2 and randf() < dt / 12.0:
+		if level >= 2 and randf() < (dt / 3.0 if _in_space() else dt / 12.0):
 			shoot = { "x": randf_range(W * 0.3, W + 100), "y": randf_range(40, H * 0.35), "life": 0.7 }
 	else:
 		shoot.x -= 700 * dt
@@ -776,7 +776,6 @@ func _game_update(dt: float) -> void:
 				react_pop = 1.0
 				if r.gold: _gold_hit()
 				elif r.red: _red_hit()
-				else: _single_laser()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -1284,36 +1283,13 @@ func _steer_laser(l, dt: float) -> void:
 		l.vy = v.y
 
 
-func _laser_volley() -> void:
-	var foe = _nearest_foe(Vector2(uni.x, uni.y), 2000.0)
-	for i in 4:
-		var l := Laser.new()
-		if vertical:
-			l.x = uni.x + (i - 1.5) * 14
-			l.y = uni.y - 70
-			l.vx = 0
-			l.vy = -900
-		else:
-			var tip := _horn_tip()
-			l.x = tip.x
-			l.y = tip.y + (i - 1.5) * 10
-			l.vx = 900
-			l.vy = 0
-		if foe != null:
-			var aim := Vector2(foe.x - l.x, foe.y - l.y)
-			if aim.length() > 1:
-				aim = aim.normalized() * 900.0
-				l.vx = aim.x
-				l.vy = aim.y
-		l.c = Color("ff4d5e")
-		l.lock = foe
-		lasers.append(l)
-	synth.laser()
-
-
 func _red_hit() -> void:
 	flash = maxf(flash, 0.1)
-	_laser_volley()
+	beam_t = BEAM_DUR
+	if boss != null:
+		boss.beam_tick = 0.0
+	synth.beam()
+	_popup(uni.x, uni.y - 130, "EYE BEAM!", Color("ff4d5e"))
 
 
 func _foe_count() -> int:
@@ -1335,32 +1311,6 @@ func _foe_cap() -> int:
 
 func _ring_target() -> int:
 	return maxi(2, 2 * _foe_count())
-
-
-func _single_laser() -> void:
-	var foe = _nearest_foe(Vector2(uni.x, uni.y), 2000.0)
-	var l := Laser.new()
-	if vertical:
-		l.x = uni.x
-		l.y = uni.y - 70
-		l.vx = 0
-		l.vy = -900
-	else:
-		var tip := _horn_tip()
-		l.x = tip.x
-		l.y = tip.y
-		l.vx = 900
-		l.vy = 0
-	if foe != null:
-		var aim := Vector2(foe.x - l.x, foe.y - l.y)
-		if aim.length() > 1:
-			aim = aim.normalized() * 900.0
-			l.vx = aim.x
-			l.vy = aim.y
-	l.c = RAINBOW[lasers.size() % 6]
-	l.lock = foe
-	lasers.append(l)
-	synth.laser()
 
 
 func _roll_cloud_kind(c: StormCloud) -> void:
@@ -1508,7 +1458,6 @@ func _game_overhead(dt: float) -> void:
 				react_pop = 1.0
 				if r.gold: _gold_hit()
 				elif r.red: _red_hit()
-				else: _single_laser()
 				combo += 1; rings_passed += 1
 				best_combo = maxi(best_combo, combo)
 				var pts := (50 if r.gold else 10) * combo
@@ -1821,7 +1770,16 @@ func _gradient_tex(colors: Array, locs: Array, w := 8, h := 270) -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
-const LEVEL_NAMES := ["Blueberry Skies", "Sunset Glow", "Dusky Dreams", "Starry Night", "Northern Lights", "Candy Storm", "Cotton Candy", "Rainbow Road"]
+const LEVEL_NAMES := ["Blueberry Skies", "Sunset Glow", "Dusky Dreams", "Starry Night", "Northern Lights", "Candy Storm", "Cotton Candy", "Rainbow Road", "Deep Space", "Nebula Drift", "Saucer Station"]
+
+func _in_space() -> bool:
+	return level > 8
+
+
+func _level_name() -> String:
+	if level <= 8:
+		return LEVEL_NAMES[level - 1]
+	return LEVEL_NAMES[8 + (level - 9) % 3]
 
 
 func _sky_pal() -> int:
@@ -1829,7 +1787,7 @@ func _sky_pal() -> int:
 
 
 func _sky_is_night() -> bool:
-	return _sky_pal() in [2, 3, 4]
+	return _in_space() or _sky_pal() in [2, 3, 4]
 
 
 func _sky_colors() -> Array:
@@ -1843,6 +1801,12 @@ func _sky_colors() -> Array:
 		["ffb3d9", "ffd6ec", "fff4fa"],
 		["7fe3ff", "d6b3ff", "ffe9a8"],
 	]
+	if _in_space():
+		return [
+			["050514", "141433", "2a1a5e"],
+			["0d0221", "3a1a6e", "7b2f9e"],
+			["020617", "0e2a52", "1f7a6d"],
+		][(level - 9) % 3]
 	return palettes[_sky_pal()]
 
 
@@ -1877,6 +1841,39 @@ func _puff(x: float, y: float, s: float) -> void:
 func _hash01(n: int) -> float:
 	var x := (n * 1103515245 + 12345) & 0x7fffffff
 	return float(x) / 2147483647.0
+
+
+# Space endgame: the saucer station hanging overhead and the
+# planet's glowing limb below. Shared by both orientations.
+func _draw_station(sx: float, sy: float, sc: float) -> void:
+	var bob := sin(t * 0.8) * 6.0 * sc
+	_wxf(Vector2(sx, sy + bob), 0, Vector2(sc, sc))
+	_fill_ellipse(Vector2.ZERO, 120, 44, Color("3d3a5c"))
+	draw_polyline(_arc_pts(0, 0, 120, 44, 0, TAU, 48), Color("8b86a8"), 4, true)
+	_fill_ellipse(Vector2.ZERO, 58, 20, Color("050514"))
+	draw_polyline(_arc_pts(0, 0, 58, 20, 0, TAU, 36), Color("b77bff"), 3, true)
+	for sp in [0.0, PI / 2, PI, PI * 1.5]:
+		draw_line(Vector2(cos(sp) * 58, sin(sp) * 20), Vector2(cos(sp) * 118, sin(sp) * 43), Color("5d6384"), 5, true)
+	draw_circle(Vector2(0, -30), 26, Color("8b86a8"))
+	draw_arc(Vector2(0, -30), 26, PI, TAU, 24, Color("c9cde0"), 3, true)
+	for w in 10:
+		var wa := w * TAU / 10 + 0.3
+		var lit := sin(t * 2 + w * 1.7) > -0.2
+		draw_circle(Vector2(cos(wa) * 92, sin(wa) * 33), 4, Color("ffe9a8") if lit else Color("4a4468"))
+	var blink := 0.4 + 0.6 * maxf(0, sin(t * 3))
+	draw_circle(Vector2(0, -60), 6, Color(1, 0.3, 0.37, blink))
+	draw_circle(Vector2(0, -60), 10, Color(1, 0.3, 0.37, blink * 0.3))
+	_world_apply()
+
+
+func _draw_planet(px: float, py: float, pr: float) -> void:
+	draw_circle(Vector2(px, py), pr, Color("1f6fd4"))
+	draw_arc(Vector2(px, py), pr, 0, TAU, 96, Color(0.55, 0.85, 1, 0.8), 10, true)
+	draw_arc(Vector2(px, py), pr - 26, PI * 1.15, PI * 1.75, 40, Color(1, 1, 1, 0.35), 14, true)
+	draw_arc(Vector2(px, py), pr - 60, PI * 0.1, PI * 0.5, 32, Color("7df0c8"), 10, true)
+	for ci in 12:
+		var ca := PI * (0.55 + 0.9 * _hash01(ci * 3 + 1))
+		draw_circle(Vector2(px + cos(ca) * (pr - 8), py + sin(ca) * (pr - 8)), 2.5, Color("ffe9a8"))
 
 
 # Side view: slow countryside hills, quicker line-art city skyline.
@@ -1947,14 +1944,19 @@ func _draw_background(dt: float) -> void:
 	draw_circle(Vector2(W - 140, 90), 64, Color(1, 238 / 255.0, 150 / 255.0, 0.25))
 	draw_circle(Vector2(W - 140, 90), 42, sun_col)
 
-	# Faint rainbow arch
-	for i in 6:
-		var pts := _arc_pts(W * 0.35, H + 120, 360 - i * 9, 360 - i * 9, PI * 1.08, PI * 1.92, 40)
-		var col: Color = RAINBOW[i]
-		col.a = 0.16
-		draw_polyline(pts, col, 9, true)
+	# Faint rainbow arch — skyworlds only, never in deep space.
+	if not _in_space():
+		for i in 6:
+			var pts := _arc_pts(W * 0.35, H + 120, 360 - i * 9, 360 - i * 9, PI * 1.08, PI * 1.92, 40)
+			var col: Color = RAINBOW[i]
+			col.a = 0.16
+			draw_polyline(pts, col, 9, true)
 
-	_draw_scenery(dt)
+	if _in_space():
+		_draw_planet(W * 0.3, H + 520, 600)
+		_draw_station(W - 190, 150, 1.0)
+	else:
+		_draw_scenery(dt)
 
 	# Parallax clouds
 	var moving := state == "play" and not paused
@@ -2244,7 +2246,16 @@ func _draw_quilt() -> void:
 
 func _draw_over_bg() -> void:
 	draw_texture_rect(sky_tex, Rect2(0, 0, VW, VH), false)
-	_draw_quilt()
+	if _in_space():
+		_draw_planet(VW / 2, VH + 700, 800)
+		_draw_station(VW - 130, 130, 0.7)
+		for s in stars:
+			var sx2: float = s.x * VW / 960.0
+			var sy2: float = s.y * VH / 540.0
+			var a2: float = 0.5 + 0.5 * sin(t * 3 + s.p * 2)
+			draw_circle(Vector2(sx2, sy2), s.r + 0.8, Color(1, 1, 1, a2))
+	else:
+		_draw_quilt()
 	for i in 8:
 		var gx := (i + 0.5) * VW / 8 + sin(t * 0.3 + i * 2.1) * 20
 		var gy := fmod(i * VH / 8 + t * 15, VH + 200) - 100
@@ -2407,7 +2418,7 @@ func _draw_title_card() -> void:
 	var items := [
 		"☝️ Drag to fly · hold to fire · ROCKETS button",
 		"🎯 Rings in a row build your combo",
-		"🌟 Gold rings fire rockets · red rings fire lasers",
+		"🌟 Gold rings fire rockets · red rings call her eye-beam",
 		"⛈️ Storm clouds drain her health — zap them first!",
 		"🎮 Gamepad works too · tilt in Settings ⚙",
 	]
@@ -2518,7 +2529,7 @@ func _draw_hud() -> void:
 		col.a = minf(1, level_banner)
 		var ol := INK
 		ol.a = minf(1, level_banner)
-		_stroke_text(Vector2(VW / 2, VH / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d — %s!" % [level, LEVEL_NAMES[(level - 1) % 8]], 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
+		_stroke_text(Vector2(VW / 2, VH / 2 - 120), "Fly through the rings!" if level == 1 else "Level %d — %s!" % [level, _level_name()], 44, col, HORIZONTAL_ALIGNMENT_CENTER, 7, ol)
 	_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 	_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 	_draw_round_button(Vector2(VW - 141, 33), "⚙")

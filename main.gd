@@ -2288,10 +2288,10 @@ func _draw_title_card() -> void:
 	_text_c(Vector2(W / 2, y), "A magic pony never falls!", 15, Color("ffd9ef"))
 	y += 30
 	var items := [
-		"☝️ Drag to fly · hold to fire · 🚀 rockets",
+		"☝️ Drag to fly · hold to fire · ROCKETS button",
 		"🎯 Rings in a row build your combo",
 		"🌟 Golden rings are worth extra",
-		"⛈️ Storm clouds take a heart — zap them first!",
+		"⛈️ Storm clouds drain her health — zap them first!",
 		"🎮 Gamepad works too · tilt in Settings ⚙",
 	]
 	for it in items:
@@ -2405,7 +2405,13 @@ func _draw_hud() -> void:
 	_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 	_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 	_draw_round_button(Vector2(VW - 141, 33), "⚙")
-	_draw_round_button(Vector2(VW - 44, VH - 100), "🚀")
+	draw_circle(Vector2(VW - 44, VH - 100), 21, Color(42 / 255.0, 22 / 255.0, 80 / 255.0, 0.55))
+	draw_arc(Vector2(VW - 44, VH - 100), 21, 0, TAU, 32, Color(1, 1, 1, 0.7), 2, true)
+	var rp := Vector2(VW - 44, VH - 100)
+	var rdim := 0.45 if rocket_cd > 0 else 1.0
+	draw_colored_polygon(PackedVector2Array([rp + Vector2(9, -11), rp + Vector2(1, -3), rp + Vector2(-5, -3), rp + Vector2(-5, 5), rp + Vector2(1, 5)]), Color(0.79, 0.81, 0.88, rdim))
+	draw_colored_polygon(PackedVector2Array([rp + Vector2(9, -11), rp + Vector2(2, -6), rp + Vector2(2, 6)]), Color(1, 0.3, 0.37, rdim))
+	draw_colored_polygon(PackedVector2Array([rp + Vector2(-5, 0), rp + Vector2(-10, -4), rp + Vector2(-10, 4)]), Color(1, 0.69, 0.24, rdim))
 	if rocket_cd > 0:
 		draw_arc(Vector2(VW - 44, VH - 100), 26, -PI / 2, -PI / 2 + TAU * (1.0 - rocket_cd / ROCKET_CD), 32, Color("ffd23f"), 4, true)
 	if transitioning and state == "play":

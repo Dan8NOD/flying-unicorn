@@ -754,11 +754,11 @@ func _game_update(dt: float) -> void:
 	if ring_timer <= 0:
 		if rings.size() < _ring_target():
 			_spawn_ring()
-		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.1
+		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.32
 	cloud_timer -= dt
 	if cloud_timer <= 0:
 		_spawn_cloud()
-		cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
+		cloud_timer = randf_range(3.7, 6.7) / (0.8 + level * 0.2)
 	if hp < 70.0 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
 		pk.x = W + 40; pk.y = randf_range(90, H - 120); pk.phase = randf_range(0, 6)
@@ -1430,7 +1430,7 @@ func _game_overhead(dt: float) -> void:
 	if ring_timer <= 0:
 		if rings.size() < _ring_target():
 			_spawn_ring_top()
-		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.1
+		ring_timer = randf_range(1.25, 1.7) * (260 / speed) * 1.32
 	cloud_timer -= dt
 	if cloud_timer <= 0:
 		if _foe_count() >= _foe_cap():
@@ -1440,7 +1440,7 @@ func _game_overhead(dt: float) -> void:
 			c.x = randf_range(80, VW - 80); c.y = -90; c.phase = randf_range(0, 6)
 			_roll_cloud_kind(c)
 			clouds.append(c)
-			cloud_timer = randf_range(2.2, 4) / (0.8 + level * 0.2)
+			cloud_timer = randf_range(3.7, 6.7) / (0.8 + level * 0.2)
 	if hp < 70.0 and randf() < dt * 0.04 and pickups.is_empty():
 		var pk := Pickup.new()
 		pk.x = randf_range(90, VW - 90); pk.y = -50; pk.phase = randf_range(0, 6)

@@ -57,8 +57,8 @@ var title_ms := 0.0
 var score := 0
 const HP_MAX := 100.0
 const MERCD := 4.0
-const MER_RANGE := 250.0
-const MER_HEAL := 12.0
+const MER_RANGE := 312.0
+const MER_HEAL := 15.0
 const ROCKET_CD := 4.0
 var hp := HP_MAX
 var mer_px := 90.0
@@ -69,6 +69,9 @@ var mer_lock = null
 var arcs: Array = []
 var rockets: Array = []
 var rocket_cd := 0.0
+var gold_in := 3
+var dash_t := 0.0
+var dash_lock = null
 var _rocket_tap := false
 var combo := 0
 var best_combo := 0
@@ -528,7 +531,7 @@ func reset() -> void:
 	ring_timer = 0.6; cloud_timer = 3.5; fire_cooldown = 0; last_ring_y = H / 2
 	heat = 0; overheated = false; reload_t = 0; fire_ok = true; beam_cd = BEAM_PERIOD; beam_t = 0
 	shock = []; boss = null; bolts = []; boss_t = 0; boss_spawn_t = 20.0; boss_kills = 0; bolt_cd = 0
-	mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false;
+	mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false; gold_in = 3; dash_t = 0; dash_lock = null;
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
@@ -567,6 +570,7 @@ func game_over() -> void:
 	bolts = []
 	rockets = []
 	arcs = []
+	dash_t = 0; dash_lock = null;
 
 
 var _had_focus := false
@@ -647,6 +651,7 @@ func _game_update(dt: float) -> void:
 	_boss_update(dt)
 	_mermaid_update(dt)
 	_update_rockets(dt)
+	_dash_step(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
 	react_angle += react_spin * dt
@@ -686,7 +691,7 @@ func _game_update(dt: float) -> void:
 		return
 
 	# Movement: pointer steers toward finger; keys/stick/dpad accelerate
-	if state == "play":
+	if state == "play" and dash_t <= 0:
 		if pointer_y != null:
 			var target: float = clampf(pointer_y, 50, H - 60)
 			uni.vy += (target - uni.y) * 14 * dt
@@ -1160,7 +1165,7 @@ func _discharge(mp: Vector2) -> void:
 		return
 	arcs.append({ "ax": mp.x, "ay": mp.y, "bx": tgt.x, "by": tgt.y, "life": 0.22, "max": 0.22 })
 	if tgt is Boss:
-		_damage_boss(2)
+		_damage_boss(3)
 	else:
 		_hurt_cloud(tgt, 2)
 	hp = minf(HP_MAX, hp + MER_HEAL)
@@ -1285,6 +1290,7 @@ func _steer_laser(l, dt: float) -> void:
 
 func _red_hit() -> void:
 	flash = maxf(flash, 0.1)
+	_start_dash()
 	beam_t = BEAM_DUR
 	if boss != null:
 		boss.beam_tick = 0.0
@@ -1311,6 +1317,68 @@ func _foe_cap() -> int:
 
 func _ring_target() -> int:
 	return maxi(2, 2 * _foe_count())
+
+
+func _start_dash() -> void:
+	var best = null
+	var best_d := 1e18
+	for r in rings:
+		if r.done:
+			continue
+		var ahead: bool = (r.y < uni.y) if vertical else (r.x > uni.x)
+		if not ahead:
+			continue
+		var d: float = absf(r.y - uni.y) if vertical else absf(r.x - uni.x)
+		if d < best_d:
+			best_d = d
+			best = r
+	if best == null:
+		return
+	dash_lock = best
+	dash_t = 0.55
+	hurt_timer = maxf(hurt_timer, 0.55)
+	_burst(uni.x, uni.y, 12, [Color.WHITE, Color("ff4d5e")], 260)
+
+
+func _dash_step(dt: float) -> void:
+	if dash_t <= 0 or state != "play":
+		return
+	dash_t -= dt
+	var tgt = dash_lock
+	if tgt == null or not is_instance_valid(tgt) or tgt.done:
+		dash_t = 0
+		dash_lock = null
+		return
+	if vertical:
+		var dx: float = tgt.x - uni.x
+		if absf(dx) < 30:
+			dash_t = 0
+			dash_lock = null
+			return
+		uni.vx = clampf(dx * 10.0, -560.0, 560.0)
+	else:
+		var d := Vector2(tgt.x - uni.x, tgt.y - uni.y)
+		if d.length() < 34:
+			dash_t = 0
+			dash_lock = null
+			return
+		var v := d.normalized() * 560.0
+		uni.vx = v.x
+		uni.vy = v.y
+	for k in 2:
+		var tp := Particle.new()
+		tp.x = uni.x + randf_range(-14, 14)
+		tp.y = uni.y + randf_range(-14, 14)
+		tp.vx = randf_range(-60, 60)
+		tp.vy = randf_range(-60, 60)
+		tp.life = 0.3
+		tp.max_life = 0.3
+		tp.r = randf_range(3, 5)
+		tp.c = RAINBOW[randi() % 6]
+		tp.star = true
+		particles.append(tp)
+	if dash_t <= 0:
+		dash_lock = null
 
 
 func _roll_cloud_kind(c: StormCloud) -> void:
@@ -1347,9 +1415,14 @@ func _manage_ambience() -> void:
 
 func _spawn_ring_top() -> void:
 	var r := Ring.new()
-	var rroll := randf()
-	r.gold = rroll < 0.10
-	r.red = rroll >= 0.10 and rroll < 0.20
+	r.red = randf() < 0.10
+	gold_in -= 1
+	if gold_in <= 0:
+		r.gold = true
+		r.red = false
+		gold_in = randi_range(3, 5)
+	else:
+		r.gold = false
 	var rspread: float = randf_range(-220, 220) if boss != null else randf_range(-140, 140)
 	r.x = clampf(last_ring_x + rspread, 70, VW - 70)
 	last_ring_x = r.x
@@ -1370,7 +1443,7 @@ func _game_overhead(dt: float) -> void:
 	if state == "play" and not paused:
 		ground_y += speed * dt * 0.25
 	# Movement: strafe; rail height is fixed.
-	if state == "play":
+	if state == "play" and dash_t <= 0:
 		if pointer_down:
 			var target: float = clampf(pointer_pos.x, 50, VW - 50)
 			uni.vx += (target - uni.x) * 14 * dt
@@ -1556,9 +1629,14 @@ func _horn_tip() -> Vector2:
 
 func _spawn_ring() -> void:
 	var r := Ring.new()
-	var rroll := randf()
-	r.gold = rroll < 0.10
-	r.red = rroll >= 0.10 and rroll < 0.20
+	r.red = randf() < 0.10
+	gold_in -= 1
+	if gold_in <= 0:
+		r.gold = true
+		r.red = false
+		gold_in = randi_range(3, 5)
+	else:
+		r.gold = false
 	r.y = clampf(last_ring_y + randf_range(-260, 260) if boss != null else last_ring_y + randf_range(-170, 170), 90, H - 110)
 	r.base_y = r.y
 	last_ring_y = r.y
@@ -2158,6 +2236,12 @@ func _ring_stroke(r: Ring, front: bool) -> void:
 		for i in 3:
 			var a := t * 3 + i * 2.1
 			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * rx, r.y + sin(a) * ry, 4), Color.WHITE)
+	if r.red:
+		var ro := 1.0 + 0.06 * sin(t * 7 + r.phase)
+		draw_polyline(_arc_pts(r.x, r.y, (rx + 13) * ro, (ry + 13) * ro, start, end, 20), Color("ff4d5e"), 3, true)
+		for zi in 4:
+			var za := start + (end - start) * (0.15 + 0.7 * _hash01(int(t * 6) + zi * 13))
+			draw_circle(Vector2(r.x + cos(za) * (rx + 13) * ro, r.y + sin(za) * (ry + 13) * ro), 3, Color.WHITE)
 
 
 # ─── Storm clouds ─────────────────────────────────────────────────────────
@@ -2277,6 +2361,12 @@ func _draw_ring_top(r: Ring) -> void:
 		for i in 3:
 			var a := t * 3 + i * 2.1
 			draw_colored_polygon(_sparkle_poly(r.x + cos(a) * (r.rx + 4), r.y + sin(a) * (r.rx + 4), 4), Color.WHITE)
+	if r.red:
+		var ro2 := r.rx + 16 + sin(t * 7 + r.phase) * 3
+		draw_arc(Vector2(r.x, r.y), ro2, 0, TAU, 48, Color("ff4d5e"), 3, true)
+		for zi in 4:
+			var za2 := zi * TAU / 4 + t * 2
+			draw_circle(Vector2(r.x + cos(za2) * ro2, r.y + sin(za2) * ro2), 3, Color.WHITE)
 
 
 func _draw_pony_top() -> void:

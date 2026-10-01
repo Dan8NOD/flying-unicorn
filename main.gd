@@ -150,6 +150,17 @@ var _walk_touch := Vector2(-1, -1)
 # Chapter 2 side-view world: camera-follow platformer across WCOLS columns,
 # START to FINISH, with one target drone to zap. All x are world coords.
 const WCOLS := 34
+const WFOOT := 30.0
+# Chapter 3: touching the FINISH flag drops her down a long tunnel (steer,
+# hop, zap) that opens into an underwater pony lagoon at TUNNEL_H.
+const TUNNEL_H := 6400.0
+const WATER_H := 1080.0
+var ch3 := false
+var cam_y := 0.0
+var ch3_pending := 0.0
+var tdrones := []
+var _flap_cd := 0.0
+var _was_water := false
 var cam_x := 0.0
 var stride := 0.0
 var _w_grounded := false
@@ -325,6 +336,7 @@ var _force_level := 0
 var _force_vertical := false
 var _force_wonder := false
 var _force_ch2 := false
+var _force_ch3 := false
 var _start_time := 0.0
 
 
@@ -353,6 +365,9 @@ func _parse_args() -> void:
 		elif a == "--chapter2":
 			_force_ch2 = true
 			_autostart = true
+		elif a == "--chapter3":
+			_force_ch3 = true
+			_autostart = true
 
 
 # Screenshot/QA hooks: jump straight to a level's palette or force the
@@ -374,6 +389,9 @@ func _apply_test_hooks() -> void:
 	if _force_ch2:
 		play_time = CH2_TIME
 		print("FU chapter2 start at t=%s" % play_time)
+	if _force_ch3:
+		_enter_wonder()
+		_enter_ch3()
 
 
 func _save_cfg() -> void:
@@ -596,6 +614,8 @@ func reset() -> void:
 	over_card_timer = 0; over_card_visible = false
 	wonder = false; powered = false; bits = 0; ch2_pending = 0
 	cam_x = 0.0; stride = 0.0; wzaps = []; drone = null; _w_zap = false; _fin_cd = 0.0
+	ch3 = false; cam_y = 0.0; ch3_pending = 0.0; tdrones = []
+	_flap_cd = 0.0; _was_water = false
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
@@ -665,6 +685,10 @@ func _process(delta: float) -> void:
 		ch2_pending -= delta
 		if ch2_pending <= 0:
 			_enter_wonder()
+	if ch3_pending > 0 and state == "play" and wonder and not ch3:
+		ch3_pending -= delta
+		if ch3_pending <= 0:
+			_enter_ch3()
 	if state == "play" and not wonder and play_time >= WONDER_AT:
 		_enter_wonder()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
@@ -764,7 +788,15 @@ func _game_update(dt: float) -> void:
 		return
 
 	if wonder:
-		_wonder_side(dt)
+		if ch3:
+			_ch3_fall(dt)
+		else:
+			_wonder_side(dt)
+		# Taken star bits twinkle back after a few seconds, in every mode.
+		if _bit_taken.size() > 40:
+			for k in _bit_taken.keys():
+				if t - _bit_taken[k] > 6.0:
+					_bit_taken.erase(k)
 		_update_particles(dt)
 		return
 
@@ -2498,18 +2530,18 @@ func _draw_unicorn() -> void:
 	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
 
 	if wonder and not vertical:
-		# Walking legs: trot cycle scaled by speed, hooves plant on the
-		# collision plane (y + 20); tucked splay when airborne.
+		# Walking legs: full-length trot cycle scaled by speed, hooves plant
+		# on the collision plane (y + WFOOT); tucked splay when airborne.
 		var legs_w := [[-24.0, 0.0], [-10.0, PI], [12.0, PI], [26.0, 0.0]]
 		var amp := clampf(absf(uni.vx) / 120.0, 0.0, 1.0)
 		for leg in legs_w:
-			var hip := Vector2(leg[0], 8)
+			var hip := Vector2(leg[0], 10)
 			var foot: Vector2
 			if _w_grounded:
 				var swing := sin(stride * TAU + leg[1]) * amp
-				foot = Vector2(leg[0] + swing * 9.0, 16.0 - maxf(0.0, cos(stride * TAU + leg[1])) * 5.0 * amp)
+				foot = Vector2(leg[0] + swing * 11.0, 25.0 - maxf(0.0, cos(stride * TAU + leg[1])) * 7.0 * amp)
 			else:
-				foot = Vector2(leg[0] + (9.0 if leg[0] > 0 else -7.0), 13.0)
+				foot = Vector2(leg[0] + (11.0 if leg[0] > 0 else -9.0), 18.0)
 			draw_line(hip, foot, Color("ff9ccf"), 8, true)
 			draw_rect(Rect2(foot.x - 5.5, foot.y - 2, 11, 7), Color("b9bfd6"))
 			draw_rect(Rect2(foot.x - 5.5, foot.y - 2, 11, 7), Color("5d6384"), false, 1.5)
@@ -3088,10 +3120,14 @@ func _draw_hud() -> void:
 	if wonder:
 		_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
 		_stroke_text(Vector2(22, 76), "⭐ x%d" % bits, 20, Color("ffd23f"), HORIZONTAL_ALIGNMENT_LEFT, 4)
-		_stroke_text(Vector2(VW / 2, 40), "Wonder World", 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
+		_stroke_text(Vector2(VW / 2, 40), "Chapter 3" if ch3 else "Chapter 2", 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
 		_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 		_draw_round_button(Vector2(VW - 33, 33), "❚❚")
-		if not vertical and drone != null and drone.alive:
+		var any_target: bool = drone != null and drone.alive
+		for d3 in tdrones:
+			if d3.alive:
+				any_target = true
+		if not vertical and any_target:
 			_draw_round_button(Vector2(VW - 44, VH - 100), "⚡")
 		if transitioning:
 			_pill(Vector2(VW / 2, 76), "TURNING…")
@@ -3236,11 +3272,11 @@ func _wonder_side(dt: float) -> void:
 	uni.vy = minf(uni.vy, 900.0)
 	if Input.is_action_just_pressed("fly_up") or Input.is_action_just_pressed("fire") or _wonder_jump:
 		_wonder_jump = false
-		var grounded: bool = uni.y + 20 >= H - 66
+		var grounded: bool = uni.y + WFOOT >= H - 66
 		if not grounded:
 			for c in _wonder_cols():
 				var L := _wonder_col(c)
-				if absf(uni.x - c * WCOL) < L[1] * 0.5 + 14 and absf(uni.y + 20 - L[0]) < 16:
+				if absf(uni.x - c * WCOL) < L[1] * 0.5 + 14 and absf(uni.y + WFOOT - L[0]) < 16:
 					grounded = true
 					break
 		if grounded:
@@ -3255,7 +3291,7 @@ func _wonder_side(dt: float) -> void:
 			react_pop = 1.0
 			_burst(uni.x, uni.y + 10, 14, RAINBOW, 220)
 			synth.gold()
-	var prev_foot: float = uni.y + 20
+	var prev_foot: float = uni.y + WFOOT
 	uni.x += uni.vx * dt
 	uni.y += uni.vy * dt
 	if uni.x < 30:
@@ -3272,23 +3308,23 @@ func _wonder_side(dt: float) -> void:
 	if uni.vy >= 0:
 		for c in _wonder_cols():
 			var L := _wonder_col(c)
-			if absf(uni.x - c * WCOL) < L[1] * 0.5 + 12 and prev_foot <= L[0] + 4 and uni.y + 20 >= L[0]:
+			if absf(uni.x - c * WCOL) < L[1] * 0.5 + 12 and prev_foot <= L[0] + 4 and uni.y + WFOOT >= L[0]:
 				if L[2]:
 					uni.vy = -760
 					react_pop = 1.0
 					_burst(uni.x, L[0], 12, [Color.WHITE, Color("bfe9ff")], 180)
 					synth.poof()
 				else:
-					uni.y = L[0] - 20
+					uni.y = L[0] - WFOOT
 					uni.vy = 0
 					_air_jump = true
 				landed = true
 				break
-		if not landed and uni.y + 20 >= H - 60:
-			uni.y = H - 80
+		if not landed and uni.y + WFOOT >= H - 60:
+			uni.y = H - 60 - WFOOT
 			uni.vy = 0
 			_air_jump = true
-	_w_grounded = landed or (uni.vy == 0 and uni.y + 20 >= H - 61)
+	_w_grounded = landed or (uni.vy == 0.0 and uni.y + WFOOT >= H - 61)
 	uni.tilt += (clampf(uni.vx / 700.0, -0.3, 0.3) - uni.tilt) * minf(1, dt * 8)
 	uni.flap += dt * (10.0 if not _w_grounded else 3.0)
 	stride += absf(uni.vx) * dt * 0.045
@@ -3350,15 +3386,17 @@ func _wonder_side(dt: float) -> void:
 				drone.x = clampf(uni.x + _w_face * 500.0, WCOLS * WCOL * 0.25, WCOLS * WCOL * 0.8)
 				drone.dir = -_w_face
 				_popup(drone.x, drone.y - 40, "He's back!", Color("bfe9ff"))
-	# FINISH flag: crossing it celebrates, then she can walk back.
+	# FINISH flag: touching the pole opens Chapter 3 — the tunnel drop.
 	_fin_cd = maxf(0.0, _fin_cd - dt)
-	if uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0:
+	if uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0 and ch3_pending <= 0:
 		_fin_cd = 5.0
 		score += 50
 		bits += 3
 		_popup(uni.x, uni.y - 70, "FINISH! ⭐", Color("ffd23f"))
+		_popup(uni.x, uni.y - 110, "CHAPTER 3! ↓", Color("7df0ff"))
 		_burst(uni.x + 40, uni.y - 40, 40, RAINBOW, 260)
 		synth.level_up()
+		ch3_pending = 1.6
 	# Star bits: collect on touch, twinkle back a few seconds later.
 	for c in _wonder_cols():
 		var L := _wonder_col(c)
@@ -3372,6 +3410,234 @@ func _wonder_side(dt: float) -> void:
 					score += 5
 					_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 160)
 					synth.ring(bits)
+	# Powered aura sparkles.
+	if randf() < 0.5:
+		var p := Particle.new()
+		p.x = uni.x + randf_range(-22, 22)
+		p.y = uni.y + randf_range(-18, 18)
+		p.vx = randf_range(-25, 25)
+		p.vy = randf_range(-40, -10)
+		p.life = 0.5
+		p.max_life = 0.5
+		p.r = randf_range(2, 4)
+		p.c = RAINBOW[int(t * 10) % 6]
+		p.star = true
+		particles.append(p)
+
+
+# ─── Chapter 3: the tunnel drop and the pony lagoon ───────────────────────
+# Row layout is a pure hash of the row index, matching the column hashing
+# in Chapter 2. Returns [py, px, pw, bounce].
+const TROW := 220.0
+const TROWS := 27
+
+
+func _tun_row(r: int) -> Array:
+	var py := 260.0 + r * TROW
+	var px := 150.0 + _hash01(r * 7 + 2) * (W - 400.0)
+	var pw := 100.0 + _hash01(r * 5 + 9) * 60.0
+	var bounce := _hash01(r * 11 + 3) < 0.25
+	return [py, px, pw, bounce]
+
+
+func _tun_rows() -> Array:
+	var out := []
+	var r := clampi(int(floor((cam_y - 140.0) / TROW)), 0, TROWS - 1)
+	while r < TROWS and 260.0 + r * TROW < cam_y + H + 140:
+		out.append(r)
+		r += 1
+	return out
+
+
+func _enter_ch3() -> void:
+	ch3 = true
+	cam_x = 0.0; cam_y = 0.0
+	_was_water = false
+	_flap_cd = 0.0
+	_w_zap = false
+	_w_fire_cd = 0.0
+	wzaps = []
+	drone = null
+	tdrones = []
+	for i in 2:
+		tdrones.append({ "x": W * (0.32 if i == 0 else 0.68), "y": 2460.0 + i * 1980.0, "hp": 6, "alive": true, "hit": 0.0, "phase": randf() * TAU })
+	uni.x = W / 2
+	uni.y = 80.0
+	uni.vx = 0.0; uni.vy = 120.0
+	uni.tilt = 0.0
+	level_banner = 2.4
+	flash = maxf(flash, 0.3)
+	_burst(uni.x, uni.y, 40, RAINBOW, 300)
+	synth.level_up()
+	synth.pony()
+
+
+func _ch3_fall(dt: float) -> void:
+	if state != "play":
+		return
+	var in_water: bool = uni.y > TUNNEL_H
+	if in_water and not _was_water:
+		uni.vy *= 0.3
+		_popup(uni.x, uni.y - 80, "Water World! 🫧", Color("bfe9ff"))
+		_burst(uni.x, TUNNEL_H, 36, [Color.WHITE, Color("bfe9ff"), Color("7df0c8")], 260)
+		synth.poof()
+		synth.powerup()
+	_was_water = in_water
+	# Steer: keys/stick, or press-drag toward a spot.
+	var walk := 0.0
+	if Input.is_action_pressed("fly_left"):
+		walk -= 1.0
+	if Input.is_action_pressed("fly_right"):
+		walk += 1.0
+	if pointer_down and _walk_touch.x >= 0:
+		var d: float = _walk_touch.x - uni.x
+		if absf(d) > 18.0:
+			walk = clampf(d / 120.0, -1.0, 1.0)
+	uni.vx += walk * (900.0 if in_water else 1300.0) * dt
+	if walk == 0.0:
+		uni.vx *= pow(0.02 if in_water else 0.01, dt)
+	else:
+		_w_face = signf(walk)
+	var maxvx := 200.0 if in_water else 280.0
+	uni.vx = clampf(uni.vx, -maxvx, maxvx)
+	# Fall: floaty in the shaft, buoyant in the lagoon.
+	if in_water:
+		uni.vy += 170.0 * dt
+		uni.vy = clampf(uni.vy, -420.0, 150.0)
+	else:
+		uni.vy += 700.0 * dt
+		uni.vy = minf(uni.vy, 480.0)
+	_flap_cd = maxf(0.0, _flap_cd - dt)
+	if Input.is_action_just_pressed("fly_up") or Input.is_action_just_pressed("fire") or _wonder_jump:
+		_wonder_jump = false
+		if in_water:
+			uni.vy = -320.0
+			react_pop = 0.6
+			_burst(uni.x, uni.y + 18, 8, [Color.WHITE, Color("bfe9ff")], 140)
+			synth.pony()
+		else:
+			var grounded := false
+			for r in _tun_rows():
+				var L := _tun_row(r)
+				if absf(uni.x - L[1]) < L[2] * 0.5 + 14 and absf(uni.y + WFOOT - L[0]) < 16:
+					grounded = true
+					break
+			if grounded:
+				uni.vy = -520.0
+				react_pop = 0.6
+				_burst(uni.x, uni.y + 18, 6, [Color.WHITE, Color("ffd9ef")], 120)
+				synth.pony()
+			elif _flap_cd <= 0:
+				_flap_cd = 0.7
+				uni.vy = minf(uni.vy * 0.45, 140.0)
+				react_pop = 0.8
+				_burst(uni.x, uni.y + 10, 10, RAINBOW, 180)
+				synth.gold()
+	var prev_foot: float = uni.y + WFOOT
+	uni.x += uni.vx * dt
+	uni.y += uni.vy * dt
+	if uni.x < 46:
+		uni.x = 46
+		uni.vx = absf(uni.vx) * 0.4
+	if uni.x > W - 46:
+		uni.x = W - 46
+		uni.vx = -absf(uni.vx) * 0.4
+	if uni.y < 60:
+		uni.y = 60
+		uni.vy = absf(uni.vy) * 0.3
+	# Land on rocky ledges; rainbow ones boing.
+	if not in_water and uni.vy >= 0:
+		for r in _tun_rows():
+			var L := _tun_row(r)
+			if absf(uni.x - L[1]) < L[2] * 0.5 + 12 and prev_foot <= L[0] + 4 and uni.y + WFOOT >= L[0]:
+				if L[3]:
+					uni.vy = -700.0
+					react_pop = 1.0
+					_burst(uni.x, L[0], 12, [Color.WHITE, Color("bfe9ff")], 180)
+					synth.poof()
+				else:
+					uni.y = L[0] - WFOOT
+					uni.vy = 0.0
+				break
+	if in_water and uni.y + WFOOT >= TUNNEL_H + WATER_H - 60:
+		uni.y = TUNNEL_H + WATER_H - 60 - WFOOT
+		uni.vy = 0.0
+	_w_grounded = uni.vy == 0.0
+	uni.tilt += (clampf(uni.vx / 700.0, -0.3, 0.3) - uni.tilt) * minf(1, dt * 8)
+	uni.flap += dt * (10.0 if not in_water else 4.0)
+	stride += absf(uni.vx) * dt * 0.045
+	# Camera chases her down the shaft and into the lagoon.
+	cam_y = clampf(lerpf(cam_y, uni.y - H * 0.38, minf(1.0, dt * 5.0)), 0.0, TUNNEL_H + WATER_H - H)
+	# Weapons carry over: zap bolts, same button, same R key.
+	_w_fire_cd = maxf(0.0, _w_fire_cd - dt)
+	if Input.is_action_just_pressed("rockets") or _w_zap:
+		_w_zap = false
+		if _w_fire_cd <= 0:
+			_w_fire_cd = 0.22
+			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "life": 0.9, "dead": false })
+			synth.zap()
+	for z in wzaps:
+		if z.dead:
+			continue
+		z.x += z.dir * 760 * dt
+		z.life -= dt
+		if z.life <= 0:
+			z.dead = true
+		for d3 in tdrones:
+			if d3.alive and not z.dead and Vector2(z.x - d3.x, z.y - d3.y).length() < 44:
+				z.dead = true
+				d3.hp -= 1
+				d3.hit = 0.12
+				_burst(d3.x, d3.y, 6, [Color.WHITE, Color("ff4d5e")], 140)
+				synth.zap()
+				if d3.hp <= 0:
+					d3.alive = false
+					d3.respawn_t = 4.0
+					score += 50
+					_popup(d3.x, d3.y - 44, "BOOM! +50", Color("ffd23f"))
+					_burst(d3.x, d3.y, 30, [Color("ff4d5e"), Color("ffd23f"), Color.WHITE], 240)
+					synth.poof()
+	wzaps = wzaps.filter(func(z): return not z.dead)
+	for d3 in tdrones:
+		if d3.alive:
+			d3.y += sin(t * 1.4 + d3.phase) * 24.0 * dt
+			d3.x += cos(t * 0.9 + d3.phase) * 30.0 * dt
+			d3.hit = maxf(0.0, d3.hit - dt)
+			if Vector2(uni.x - d3.x, uni.y - d3.y).length() < 48:
+				uni.vx = signf(uni.x - d3.x) * 260.0
+				uni.vy = -300.0
+				_burst(uni.x, uni.y, 8, [Color.WHITE, Color("bfe9ff")], 140)
+				synth.poof()
+		else:
+			d3.respawn_t -= dt
+			if d3.respawn_t <= 0:
+				d3.alive = true
+				d3.hp = 6
+				_popup(d3.x, d3.y - 40, "He's back!", Color("bfe9ff"))
+	# Surprises: star bits and poppable balloons on the way down.
+	for r in _tun_rows():
+		var L := _tun_row(r)
+		var nb := 1 + int(_hash01(r * 13 + 7) * 2.0)
+		for bi in nb:
+			var bp := Vector2(L[1] - L[2] * 0.3 + bi * 46.0, L[0] - 44.0 - sin(t * 3.0 + r + bi) * 6.0)
+			if Vector2(uni.x - bp.x, uni.y - bp.y).length() < 34:
+				var key := "R:%d:%d" % [r, bi]
+				if not _bit_taken.has(key):
+					_bit_taken[key] = t
+					bits += 1
+					score += 5
+					_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 160)
+					synth.ring(bits)
+		if _hash01(r * 17 + 4) < 0.2:
+			var bal := Vector2(W - 150.0 - _hash01(r * 23 + 6) * (W - 300.0), L[0] - 110.0 + sin(t * 2.0 + r) * 10.0)
+			if Vector2(uni.x - bal.x, uni.y - bal.y).length() < 36:
+				var bkey := "BAL:%d" % r
+				if not _bit_taken.has(bkey):
+					_bit_taken[bkey] = t
+					score += 15
+					_popup(bal.x, bal.y - 30, "POP! +15", Color("ff9ccf"))
+					_burst(bal.x, bal.y, 20, [Color("ff9ccf"), Color.WHITE, Color("ffd23f")], 200)
+					synth.poof()
 	# Powered aura sparkles.
 	if randf() < 0.5:
 		var p := Particle.new()
@@ -3476,6 +3742,9 @@ func _draw_wonder() -> void:
 				cj += 1
 			ci += 1
 		return
+	if ch3:
+		_draw_ch3()
+		return
 	# Side view: solid ground, markers, drone, cloud platforms, star bits,
 	# and her zap bolts — all world coords; the camera transform is on.
 	_draw_solid_ground()
@@ -3497,6 +3766,10 @@ func _draw_wonder() -> void:
 		for bi in L[3]:
 			if not _bit_taken.has("%d:%d" % [c, bi]):
 				_bit_star(_wonder_bit_pos(c, bi))
+	_draw_wzaps()
+
+
+func _draw_wzaps() -> void:
 	for z in wzaps:
 		var zglow := Color(1, 0.6, 0.85, 0.4)
 		draw_line(Vector2(z.x - z.dir * 26, z.y), Vector2(z.x, z.y), zglow, 6, true)
@@ -3522,10 +3795,12 @@ func _draw_wonder_markers() -> void:
 	_text_c(Vector2(fx + 34, gy - 98), "FINISH", 14, Color.WHITE)
 
 
-func _draw_drone() -> void:
-	# The Chapter 2 practice target: a cute mini-saucer with a bullseye.
-	var p := Vector2(drone.x, drone.y)
-	var flash: bool = drone.hit > 0
+func _draw_drone(d = null) -> void:
+	# The practice target: a cute mini-saucer with a bullseye.
+	if d == null:
+		d = drone
+	var p := Vector2(d.x, d.y)
+	var flash: bool = d.hit > 0
 	_fill_ellipse(p + Vector2(0, 30), 28, 7, Color(0.4, 0.3, 0.6, 0.25))
 	draw_circle(p + Vector2(0, -14), 12, Color.WHITE if flash else Color("d9dce8"))
 	draw_arc(p + Vector2(0, -14), 12, PI * 1.1, PI * 1.6, 10, Color(1, 1, 1, 0.7), 2.5, true)
@@ -3538,6 +3813,105 @@ func _draw_drone() -> void:
 	var bl := 0.4 + 0.6 * (0.5 + 0.5 * sin(t * 4))
 	draw_line(p + Vector2(0, -24), p + Vector2(0, -30), Color("5d5880"), 2, true)
 	draw_circle(p + Vector2(0, -32), 3, Color(1, 0.85, 0.3, bl))
+
+
+func _draw_tunnel_bg() -> void:
+	# Screen space: the shaft darkens with depth, and the lagoon glows
+	# up from below once the bottom is near.
+	var depth := clampf(cam_y / TUNNEL_H, 0.0, 1.0)
+	var bands := 10
+	for i in bands:
+		var k0 := float(i) / bands
+		var k1 := float(i + 1) / bands
+		var shade := clampf(depth * 1.15 + k0 * 0.1, 0.0, 1.0)
+		var col := Color("3a2a5e").lerp(Color("0a1430"), shade)
+		draw_rect(Rect2(0, VH * k0, VW, VH * (k1 - k0) + 1), col)
+	var glow := clampf((cam_y + VH - (TUNNEL_H - 500.0)) / 500.0, 0.0, 1.0)
+	if glow > 0:
+		draw_texture_rect(_radial_glow_tex(Color(0.3, 0.7, 1, 0.5 * glow), Color(0.2, 0.5, 0.9, 0)), Rect2(VW * 0.5 - VW * 0.8, VH - VH * 0.5 * glow, VW * 1.6, VH * 0.7), false)
+
+
+func _draw_ch3() -> void:
+	# World space (camera transform on): water first, then walls, ledges,
+	# surprises, drones, bolts.
+	if cam_y + H > TUNNEL_H - 100:
+		# The lagoon: water sheet, light rays, sand, seaweed, bubbles, herd.
+		draw_rect(Rect2(0, TUNNEL_H, W, WATER_H + 80), Color(0.15, 0.45, 0.75, 0.42))
+		for i in 3:
+			var rx := 150.0 + i * 300.0 + sin(t * 0.6 + i) * 30.0
+			var ray := PackedVector2Array([Vector2(rx, TUNNEL_H), Vector2(rx + 90, TUNNEL_H), Vector2(rx + 200, TUNNEL_H + WATER_H), Vector2(rx + 60, TUNNEL_H + WATER_H)])
+			draw_colored_polygon(ray, Color(1, 1, 1, 0.07))
+		var sand_y := TUNNEL_H + WATER_H - 60
+		draw_rect(Rect2(0, sand_y, W, 80), Color("d9c48f"))
+		draw_rect(Rect2(0, sand_y, W, 6), Color("efe0b0"))
+		for i in 9:
+			var sx := 60.0 + i * 105.0 + _hash01(i * 31) * 40.0
+			var sh := 26.0 + _hash01(i * 17) * 30.0
+			var sway := sin(t * 1.6 + i) * 6.0
+			draw_polyline(_quad_pts(Vector2(sx, sand_y), Vector2(sx + sway * 0.4, sand_y - sh * 0.6), Vector2(sx + sway, sand_y - sh)), Color("2f9e5f"), 4, true)
+		for i in 12:
+			var bx := 40.0 + _hash01(i * 41) * (W - 80)
+			var by: float = sand_y - fmod(t * 36.0 + i * 173.0, WATER_H - 100.0)
+			draw_arc(Vector2(bx, by), 3.5 + _hash01(i * 7) * 2.5, 0, TAU, 12, Color(1, 1, 1, 0.35), 1.5, true)
+		# The herd: more ponies waiting in the lagoon.
+		var herd := [Color("ff9ccf"), Color("a8e6cf"), Color("c5b3f0"), Color("ffd3a0"), Color("9fd8ff"), Color("fff4b0")]
+		for i in 6:
+			var hx := 130.0 + i * 130.0 + _hash01(i * 13) * 50.0
+			var hy := sand_y - 30.0 - _hash01(i * 7) * 24.0 + sin(t * 1.4 + i * 1.1) * 5.0
+			_draw_bg_pony(hx, hy, herd[i], i)
+	# Rock walls closing the shaft, bumpy edges hashed per row.
+	for r in _tun_rows():
+		var ry: float = 260.0 + r * TROW
+		for side in [0, 1]:
+			var wx := 0.0 if side == 0 else W
+			var bulge := 30.0 + _hash01(r * 3 + side * 7) * 26.0
+			var wcol := Color("4a3f6e").lerp(Color("241f3d"), clampf(ry / TUNNEL_H, 0.0, 1.0))
+			if side == 0:
+				draw_rect(Rect2(0, ry - TROW, bulge, TROW + 1), wcol)
+			else:
+				draw_rect(Rect2(W - bulge, ry - TROW, bulge, TROW + 1), wcol)
+			draw_circle(Vector2(wx + (bulge * 0.6 if side == 0 else -bulge * 0.6), ry - TROW * 0.4), 10 + _hash01(r * 5 + side) * 8, wcol.lightened(0.12))
+	# Ledges, bits, balloons, drones, bolts.
+	for r in _tun_rows():
+		var L := _tun_row(r)
+		var px := Vector2(L[1], L[0])
+		var hw: float = L[2] * 0.5
+		draw_rect(Rect2(px.x - hw, px.y, L[2], 14), Color("5d5680"))
+		draw_rect(Rect2(px.x - hw, px.y, L[2], 4), Color("8b86a8"))
+		draw_rect(Rect2(px.x - hw, px.y + 10, L[2], 4), Color("3d3854"))
+		if L[3]:
+			draw_polyline(_arc_pts(px.x, px.y - 6, hw + 6, 14, PI * 1.1, PI * 1.9, 16), RAINBOW[int(t * 6) % 6], 3, true)
+		var nb := 1 + int(_hash01(r * 13 + 7) * 2.0)
+		for bi in nb:
+			var key := "R:%d:%d" % [r, bi]
+			if not _bit_taken.has(key):
+				_bit_star(Vector2(L[1] - L[2] * 0.3 + bi * 46.0, L[0] - 44.0 - sin(t * 3.0 + r + bi) * 6.0))
+		if _hash01(r * 17 + 4) < 0.2 and not _bit_taken.has("BAL:%d" % r):
+			var bal := Vector2(W - 150.0 - _hash01(r * 23 + 6) * (W - 300.0), L[0] - 110.0 + sin(t * 2.0 + r) * 10.0)
+			draw_line(bal + Vector2(0, 14), bal + Vector2(0, 34), Color(1, 1, 1, 0.5), 1.5)
+			draw_circle(bal, 15, Color("ff6fb5"))
+			draw_circle(bal + Vector2(-5, -5), 5, Color(1, 1, 1, 0.5))
+	for d3 in tdrones:
+		if d3.alive:
+			_draw_drone(d3)
+	_draw_wzaps()
+
+
+func _draw_bg_pony(x: float, y: float, col: Color, seed_i: int) -> void:
+	# A gentle background pony: body, head, mane, tail, tiny legs. Low-detail
+	# and translucent so it reads as "the herd hanging out".
+	var c := Color(col.r, col.g, col.b, 0.85)
+	var dk := c.darkened(0.25)
+	var bob := sin(t * 1.4 + seed_i) * 2.0
+	for li in 4:
+		var lx: float = x - 16 + li * 10
+		draw_line(Vector2(lx, y + 8 + bob), Vector2(lx, y + 22 + bob), dk, 4, true)
+	_fill_ellipse(Vector2(x, y + bob), 24, 13, c)
+	draw_circle(Vector2(x + 20, y - 10 + bob), 9, c)
+	draw_colored_polygon(PackedVector2Array([Vector2(x + 16, y - 16 + bob), Vector2(x + 20, y - 24 + bob), Vector2(x + 24, y - 16 + bob)]), dk)
+	draw_polyline(_quad_pts(Vector2(x + 14, y - 18 + bob), Vector2(x + 6, y - 14 + bob), Vector2(x + 8, y - 4 + bob)), Color("ff6fb5", 0.8), 4, true)
+	draw_polyline(_quad_pts(Vector2(x - 22, y - 4 + bob), Vector2(x - 32, y + 2 + bob), Vector2(x - 30, y + 12 + bob)), Color("ff6fb5", 0.8), 4, true)
+	draw_circle(Vector2(x + 23, y - 12 + bob), 1.6, Color("23232e"))
 
 
 func _bit_star(bp: Vector2) -> void:
@@ -3558,6 +3932,8 @@ func _draw() -> void:
 	_world_begin()
 	if vertical:
 		_draw_over_bg()
+	elif wonder and ch3:
+		_draw_tunnel_bg()
 	else:
 		_draw_background(dt)
 	# Chapter 2 side view is a world bigger than the screen: shift the
@@ -3565,6 +3941,7 @@ func _draw() -> void:
 	# platforms, pony, mermaid, particles, popups, zaps) follows her.
 	if wonder and not vertical:
 		_wxf_p.x -= cam_x * _wxf_s.x
+		_wxf_p.y -= cam_y * _wxf_s.y
 		_world_apply()
 
 	for r in rings:

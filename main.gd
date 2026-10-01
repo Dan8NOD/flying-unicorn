@@ -306,6 +306,7 @@ var _autostart := false
 var _force_level := 0
 var _force_vertical := false
 var _force_wonder := false
+var _start_time := 0.0
 
 
 func _parse_args() -> void:
@@ -328,6 +329,8 @@ func _parse_args() -> void:
 			_force_vertical = true
 		elif a == "--wonder":
 			_force_wonder = true
+		elif a.begins_with("--time="):
+			_start_time = float(a.get_slice("=", 1))
 
 
 # Screenshot/QA hooks: jump straight to a level's palette or force the
@@ -343,6 +346,9 @@ func _apply_test_hooks() -> void:
 		uni.y = VH * 0.72
 	if _force_wonder:
 		_enter_wonder()
+	if _start_time > 0.0:
+		play_time = _start_time
+		print("FU start at t=%s" % _start_time)
 
 
 func _save_cfg() -> void:
@@ -629,7 +635,7 @@ func _process(delta: float) -> void:
 		hp = 0.0
 		game_over()
 	# Wonder World unlock: the 8-minute kid-engagement reward.
-	if state == "play" and not wonder and not wonder_unlocked and play_time >= WONDER_AT:
+	if state == "play" and not wonder and play_time >= WONDER_AT:
 		_enter_wonder()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
 	# accidental rotation never whips the playfield around.
@@ -3058,6 +3064,7 @@ func _exit_wonder() -> void:
 	wonder = false
 	powered = false
 	paused = false
+	play_time = 0.0
 	reset()
 	state = "play"
 

@@ -147,6 +147,18 @@ const CH2_TIME := 450.0
 var bits := 0
 var _air_jump := true
 var _walk_touch := Vector2(-1, -1)
+# Chapter 2 side-view world: camera-follow platformer across WCOLS columns,
+# START to FINISH, with one target drone to zap. All x are world coords.
+const WCOLS := 34
+var cam_x := 0.0
+var stride := 0.0
+var _w_grounded := false
+var _w_face := 1.0
+var _w_zap := false
+var _w_fire_cd := 0.0
+var _fin_cd := 0.0
+var wzaps := []
+var drone = null
 
 # rendering resources
 var font: Font
@@ -463,8 +475,7 @@ func _world_begin() -> void:
 
 
 func _world_end() -> void:
-	if vertical:
-		draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 
 # Re-apply the world transform after a local pivot. draw_set_transform is
@@ -584,6 +595,7 @@ func reset() -> void:
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
 	wonder = false; powered = false; bits = 0; ch2_pending = 0
+	cam_x = 0.0; stride = 0.0; wzaps = []; drone = null; _w_zap = false; _fin_cd = 0.0
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
@@ -1849,6 +1861,9 @@ func _press_at(vp: Vector2) -> void:
 	if not wonder and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
 		_rocket_tap = true
 		return
+	if wonder and not vertical and state == "play" and not paused and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
+		_w_zap = true
+		return
 	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
 		synth.muted = not synth.muted
 		if synth.muted:
@@ -1899,6 +1914,7 @@ func _press_at(vp: Vector2) -> void:
 	if wonder and state == "play" and not paused:
 		_walk_touch = _to_logic(vp) if not vertical else _to_virtual(vp)
 		if not vertical:
+			_walk_touch.x += cam_x
 			_wonder_jump = true
 		pointer_down = true
 		pointer_pos = vp
@@ -2184,12 +2200,9 @@ func _draw_planet(px: float, py: float, pr: float) -> void:
 # Side view: slow countryside hills, quicker line-art city skyline.
 func _draw_scenery(dt: float) -> void:
 	var moving := state == "play" and not paused
-	if moving:
-		# In Wonder World the world only scrolls when she walks — standing
-		# still never slides the city under her feet.
-		var run := absf(uni.vx) * 1.4 if wonder else speed
-		hill_x += run * dt * 0.1
-		city_x += run * dt * 0.28
+	if moving and not wonder:
+		hill_x += speed * dt * 0.1
+		city_x += speed * dt * 0.28
 	var night := _sky_is_night()
 	# Far skyline silhouette — slowest parallax, sits behind the hills.
 	var fw := 210.0
@@ -2358,9 +2371,7 @@ func _draw_background(dt: float) -> void:
 		# draw with alpha via modulated circles: puff uses fixed colors, wrap with canvas alpha
 		_puff_alpha(cl.x, cl.y, cl.s, old_a)
 
-	if wonder:
-		_draw_solid_ground()
-	else:
+	if not wonder:
 		# Puffy cloud floor — the reason she can never falls
 		var off := fmod(t * speed * 0.5, 80.0)
 		var night := _sky_is_night()
@@ -2376,30 +2387,35 @@ func _draw_background(dt: float) -> void:
 
 
 func _draw_solid_ground() -> void:
-	# Chapter 2's meadow floor: solid earth that never scrolls. The grass
-	# top edge sits at H - 60, exactly where her hooves land.
+	# Chapter 2's meadow floor, drawn in world space so the camera carries
+	# it: grass band at H - 60 (exactly where her hooves land), soil below,
+	# tufts and flowers hashed by world column so they never slide.
 	var gy := H - 60.0
-	draw_rect(Rect2(0, gy + 26, W, H - gy - 18), Color("6b4526"))
-	draw_rect(Rect2(0, gy + 16, W, 10), Color("7a5230"))
-	draw_rect(Rect2(0, gy, W, 16), Color("4fa361"))
-	draw_rect(Rect2(0, gy, W, 4), Color("7ed6a8"))
-	# Static tufts and flowers, hashed by column so nothing slides.
-	var i := 0
-	var gx := 26.0
-	while gx < W - 10:
-		if _hash01(i * 13 + 5) < 0.5:
-			draw_line(Vector2(gx, gy + 2), Vector2(gx - 3, gy - 5), Color("2f9e5f"), 2)
-			draw_line(Vector2(gx + 2, gy + 2), Vector2(gx + 4, gy - 6), Color("2f9e5f"), 2)
-			draw_line(Vector2(gx + 1, gy + 2), Vector2(gx + 1, gy - 3), Color("3cb973"), 2)
-		if _hash01(i * 29 + 11) < 0.35:
-			var fcol: Color = [Color("ff9ccf"), Color("fff4b0"), Color("bfe9ff")][i % 3]
-			var fcx := gx + 30
-			draw_line(Vector2(fcx, gy + 2), Vector2(fcx, gy - 7), Color("2f9e5f"), 2)
-			for pi in 4:
-				var pa := pi * TAU / 4.0 + 0.4
-				draw_circle(Vector2(fcx + cos(pa) * 3, gy - 7 + sin(pa) * 3), 1.8, fcol)
-			draw_circle(Vector2(fcx, gy - 7), 1.4, Color("ffd23f"))
-		gx += 64.0
+	var night := _sky_is_night()
+	var soil := Color("6b4526").darkened(0.35) if night else Color("6b4526")
+	var dirt := Color("7a5230").darkened(0.35) if night else Color("7a5230")
+	var grass := Color("4fa361").darkened(0.3) if night else Color("4fa361")
+	var lip := Color("7ed6a8").darkened(0.3) if night else Color("7ed6a8")
+	draw_rect(Rect2(0, gy + 26, WCOLS * WCOL, H - gy - 18), soil)
+	draw_rect(Rect2(0, gy + 16, WCOLS * WCOL, 10), dirt)
+	draw_rect(Rect2(0, gy, WCOLS * WCOL, 16), grass)
+	draw_rect(Rect2(0, gy, WCOLS * WCOL, 4), lip)
+	var i := int(floor(cam_x / 64.0)) - 1
+	while i * 64.0 < cam_x + W + 64:
+		var gx := i * 64.0 + 26.0
+		if gx > 8 and gx < WCOLS * WCOL - 8:
+			if _hash01(i * 13 + 5) < 0.5:
+				draw_line(Vector2(gx, gy + 2), Vector2(gx - 3, gy - 5), Color("2f9e5f"), 2)
+				draw_line(Vector2(gx + 2, gy + 2), Vector2(gx + 4, gy - 6), Color("2f9e5f"), 2)
+				draw_line(Vector2(gx + 1, gy + 2), Vector2(gx + 1, gy - 3), Color("3cb973"), 2)
+			if _hash01(i * 29 + 11) < 0.35:
+				var fcol: Color = [Color("ff9ccf"), Color("fff4b0"), Color("bfe9ff")][absi(i) % 3]
+				var fx := gx + 30
+				draw_line(Vector2(fx, gy + 2), Vector2(fx, gy - 7), Color("2f9e5f"), 2)
+				for pi in 4:
+					var pa := pi * TAU / 4.0 + 0.4
+					draw_circle(Vector2(fx + cos(pa) * 3, gy - 7 + sin(pa) * 3), 1.8, fcol)
+				draw_circle(Vector2(fx, gy - 7), 1.4, Color("ffd23f"))
 		i += 1
 
 
@@ -2481,20 +2497,38 @@ func _draw_unicorn() -> void:
 	_draw_wing(false, flap, uni.tilt)
 	_wxf(Vector2(uni.x, uni.y), uni.tilt + react_angle, _react_sc())
 
-	# Legs folded back for flight — no more sky-gallop, just a sleepy ripple.
-	var fold := sin(t * 3.0) * 2.0
-	var legs := [[-24, 0], [-12, 1], [14, 2], [26, 3]]
-	for leg in legs:
-		var sx: float = leg[0] - 24 + fold * (1 + leg[1] * 0.3)
-		var sy: float = 24 + leg[1] * 1.5
-		draw_line(Vector2(leg[0], 12), Vector2(sx, sy), Color("ff9ccf"), 9, true)
-	# Armored hooves tucked at the folded ends
-	for leg in legs:
-		var sx: float = leg[0] - 24 + fold * (1 + leg[1] * 0.3)
-		var sy: float = 24 + leg[1] * 1.5
-		draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("b9bfd6"))
-		draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("5d6384"), false, 1.5)
-		draw_line(Vector2(sx - 4, sy - 1.6), Vector2(sx + 4, sy - 1.6), Color(1, 1, 1, 0.55), 1.2, true)
+	if wonder and not vertical:
+		# Walking legs: trot cycle scaled by speed, hooves plant on the
+		# collision plane (y + 20); tucked splay when airborne.
+		var legs_w := [[-24.0, 0.0], [-10.0, PI], [12.0, PI], [26.0, 0.0]]
+		var amp := clampf(absf(uni.vx) / 120.0, 0.0, 1.0)
+		for leg in legs_w:
+			var hip := Vector2(leg[0], 8)
+			var foot: Vector2
+			if _w_grounded:
+				var swing := sin(stride * TAU + leg[1]) * amp
+				foot = Vector2(leg[0] + swing * 9.0, 16.0 - maxf(0.0, cos(stride * TAU + leg[1])) * 5.0 * amp)
+			else:
+				foot = Vector2(leg[0] + (9.0 if leg[0] > 0 else -7.0), 13.0)
+			draw_line(hip, foot, Color("ff9ccf"), 8, true)
+			draw_rect(Rect2(foot.x - 5.5, foot.y - 2, 11, 7), Color("b9bfd6"))
+			draw_rect(Rect2(foot.x - 5.5, foot.y - 2, 11, 7), Color("5d6384"), false, 1.5)
+			draw_line(Vector2(foot.x - 4, foot.y + 0.5), Vector2(foot.x + 4, foot.y + 0.5), Color(1, 1, 1, 0.55), 1.2, true)
+	else:
+		# Legs folded back for flight — no more sky-gallop, just a sleepy ripple.
+		var fold := sin(t * 3.0) * 2.0
+		var legs := [[-24, 0], [-12, 1], [14, 2], [26, 3]]
+		for leg in legs:
+			var sx: float = leg[0] - 24 + fold * (1 + leg[1] * 0.3)
+			var sy: float = 24 + leg[1] * 1.5
+			draw_line(Vector2(leg[0], 12), Vector2(sx, sy), Color("ff9ccf"), 9, true)
+		# Armored hooves tucked at the folded ends
+		for leg in legs:
+			var sx: float = leg[0] - 24 + fold * (1 + leg[1] * 0.3)
+			var sy: float = 24 + leg[1] * 1.5
+			draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("b9bfd6"))
+			draw_rect(Rect2(sx - 5.5, sy - 3, 11, 8), Color("5d6384"), false, 1.5)
+			draw_line(Vector2(sx - 4, sy - 1.6), Vector2(sx + 4, sy - 1.6), Color(1, 1, 1, 0.55), 1.2, true)
 
 	# Body
 	_fill_ellipse(Vector2.ZERO, 40, 22, Color("ff9ccf"))
@@ -3057,6 +3091,8 @@ func _draw_hud() -> void:
 		_stroke_text(Vector2(VW / 2, 40), "Wonder World", 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
 		_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 		_draw_round_button(Vector2(VW - 33, 33), "❚❚")
+		if not vertical and drone != null and drone.alive:
+			_draw_round_button(Vector2(VW - 44, VH - 100), "⚡")
 		if transitioning:
 			_pill(Vector2(VW / 2, 76), "TURNING…")
 		return
@@ -3123,7 +3159,10 @@ func _enter_wonder() -> void:
 	rings = []; clouds = []; lasers = []; pickups = []; popups = []
 	boss = null; bolts = []; rockets = []; arcs = []; dash_t = 0; dash_lock = null
 	bits = 0
-	uni.x = 140.0
+	cam_x = 0.0; stride = 0.0; _w_face = 1.0; _w_zap = false; _w_fire_cd = 0.0; _fin_cd = 0.0
+	wzaps = []
+	drone = { "x": WCOLS * WCOL * 0.5, "y": 210.0, "dir": 1.0, "hp": 6, "hit": 0.0, "alive": true, "respawn_t": 0.0, "phase": randf() * TAU }
+	uni.x = 220.0
 	uni.y = H - 160.0
 	uni.vx = 0.0; uni.vy = 0.0
 	uni.tilt = 0.0
@@ -3156,8 +3195,8 @@ func _wonder_col(c: int) -> Array:
 
 func _wonder_cols() -> Array:
 	var out := []
-	var c := int(floor(-80.0 / WCOL))
-	while c * WCOL < W + 100:
+	var c := clampi(int(floor((cam_x - 100.0) / WCOL)), 0, WCOLS - 1)
+	while c < WCOLS and c * WCOL < cam_x + W + 100:
 		out.append(c)
 		c += 1
 	return out
@@ -3189,6 +3228,8 @@ func _wonder_side(dt: float) -> void:
 	uni.vx += walk * 1400.0 * dt
 	if walk == 0.0:
 		uni.vx *= pow(0.001, dt)
+	else:
+		_w_face = signf(walk)
 	uni.vx = clampf(uni.vx, -300.0, 300.0)
 	# Gravity + rainbow double jump.
 	uni.vy += 1500.0 * dt
@@ -3220,8 +3261,8 @@ func _wonder_side(dt: float) -> void:
 	if uni.x < 30:
 		uni.x = 30
 		uni.vx = absf(uni.vx) * 0.4
-	if uni.x > W - 30:
-		uni.x = W - 30
+	if uni.x > WCOLS * WCOL - 30:
+		uni.x = WCOLS * WCOL - 30
 		uni.vx = -absf(uni.vx) * 0.4
 	if uni.y < 80:
 		uni.y = 80
@@ -3247,8 +3288,77 @@ func _wonder_side(dt: float) -> void:
 			uni.y = H - 80
 			uni.vy = 0
 			_air_jump = true
+	_w_grounded = landed or (uni.vy == 0 and uni.y + 20 >= H - 61)
 	uni.tilt += (clampf(uni.vx / 700.0, -0.3, 0.3) - uni.tilt) * minf(1, dt * 8)
-	uni.flap += dt * 10.0
+	uni.flap += dt * (10.0 if not _w_grounded else 3.0)
+	stride += absf(uni.vx) * dt * 0.045
+	# Camera follows; the backdrop parallax rides it (drawn without the
+	# camera transform, so these offsets are the parallax factors).
+	cam_x = clampf(lerpf(cam_x, uni.x - W * 0.42, minf(1.0, dt * 6.0)), 0.0, WCOLS * WCOL - W)
+	hill_x = cam_x * 0.35
+	city_x = cam_x * 0.65
+	# Zap button / rockets key fires a bolt the way she's facing.
+	_w_fire_cd = maxf(0.0, _w_fire_cd - dt)
+	if Input.is_action_just_pressed("rockets") or _w_zap:
+		_w_zap = false
+		if _w_fire_cd <= 0:
+			_w_fire_cd = 0.22
+			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "life": 0.9, "dead": false })
+			synth.zap()
+	for z in wzaps:
+		if z.dead:
+			continue
+		z.x += z.dir * 760 * dt
+		z.life -= dt
+		if z.life <= 0:
+			z.dead = true
+		if drone != null and drone.alive and not z.dead and Vector2(z.x - drone.x, z.y - drone.y).length() < 44:
+			z.dead = true
+			drone.hp -= 1
+			drone.hit = 0.12
+			_burst(drone.x, drone.y, 6, [Color.WHITE, Color("ff4d5e")], 140)
+			synth.zap()
+			if drone.hp <= 0:
+				drone.alive = false
+				drone.respawn_t = 3.0
+				score += 50
+				_popup(drone.x, drone.y - 44, "BOOM! +50", Color("ffd23f"))
+				_burst(drone.x, drone.y, 30, [Color("ff4d5e"), Color("ffd23f"), Color.WHITE], 240)
+				synth.poof()
+	wzaps = wzaps.filter(func(z): return not z.dead)
+	# Practice drone: a gentle patrol, bonks her back without damage, and
+	# comes back for more target practice a few seconds after going down.
+	if drone != null:
+		if drone.alive:
+			drone.x += drone.dir * 70 * dt
+			if drone.x > WCOLS * WCOL * 0.8:
+				drone.dir = -1.0
+			elif drone.x < WCOLS * WCOL * 0.25:
+				drone.dir = 1.0
+			drone.y = 400.0 + sin(t * 1.3 + drone.phase) * 45.0
+			drone.hit = maxf(0.0, drone.hit - dt)
+			if Vector2(uni.x - drone.x, uni.y - drone.y).length() < 48:
+				uni.vx = signf(uni.x - drone.x) * 280.0
+				uni.vy = -340.0
+				_burst(uni.x, uni.y, 8, [Color.WHITE, Color("bfe9ff")], 140)
+				synth.poof()
+		else:
+			drone.respawn_t -= dt
+			if drone.respawn_t <= 0:
+				drone.alive = true
+				drone.hp = 6
+				drone.x = clampf(uni.x + _w_face * 500.0, WCOLS * WCOL * 0.25, WCOLS * WCOL * 0.8)
+				drone.dir = -_w_face
+				_popup(drone.x, drone.y - 40, "He's back!", Color("bfe9ff"))
+	# FINISH flag: crossing it celebrates, then she can walk back.
+	_fin_cd = maxf(0.0, _fin_cd - dt)
+	if uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0:
+		_fin_cd = 5.0
+		score += 50
+		bits += 3
+		_popup(uni.x, uni.y - 70, "FINISH! ⭐", Color("ffd23f"))
+		_burst(uni.x + 40, uni.y - 40, 40, RAINBOW, 260)
+		synth.level_up()
 	# Star bits: collect on touch, twinkle back a few seconds later.
 	for c in _wonder_cols():
 		var L := _wonder_col(c)
@@ -3366,7 +3476,12 @@ func _draw_wonder() -> void:
 				cj += 1
 			ci += 1
 		return
-	# Side view: cloud platforms + star bits.
+	# Side view: solid ground, markers, drone, cloud platforms, star bits,
+	# and her zap bolts — all world coords; the camera transform is on.
+	_draw_solid_ground()
+	_draw_wonder_markers()
+	if drone != null and drone.alive:
+		_draw_drone()
 	for c in _wonder_cols():
 		var L := _wonder_col(c)
 		var px := Vector2(c * WCOL, L[0])
@@ -3382,6 +3497,47 @@ func _draw_wonder() -> void:
 		for bi in L[3]:
 			if not _bit_taken.has("%d:%d" % [c, bi]):
 				_bit_star(_wonder_bit_pos(c, bi))
+	for z in wzaps:
+		var zglow := Color(1, 0.6, 0.85, 0.4)
+		draw_line(Vector2(z.x - z.dir * 26, z.y), Vector2(z.x, z.y), zglow, 6, true)
+		draw_line(Vector2(z.x - z.dir * 16, z.y), Vector2(z.x, z.y), Color.WHITE, 2.5, true)
+		draw_circle(Vector2(z.x, z.y), 3, Color("ffd9ef"))
+
+
+func _draw_wonder_markers() -> void:
+	var gy := H - 60.0
+	# START sign at the west end.
+	var sx := 96.0
+	draw_rect(Rect2(sx - 4, gy - 62, 8, 62), Color("6b4a35"))
+	draw_rect(Rect2(sx - 42, gy - 92, 84, 32), Color("8a5f3d"))
+	draw_rect(Rect2(sx - 42, gy - 92, 84, 32), Color("5d3f26"), false, 2)
+	_text_c(Vector2(sx, gy - 70), "START", 16, Color("fff4b0"))
+	# Rainbow FINISH flag at the east end.
+	var fx := WCOLS * WCOL - 140.0
+	draw_rect(Rect2(fx - 3, gy - 126, 6, 126), Color("8a5f3d"))
+	for i in 6:
+		var wave := sin(t * 5.0 + i * 0.8) * 2.0
+		draw_colored_polygon(PackedVector2Array([Vector2(fx + 3, gy - 124 + i * 7), Vector2(fx + 54 - i * 3, gy - 120 + i * 7 + wave), Vector2(fx + 3, gy - 117 + i * 7)]), RAINBOW[i])
+	draw_colored_polygon(_sparkle_poly(fx, gy - 136, 11), Color("ffd23f"))
+	_text_c(Vector2(fx + 34, gy - 98), "FINISH", 14, Color.WHITE)
+
+
+func _draw_drone() -> void:
+	# The Chapter 2 practice target: a cute mini-saucer with a bullseye.
+	var p := Vector2(drone.x, drone.y)
+	var flash: bool = drone.hit > 0
+	_fill_ellipse(p + Vector2(0, 30), 28, 7, Color(0.4, 0.3, 0.6, 0.25))
+	draw_circle(p + Vector2(0, -14), 12, Color.WHITE if flash else Color("d9dce8"))
+	draw_arc(p + Vector2(0, -14), 12, PI * 1.1, PI * 1.6, 10, Color(1, 1, 1, 0.7), 2.5, true)
+	_fill_ellipse(p, 34, 15, Color.WHITE if flash else Color("9aa0c0"))
+	_fill_ellipse(p + Vector2(0, 5), 30, 9, Color("6f6a92", 0.8))
+	draw_polyline(_arc_pts(p.x, p.y, 34, 15, 0, TAU, 28), Color("5d5880"), 2.5, true)
+	draw_circle(p, 9, Color("ff4d5e"))
+	draw_circle(p, 5.5, Color.WHITE)
+	draw_circle(p, 2.5, Color("ff4d5e"))
+	var bl := 0.4 + 0.6 * (0.5 + 0.5 * sin(t * 4))
+	draw_line(p + Vector2(0, -24), p + Vector2(0, -30), Color("5d5880"), 2, true)
+	draw_circle(p + Vector2(0, -32), 3, Color(1, 0.85, 0.3, bl))
 
 
 func _bit_star(bp: Vector2) -> void:
@@ -3404,6 +3560,12 @@ func _draw() -> void:
 		_draw_over_bg()
 	else:
 		_draw_background(dt)
+	# Chapter 2 side view is a world bigger than the screen: shift the
+	# world transform by the camera so everything world-anchored (ground,
+	# platforms, pony, mermaid, particles, popups, zaps) follows her.
+	if wonder and not vertical:
+		_wxf_p.x -= cam_x * _wxf_s.x
+		_world_apply()
 
 	for r in rings:
 		if vertical:

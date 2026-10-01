@@ -171,6 +171,27 @@ var _fin_cd := 0.0
 var wzaps := []
 var drone = null
 
+# ─── Chapter 3 · The Underworld ─────────────────────────────────────────────
+# Below the lagoon: a wide alien cavern where the hive grows its capsules.
+# Swim freely, zap pods while their shields flicker off, dodge tadpole
+# guards. Pods are tough and far apart on purpose — DAN wants ~8 min here,
+# and this is where the purchased companions earn their keep.
+const UNDER_Y0 := TUNNEL_H + WATER_H + 420.0
+const UNDER_H := 860.0
+const UW := 8160.0
+const POD_N := 14
+const POD_HP := 10
+const MERMAID_OWNED := true  # TODO(IAP): gate behind the $5 mermaid purchase
+var under := false
+var pods := []
+var tadpoles := []
+var goo_bits := []
+var pods_left := 0
+var _under_won := false
+var _stun_t := 0.0
+var _crack_hint := false
+var umer = null
+
 # rendering resources
 var font: Font
 var sky_tex: Texture2D
@@ -337,6 +358,8 @@ var _force_vertical := false
 var _force_wonder := false
 var _force_ch2 := false
 var _force_ch3 := false
+var _force_under := false
+var _force_lagoon := false
 var _start_time := 0.0
 
 
@@ -368,6 +391,12 @@ func _parse_args() -> void:
 		elif a == "--chapter3":
 			_force_ch3 = true
 			_autostart = true
+		elif a == "--lagoon":
+			_force_lagoon = true
+			_autostart = true
+		elif a == "--under":
+			_force_under = true
+			_autostart = true
 
 
 # Screenshot/QA hooks: jump straight to a level's palette or force the
@@ -392,6 +421,16 @@ func _apply_test_hooks() -> void:
 	if _force_ch3:
 		_enter_wonder()
 		_enter_ch3()
+	if _force_lagoon:
+		_enter_wonder()
+		_enter_ch3()
+		uni.x = W * 0.7
+		uni.y = TUNNEL_H + WATER_H - 260.0
+		cam_y = TUNNEL_H + WATER_H - H
+	if _force_under:
+		_enter_wonder()
+		_enter_ch3()
+		_enter_under()
 
 
 func _save_cfg() -> void:
@@ -441,7 +480,9 @@ func _layout() -> void:
 	# Portrait screens play the same 960x540 world rotated 90 degrees, so
 	# gameplay tuning never forks: logic bounds stay in W/H, only the
 	# screen mapping changes.
-	vertical = VH > VW
+	# Chapters 2+3 are horizontal-only (DAN, 2026-09-30: portrait play moved
+	# out to its own game, Pony Space Shooter Express).
+	vertical = VH > VW and not wonder
 	uni.x = 190.0 if vertical else maxf(110.0, VW * 0.2)
 	uni.y = clampf(uni.y, 70.0, H - 60.0)
 	last_ring_y = clampf(last_ring_y, 90.0, H - 110.0)
@@ -616,6 +657,8 @@ func reset() -> void:
 	cam_x = 0.0; stride = 0.0; wzaps = []; drone = null; _w_zap = false; _fin_cd = 0.0
 	ch3 = false; cam_y = 0.0; ch3_pending = 0.0; tdrones = []
 	_flap_cd = 0.0; _was_water = false
+	under = false; pods = []; tadpoles = []; goo_bits = []; pods_left = 0
+	_under_won = false; _stun_t = 0.0; _crack_hint = false; umer = null
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
@@ -789,7 +832,10 @@ func _game_update(dt: float) -> void:
 
 	if wonder:
 		if ch3:
-			_ch3_fall(dt)
+			if under:
+				_under_swim(dt)
+			else:
+				_ch3_fall(dt)
 		else:
 			_wonder_side(dt)
 		# Taken star bits twinkle back after a few seconds, in every mode.
@@ -1947,6 +1993,8 @@ func _press_at(vp: Vector2) -> void:
 		_walk_touch = _to_logic(vp) if not vertical else _to_virtual(vp)
 		if not vertical:
 			_walk_touch.x += cam_x
+			if ch3:
+				_walk_touch.y += cam_y
 			_wonder_jump = true
 		pointer_down = true
 		pointer_pos = vp
@@ -1970,6 +2018,10 @@ func _input(event: InputEvent) -> void:
 			pointer_y = _to_logic(pointer_pos).y
 			if wonder:
 				_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
+				if not vertical:
+					_walk_touch.x += cam_x
+					if ch3:
+						_walk_touch.y += cam_y
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_press_at(_to_virtual(event.position))
@@ -1983,6 +2035,10 @@ func _input(event: InputEvent) -> void:
 			pointer_y = _to_logic(pointer_pos).y
 			if wonder:
 				_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
+				if not vertical:
+					_walk_touch.x += cam_x
+					if ch3:
+						_walk_touch.y += cam_y
 
 
 # ─── Drawing helpers ──────────────────────────────────────────────────────
@@ -3120,13 +3176,21 @@ func _draw_hud() -> void:
 	if wonder:
 		_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
 		_stroke_text(Vector2(22, 76), "⭐ x%d" % bits, 20, Color("ffd23f"), HORIZONTAL_ALIGNMENT_LEFT, 4)
-		_stroke_text(Vector2(VW / 2, 40), "Chapter 3" if ch3 else "Chapter 2", 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
+		var label := "Chapter 2"
+		if ch3:
+			label = "The Underworld 👽" if under else "Chapter 3"
+		_stroke_text(Vector2(VW / 2, 40), label, 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
+		if under:
+			var pcol := Color("9df08a") if pods_left > 0 else Color("ffd23f")
+			_stroke_text(Vector2(22, 108), "👽 x%d left" % pods_left if pods_left > 0 else "👽 ALL CLEAR!", 20, pcol, HORIZONTAL_ALIGNMENT_LEFT, 4)
 		_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 		_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 		var any_target: bool = drone != null and drone.alive
 		for d3 in tdrones:
 			if d3.alive:
 				any_target = true
+		if under and pods_left > 0:
+			any_target = true
 		if not vertical and any_target:
 			_draw_round_button(Vector2(VW - 44, VH - 100), "⚡")
 		if transitioning:
@@ -3189,6 +3253,7 @@ var _wonder_jump := false
 
 func _enter_wonder() -> void:
 	wonder = true
+	vertical = false  # chapters 2+3 are horizontal-only
 	wonder_unlocked = true
 	powered = true
 	_save_cfg()
@@ -3217,6 +3282,7 @@ func _exit_wonder() -> void:
 	play_time = 0.0
 	reset()
 	state = "play"
+	_layout()  # chapter 1 still honors the portrait overhead view
 
 
 # Column layout is a pure hash of the column index, so wrap-around and
@@ -3339,7 +3405,7 @@ func _wonder_side(dt: float) -> void:
 		_w_zap = false
 		if _w_fire_cd <= 0:
 			_w_fire_cd = 0.22
-			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "life": 0.9, "dead": false })
+			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "dy": 0.0, "life": 0.9, "dead": false })
 			synth.zap()
 	for z in wzaps:
 		if z.dead:
@@ -3559,9 +3625,18 @@ func _ch3_fall(dt: float) -> void:
 					uni.y = L[0] - WFOOT
 					uni.vy = 0.0
 				break
-	if in_water and uni.y + WFOOT >= TUNNEL_H + WATER_H - 60:
-		uni.y = TUNNEL_H + WATER_H - 60 - WFOOT
+	var sand_y := TUNNEL_H + WATER_H - 60
+	var over_crack := in_water and absf(uni.x - W * 0.7) < 54.0
+	if in_water and uni.y + WFOOT >= sand_y and not over_crack:
+		uni.y = sand_y - WFOOT
 		uni.vy = 0.0
+	# The glowing crack in the sand swallows her into the Underworld.
+	if over_crack and uni.y + WFOOT > sand_y + 46.0:
+		_enter_under()
+		return
+	if in_water and not _crack_hint:
+		_crack_hint = true
+		_popup(W * 0.7, sand_y - 130, "Something glows in the sand… 👽", Color("9df08a"))
 	_w_grounded = uni.vy == 0.0
 	uni.tilt += (clampf(uni.vx / 700.0, -0.3, 0.3) - uni.tilt) * minf(1, dt * 8)
 	uni.flap += dt * (10.0 if not in_water else 4.0)
@@ -3574,7 +3649,7 @@ func _ch3_fall(dt: float) -> void:
 		_w_zap = false
 		if _w_fire_cd <= 0:
 			_w_fire_cd = 0.22
-			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "life": 0.9, "dead": false })
+			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "dy": 0.0, "life": 0.9, "dead": false })
 			synth.zap()
 	for z in wzaps:
 		if z.dead:
@@ -3650,6 +3725,276 @@ func _ch3_fall(dt: float) -> void:
 		p.r = randf_range(2, 4)
 		p.c = RAINBOW[int(t * 10) % 6]
 		p.star = true
+		particles.append(p)
+
+
+func _pod_shield(pd) -> bool:
+	# The shield flickers off on a rhythm — zap while it's down.
+	return fmod(t + float(pd.phase) * 2.0, 6.5) < 3.8
+
+
+func _enter_under() -> void:
+	under = true
+	pods = []
+	tadpoles = []
+	goo_bits = []
+	wzaps = []
+	_under_won = false
+	_stun_t = 0.0
+	for i in POD_N:
+		var px := 700.0 + i * ((UW - 1400.0) / (POD_N - 1)) + _hash01(i * 91 + 7) * 140.0 - 70.0
+		var py := UNDER_Y0 + 150.0 + _hash01(i * 37 + 5) * (UNDER_H - 300.0)
+		pods.append({ "x": px, "y": py, "hp": POD_HP, "alive": true, "hit": 0.0, "spawn_cd": 1.5 + _hash01(i * 3) * 3.0, "phase": randf() * TAU })
+	pods_left = POD_N
+	umer = null
+	uni.x = 300.0
+	uni.y = UNDER_Y0 + UNDER_H * 0.5
+	uni.vx = 0.0; uni.vy = 0.0
+	uni.tilt = 0.0
+	cam_x = 0.0
+	cam_y = UNDER_Y0 + UNDER_H * 0.5 - H * 0.5
+	flash = maxf(flash, 0.35)
+	_popup(uni.x + 260, uni.y - 60, "The Alien Underworld! 👽", Color("9df08a"))
+	_popup(uni.x + 260, uni.y - 24, "Smash every capsule!", Color("bfe9ff"))
+	_burst(uni.x, uni.y, 40, [Color("9df08a"), Color("b77bff"), Color.WHITE], 300)
+	synth.level_up()
+
+
+func _under_exit() -> void:
+	under = false
+	tadpoles = []
+	umer = null
+	uni.x = W * 0.5
+	uni.y = TUNNEL_H + WATER_H - 200.0
+	uni.vx = 0.0; uni.vy = -140.0
+	cam_x = 0.0
+	flash = maxf(flash, 0.3)
+	_popup(uni.x, uni.y - 70, "Back to the lagoon! 🫧", Color("bfe9ff"))
+	synth.poof()
+
+
+func _pop_pod(pd) -> void:
+	pd.alive = false
+	pods_left -= 1
+	score += 100
+	_popup(pd.x, pd.y - 60, "SMASH! +100", Color("9df08a"))
+	_burst(pd.x, pd.y, 40, [Color("9df08a"), Color("b77bff"), Color.WHITE], 300)
+	for i in 4:
+		goo_bits.append({ "x": pd.x + randf_range(-50, 50), "y": pd.y + randf_range(-40, 40), "taken": false, "phase": randf() * TAU })
+	synth.poof()
+	synth.gold()
+
+
+func _under_swim(dt: float) -> void:
+	if state != "play":
+		return
+	_stun_t = maxf(0.0, _stun_t - dt)
+	# Swim: keys/stick, or press-drag toward a spot (both axes).
+	var swim := Vector2.ZERO
+	if Input.is_action_pressed("fly_left"):
+		swim.x -= 1.0
+	if Input.is_action_pressed("fly_right"):
+		swim.x += 1.0
+	if Input.is_action_pressed("fly_up"):
+		swim.y -= 1.0
+	if Input.is_action_pressed("fly_down"):
+		swim.y += 1.0
+	if pointer_down and _walk_touch.x >= 0:
+		var d := Vector2(_walk_touch.x - uni.x, _walk_touch.y - uni.y)
+		if d.length() > 24.0:
+			swim = d.normalized()
+	if _stun_t > 0:
+		swim = Vector2.ZERO
+	if swim.length() > 0.001:
+		swim = swim.normalized()
+		uni.vx += swim.x * 640.0 * dt
+		uni.vy += swim.y * 640.0 * dt
+		if swim.x != 0:
+			_w_face = signf(swim.x)
+	else:
+		uni.vx *= pow(0.08, dt)
+		uni.vy *= pow(0.08, dt)
+	uni.vy += 30.0 * dt  # faint sink, so she feels alive
+	var spd := Vector2(uni.vx, uni.vy).length()
+	if spd > 250.0:
+		uni.vx *= 250.0 / spd
+		uni.vy *= 250.0 / spd
+	uni.x = clampf(uni.x + uni.vx * dt, 56.0, UW - 56.0)
+	uni.y = clampf(uni.y + uni.vy * dt, UNDER_Y0 + 66.0, UNDER_Y0 + UNDER_H - 66.0)
+	uni.tilt += (clampf(uni.vy / 900.0 + uni.vx / 2400.0, -0.3, 0.3) - uni.tilt) * minf(1.0, dt * 6.0)
+	uni.flap += dt * 5.0
+	stride += absf(uni.vx) * dt * 0.03
+	# Camera roams the cavern both ways.
+	cam_x = clampf(lerpf(cam_x, uni.x - W * 0.42, minf(1.0, dt * 4.0)), 0.0, UW - W)
+	cam_y = clampf(lerpf(cam_y, uni.y - H * 0.5, minf(1.0, dt * 4.0)), UNDER_Y0 - 90.0, UNDER_Y0 + UNDER_H - H + 90.0)
+	# The west portal rides back up to the lagoon.
+	if uni.x < 190.0 and absf(uni.y - (UNDER_Y0 + UNDER_H * 0.5)) < 70.0 and uni.vx < -40.0:
+		_under_exit()
+		return
+	# Zap: same button / R key; slight auto-aim toward a nearby pod.
+	_w_fire_cd = maxf(0.0, _w_fire_cd - dt)
+	if Input.is_action_just_pressed("rockets") or _w_zap:
+		_w_zap = false
+		if _w_fire_cd <= 0:
+			_w_fire_cd = 0.22
+			var zdy := 0.0
+			var best := 1e9
+			for pd in pods:
+				if not pd.alive:
+					continue
+				var dd: float = Vector2(pd.x - uni.x, pd.y - uni.y).length()
+				if dd < 520.0 and signf(pd.x - uni.x) == _w_face and dd < best:
+					best = dd
+					zdy = clampf((pd.y - uni.y) / 260.0, -0.7, 0.7)
+			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "dy": zdy, "life": 0.9, "dead": false })
+			synth.zap()
+	# Zaps fly; they clip pods only while a shield is flickered off.
+	for z in wzaps:
+		if z.dead:
+			continue
+		z.x += z.dir * 760 * dt
+		z.y += z.dy * 760 * dt
+		z.life -= dt
+		if z.life <= 0:
+			z.dead = true
+		for pd in pods:
+			if z.dead or not pd.alive:
+				continue
+			if Vector2(z.x - pd.x, z.y - pd.y).length() < 46:
+				z.dead = true
+				if _pod_shield(pd):
+					_burst(z.x, z.y, 5, [Color("9adcff"), Color.WHITE], 110)
+					synth.ring(1)
+				else:
+					pd.hp -= 1
+					pd.hit = 0.12
+					_burst(z.x, z.y, 6, [Color("9df08a"), Color.WHITE], 140)
+					synth.zap()
+					if pd.hp <= 0:
+						_pop_pod(pd)
+		for td in tadpoles:
+			if z.dead or not td.alive:
+				continue
+			if Vector2(z.x - td.x, z.y - td.y).length() < 34:
+				z.dead = true
+				td.hp -= 1
+				td.hit = 0.12
+				_burst(td.x, td.y, 6, [Color("b77bff"), Color.WHITE], 130)
+				synth.zap()
+				if td.hp <= 0:
+					td.alive = false
+					score += 20
+					_popup(td.x, td.y - 30, "+20", Color("ffd23f"))
+					_burst(td.x, td.y, 16, [Color("b77bff"), Color("9df08a"), Color.WHITE], 200)
+					synth.poof()
+	wzaps = wzaps.filter(func(z): return not z.dead)
+	# Pods wake near her and spit tadpole guards on a cooldown.
+	for pd in pods:
+		if not pd.alive:
+			continue
+		pd.hit = maxf(0.0, pd.hit - dt)
+		var near: bool = Vector2(uni.x - pd.x, uni.y - pd.y).length() < 560.0
+		if near:
+			pd.spawn_cd -= dt
+			var mine := 0
+			for td in tadpoles:
+				if td.alive and td.pod == pd:
+					mine += 1
+			if pd.spawn_cd <= 0 and mine < 2:
+				pd.spawn_cd = 5.0
+				tadpoles.append({ "x": pd.x, "y": pd.y, "vx": 0.0, "vy": 0.0, "hp": 3, "hit": 0.0, "alive": true, "pod": pd, "phase": randf() * TAU })
+				_burst(pd.x, pd.y, 8, [Color("9df08a"), Color.WHITE], 120)
+				synth.poof()
+	# Tadpoles chase lazily; a bump shoves her but never ends the run.
+	for td in tadpoles:
+		if not td.alive:
+			continue
+		td.hit = maxf(0.0, td.hit - dt)
+		var to := Vector2(uni.x - td.x, uni.y - td.y)
+		if to.length() > 1.0:
+			to = to.normalized()
+			td.vx += to.x * 300.0 * dt
+			td.vy += to.y * 300.0 * dt
+		td.vx += sin(t * 3.0 + td.phase) * 60.0 * dt
+		td.vy += cos(t * 2.4 + td.phase) * 60.0 * dt
+		var tspd := Vector2(td.vx, td.vy).length()
+		if tspd > 145.0:
+			td.vx *= 145.0 / tspd
+			td.vy *= 145.0 / tspd
+		td.x += td.vx * dt
+		td.y += td.vy * dt
+		if _stun_t <= 0 and Vector2(uni.x - td.x, uni.y - td.y).length() < 40:
+			_stun_t = 0.5
+			var away := Vector2(uni.x - td.x, uni.y - td.y).normalized()
+			uni.vx = away.x * 320.0
+			uni.vy = away.y * 320.0
+			td.vx = -away.x * 200.0
+			td.vy = -away.y * 200.0
+			_popup(uni.x, uni.y - 50, "Ouch!", Color("ff9ccf"))
+			_burst(uni.x, uni.y, 10, [Color.WHITE, Color("ff9ccf")], 160)
+			synth.poof()
+	tadpoles = tadpoles.filter(func(td): return td.alive)
+	# Star-bit goo left behind by popped pods.
+	for g in goo_bits:
+		g.y += sin(t * 2.2 + g.phase) * 8.0 * dt
+		if not g.taken and Vector2(uni.x - g.x, uni.y - g.y).length() < 34:
+			g.taken = true
+			bits += 1
+			score += 5
+			_burst(g.x, g.y, 8, [Color("ffd23f"), Color.WHITE], 150)
+			synth.ring(bits)
+	goo_bits = goo_bits.filter(func(g): return not g.taken)
+	# The mermaid companion (TODO(IAP): only once purchased) tails her and
+	# zaps tadpole guards — this chapter is where she earns her $5.
+	if MERMAID_OWNED:
+		if umer == null:
+			umer = { "x": uni.x - 90.0, "y": uni.y + 50.0, "cd": 2.0 }
+		umer.x += (uni.x - _w_face * 84.0 - umer.x) * minf(1.0, dt * 2.2)
+		umer.y += (uni.y + 44.0 - umer.y) * minf(1.0, dt * 2.2)
+		umer.cd -= dt
+		if umer.cd <= 0:
+			var tgt = null
+			var bd := 300.0
+			for td in tadpoles:
+				if td.alive:
+					var dd: float = Vector2(td.x - umer.x, td.y - umer.y).length()
+					if dd < bd:
+						bd = dd
+						tgt = td
+			if tgt != null:
+				umer.cd = 3.0
+				arcs.append({ "ax": umer.x, "ay": umer.y, "bx": tgt.x, "by": tgt.y, "life": 0.22, "max": 0.22 })
+				tgt.hp -= 1
+				tgt.hit = 0.12
+				synth.zap()
+				if tgt.hp <= 0:
+					tgt.alive = false
+					score += 20
+					_burst(tgt.x, tgt.y, 16, [Color("7df0c8"), Color.WHITE], 200)
+			else:
+				umer.cd = 0.5
+	# Every capsule gone: fireworks, and the cavern stays open to roam.
+	if pods_left <= 0 and not _under_won:
+		_under_won = true
+		score += 500
+		_popup(uni.x, uni.y - 90, "ALL CAPSULES SMASHED! 🎉", Color("ffd23f"))
+		_popup(uni.x, uni.y - 50, "+500  The Underworld is free!", Color("9df08a"))
+		_burst(uni.x, uni.y, 60, RAINBOW, 380)
+		synth.powerup()
+		synth.level_up()
+	if _under_won and randf() < dt * 1.5:
+		_burst(cam_x + randf_range(100, W - 100), cam_y + randf_range(80, H - 120), 24, RAINBOW, 260)
+	# Ambient bubbles rising through the cavern.
+	if randf() < 0.3:
+		var p := Particle.new()
+		p.x = cam_x + randf_range(0, W)
+		p.y = cam_y + H + 10
+		p.vx = randf_range(-8, 8)
+		p.vy = randf_range(-70, -40)
+		p.life = 2.2
+		p.max_life = 2.2
+		p.r = randf_range(2, 4)
+		p.c = Color(0.7, 0.95, 1, 0.5)
 		particles.append(p)
 
 
@@ -3772,8 +4117,9 @@ func _draw_wonder() -> void:
 func _draw_wzaps() -> void:
 	for z in wzaps:
 		var zglow := Color(1, 0.6, 0.85, 0.4)
-		draw_line(Vector2(z.x - z.dir * 26, z.y), Vector2(z.x, z.y), zglow, 6, true)
-		draw_line(Vector2(z.x - z.dir * 16, z.y), Vector2(z.x, z.y), Color.WHITE, 2.5, true)
+		var zback := Vector2(z.dir, z.dy).normalized() * 26.0
+		draw_line(Vector2(z.x, z.y) - zback, Vector2(z.x, z.y), zglow, 6, true)
+		draw_line(Vector2(z.x, z.y) - zback * 0.62, Vector2(z.x, z.y), Color.WHITE, 2.5, true)
 		draw_circle(Vector2(z.x, z.y), 3, Color("ffd9ef"))
 
 
@@ -3831,7 +4177,124 @@ func _draw_tunnel_bg() -> void:
 		draw_texture_rect(_radial_glow_tex(Color(0.3, 0.7, 1, 0.5 * glow), Color(0.2, 0.5, 0.9, 0)), Rect2(VW * 0.5 - VW * 0.8, VH - VH * 0.5 * glow, VW * 1.6, VH * 0.7), false)
 
 
+func _draw_under_bg() -> void:
+	# Screen space: deep violet hush with a slow alien glow at the heart.
+	var bands := 10
+	for i in bands:
+		var k0 := float(i) / bands
+		var k1 := float(i + 1) / bands
+		draw_rect(Rect2(0, VH * k0, VW, VH * (k1 - k0) + 1), Color("1a0f38").lerp(Color("071022"), k0))
+	var pulse := 0.5 + 0.5 * sin(t * 0.8)
+	draw_texture_rect(_radial_glow_tex(Color(0.35, 1, 0.55, 0.10 + 0.06 * pulse), Color(0, 0.4, 0.2, 0)), Rect2(VW * 0.2, VH * 0.1, VW * 0.6, VH * 0.8), false)
+
+
+func _draw_under() -> void:
+	# World space (camera transform on): cavern slabs, crystals, spores,
+	# portal, goo bits, pods, tadpoles, companion, bolts.
+	var cx0 := cam_x - 60.0
+	var cx1 := cam_x + W + 60.0
+	draw_rect(Rect2(cx0, UNDER_Y0 - 90, cx1 - cx0, 90), Color("2a1b52"))
+	draw_rect(Rect2(cx0, UNDER_Y0 + UNDER_H, cx1 - cx0, 110), Color("2a1b52"))
+	draw_rect(Rect2(cx0, UNDER_Y0 - 90, cx1 - cx0, 10), Color("4a3578"))
+	draw_rect(Rect2(cx0, UNDER_Y0 + UNDER_H, cx1 - cx0, 10), Color("4a3578"))
+	var c0 := int(floor(cx0 / 140.0))
+	var c1 := int(ceil(cx1 / 140.0))
+	for c in range(c0, c1 + 1):
+		var gx := c * 140.0 + _hash01(c * 7 + 1) * 60.0
+		var top := _hash01(c * 13 + 2) < 0.5
+		var gy := UNDER_Y0 - 6.0 if top else UNDER_Y0 + UNDER_H + 6.0
+		var gl := 16.0 + _hash01(c * 17 + 3) * 22.0
+		var gdir := 1.0 if top else -1.0
+		var glow := 0.6 + 0.4 * sin(t * 2.0 + c)
+		var gcol: Color = [Color("9df08a"), Color("b77bff"), Color("7df0ff")][c % 3]
+		draw_colored_polygon(PackedVector2Array([Vector2(gx - 7, gy), Vector2(gx, gy + gl * gdir), Vector2(gx + 7, gy)]), Color(gcol.r, gcol.g, gcol.b, 0.55 + 0.3 * glow))
+		# Bioluminescent veins and glow pockets fill the mid-cavern hush.
+		if _hash01(c * 31 + 9) < 0.55:
+			var vy := UNDER_Y0 + 120.0 + _hash01(c * 37 + 4) * (UNDER_H - 240.0)
+			var vpts := PackedVector2Array()
+			for k in 6:
+				vpts.append(Vector2(c * 140.0 + k * 28.0, vy + sin(t * 0.9 + c + k) * 10.0))
+			draw_polyline(vpts, Color(gcol.r, gcol.g, gcol.b, 0.14 + 0.08 * sin(t * 1.3 + c)), 2.5, true)
+		if _hash01(c * 41 + 6) < 0.4:
+			var pk := Vector2(c * 140.0 + 70.0, UNDER_Y0 + 100.0 + _hash01(c * 43 + 8) * (UNDER_H - 200.0))
+			draw_texture_rect(_radial_glow_tex(Color(gcol.r, gcol.g, gcol.b, 0.10), Color(0, 0, 0, 0)), Rect2(pk.x - 90, pk.y - 90, 180, 180), false)
+		if _hash01(c * 23 + 5) < 0.6:
+			var ey := UNDER_Y0 + 90.0 + _hash01(c * 29 + 7) * (UNDER_H - 180.0)
+			for s in 3:
+				draw_circle(Vector2(gx + 40 + s * 9, ey + sin(t + c + s) * 14.0), 2.2 + s * 0.5, Color(0.6, 1, 0.7, 0.35))
+	# The ride home: portal back up to the lagoon at the west end.
+	var port := Vector2(130.0, UNDER_Y0 + UNDER_H * 0.5)
+	var pp := 1.0 + 0.12 * sin(t * 3.0)
+	draw_texture_rect(_radial_glow_tex(Color(0.5, 0.85, 1, 0.5), Color(0.2, 0.5, 1, 0)), Rect2(port.x - 70 * pp, port.y - 70 * pp, 140 * pp, 140 * pp), false)
+	draw_arc(port, 34 * pp, 0, TAU, 40, Color("bfe9ff"), 4, true)
+	draw_arc(port, 24 * pp, t, t + PI * 1.4, 32, Color.WHITE, 3, true)
+	_text_c(port + Vector2(0, -52), "LAGOON", 13, Color("bfe9ff"))
+	for g in goo_bits:
+		_bit_star(Vector2(g.x, g.y))
+	for pd in pods:
+		if pd.alive:
+			_draw_pod(pd)
+	for td in tadpoles:
+		if td.alive:
+			_draw_tadpole(td)
+	if MERMAID_OWNED and umer != null:
+		var keep := Vector2(mer_px, mer_py)
+		mer_px = umer.x
+		mer_py = umer.y
+		_draw_mermaid()
+		mer_px = keep.x
+		mer_py = keep.y
+	_draw_wzaps()
+
+
+func _draw_pod(pd) -> void:
+	# A hive capsule: membrane sac, glass dome, sleeping alien, shield hex.
+	var p := Vector2(pd.x, pd.y)
+	var pulse := 0.5 + 0.5 * sin(t * 2.6 + float(pd.phase))
+	var near: bool = Vector2(uni.x - pd.x, uni.y - pd.y).length() < 560.0
+	if near:
+		draw_texture_rect(_radial_glow_tex(Color(0.55, 1, 0.5, 0.35 + 0.15 * pulse), Color(0.2, 0.7, 0.3, 0)), Rect2(p.x - 90, p.y - 90, 180, 180), false)
+	_fill_ellipse(p + Vector2(0, 46), 40, 10, Color(0.2, 0.5, 0.3, 0.3))
+	_fill_ellipse(p, 44, 50, Color("3d6b33"))
+	_fill_ellipse(p, 38, 44, Color.WHITE if pd.hit > 0 else Color("6fae4e"))
+	_fill_ellipse(p + Vector2(0, -6), 26, 28, Color(0.75, 1, 0.9, 0.45))
+	var squirm := sin(t * 3.0 + float(pd.phase)) * 2.0
+	draw_circle(p + Vector2(squirm, -4), 13, Color("2a1650"))
+	draw_circle(p + Vector2(-5 + squirm, -8), 3.4, Color("9df08a"))
+	draw_circle(p + Vector2(5 + squirm, -8), 3.4, Color("9df08a"))
+	draw_arc(p + Vector2(squirm, 2), 4.5, PI * 0.15, PI * 0.85, 10, Color("9df08a"), 1.8, true)
+	draw_polyline(_quad_pts(p + Vector2(0, 44), p + Vector2(10, 70), p + Vector2(-6, 100)), Color("3d6b33"), 6, true)
+	if _pod_shield(pd):
+		var hex := PackedVector2Array()
+		for i in 6:
+			var a := i * TAU / 6 + t * 0.7
+			hex.append(p + Vector2(cos(a), sin(a)) * 62.0)
+		hex.append(hex[0])
+		draw_polyline(hex, Color(0.6, 0.9, 1, 0.5 + 0.3 * pulse), 3, true)
+		draw_polyline(hex, Color(1, 1, 1, 0.25), 1.5, true)
+	else:
+		draw_colored_polygon(_sparkle_poly(p.x, p.y - 64, 8 + 3 * pulse), Color("ffd23f"))
+	for i in POD_HP:
+		if i < pd.hp:
+			draw_circle(p + Vector2(-27 + i * 6, 58), 2.4, Color("9df08a"))
+
+
+func _draw_tadpole(td) -> void:
+	# A one-eyed tadpole guard, wobbling after her.
+	var p := Vector2(td.x, td.y)
+	var wob := sin(t * 6.0 + float(td.phase)) * 3.0
+	draw_polyline(_quad_pts(p + Vector2(-14, 0), p + Vector2(-24, wob), p + Vector2(-32, -wob)), Color("6a3fb0"), 5, true)
+	draw_circle(p, 13, Color.WHITE if td.hit > 0 else Color("8a5fd6"))
+	draw_circle(p + Vector2(0, -4), 9, Color("a883f0"))
+	draw_circle(p + Vector2(4, -3), 4.6, Color.WHITE)
+	draw_circle(p + Vector2(5.5, -3), 2.4, Color("2a1650"))
+	draw_arc(p + Vector2(2, 5), 4, PI * 0.2, PI * 0.8, 8, Color("2a1650"), 1.6, true)
+
+
 func _draw_ch3() -> void:
+	if under:
+		_draw_under()
+		return
 	# World space (camera transform on): water first, then walls, ledges,
 	# surprises, drones, bolts.
 	if cam_y + H > TUNNEL_H - 100:
@@ -3853,6 +4316,13 @@ func _draw_ch3() -> void:
 			var bx := 40.0 + _hash01(i * 41) * (W - 80)
 			var by: float = sand_y - fmod(t * 36.0 + i * 173.0, WATER_H - 100.0)
 			draw_arc(Vector2(bx, by), 3.5 + _hash01(i * 7) * 2.5, 0, TAU, 12, Color(1, 1, 1, 0.35), 1.5, true)
+		# The crack: a pulsing alien glow in the sand. Swim down into it.
+		var crack := Vector2(W * 0.7, sand_y + 6)
+		var cp := 0.6 + 0.4 * sin(t * 3.0)
+		draw_texture_rect(_radial_glow_tex(Color(0.5, 1, 0.4, 0.5 * cp), Color(0.1, 0.5, 0.2, 0)), Rect2(crack.x - 80, crack.y - 40, 160, 90), false)
+		_fill_ellipse(crack, 46, 12, Color("120a28"))
+		_fill_ellipse(crack + Vector2(0, 2), 34, 8, Color(0.4, 1, 0.5, 0.5 + 0.3 * cp))
+		_text_c(crack + Vector2(0, -36), "👽 ?", 18, Color("9df08a"))
 		# The herd: more ponies waiting in the lagoon.
 		var herd := [Color("ff9ccf"), Color("a8e6cf"), Color("c5b3f0"), Color("ffd3a0"), Color("9fd8ff"), Color("fff4b0")]
 		for i in 6:
@@ -3933,7 +4403,10 @@ func _draw() -> void:
 	if vertical:
 		_draw_over_bg()
 	elif wonder and ch3:
-		_draw_tunnel_bg()
+		if under:
+			_draw_under_bg()
+		else:
+			_draw_tunnel_bg()
 	else:
 		_draw_background(dt)
 	# Chapter 2 side view is a world bigger than the screen: shift the

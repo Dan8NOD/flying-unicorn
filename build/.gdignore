@@ -1,0 +1,2 @@
+# Godot skips this folder entirely (import + FileSystem dock).
+# Keeps iOS/Xcode export output in build/ from being scanned as game resources.

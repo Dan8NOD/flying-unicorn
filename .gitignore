@@ -2,8 +2,10 @@
 .godot/
 /android/
 
-# Build outputs
-build/
+# Build outputs (the .gdignore marker stays tracked so Xcode export
+# artifacts under build/ are never imported as game resources)
+build/*
+!build/.gdignore
 *.ipa
 *.xcarchive
 

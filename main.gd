@@ -131,13 +131,16 @@ var last_ring_x := 480.0
 
 var best := 0
 var synth: SynthClass
-# Wonder World: the free-roam reward space. Unlocks after WONDER_AT seconds
-# of play (kid engagement window); rotation flips it between side-view
-# platformer and overhead wander. Nothing hostile in there.
+# Wonder World: the free-roam reward space. Opens after the UFO boss is
+# defeated (or after WONDER_AT seconds of play, whichever comes first);
+# rotation flips it between side-view platformer and overhead wander.
+# Nothing hostile in there.
 var wonder := false
 var wonder_unlocked := false
 var powered := false
 var play_time := 0.0
+# Countdown to the Chapter 2 transition after a boss kill (celebration beat).
+var ch2_pending := 0.0
 const WONDER_AT := 480.0
 # Chapter 2 start option: begin 30s before the Wonder World transition.
 const CH2_TIME := 450.0
@@ -580,7 +583,7 @@ func reset() -> void:
 	mer_cd = 2.0; mer_spool = 0; mer_lock = null; arcs = []; rockets = []; rocket_cd = 0; _rocket_tap = false; gold_in = 3; dash_t = 0; dash_lock = null;
 	hurt_timer = 0; flash = 0; level_banner = 2.2; t = 0
 	over_card_timer = 0; over_card_visible = false
-	wonder = false; powered = false; bits = 0
+	wonder = false; powered = false; bits = 0; ch2_pending = 0
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
@@ -644,7 +647,12 @@ func _process(delta: float) -> void:
 			start()
 		hp = 0.0
 		game_over()
-	# Wonder World unlock: the 8-minute kid-engagement reward.
+	# Wonder World entry: boss kill sets ch2_pending; the WONDER_AT clock is
+	# the fallback so kids who can't finish the boss still get there.
+	if ch2_pending > 0 and state == "play" and not wonder:
+		ch2_pending -= delta
+		if ch2_pending <= 0:
+			_enter_wonder()
 	if state == "play" and not wonder and play_time >= WONDER_AT:
 		_enter_wonder()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
@@ -1119,6 +1127,9 @@ func _kill_boss() -> void:
 	synth.poof()
 	synth.pony()
 	boss_kills += 1
+	# Chapter 2 opens from the boss kill: a beat for the explosion, then in.
+	_popup(boss.x, boss.y - 110, "CHAPTER 2! ⭐", Color("ffd23f"))
+	ch2_pending = 2.4
 	boss = null
 	bolts = []
 	boss_spawn_t = BOSS_GAP
@@ -2174,7 +2185,9 @@ func _draw_planet(px: float, py: float, pr: float) -> void:
 func _draw_scenery(dt: float) -> void:
 	var moving := state == "play" and not paused
 	if moving:
-		var run := maxf(40.0, absf(uni.vx) * 1.4) if wonder else speed
+		# In Wonder World the world only scrolls when she walks — standing
+		# still never slides the city under her feet.
+		var run := absf(uni.vx) * 1.4 if wonder else speed
 		hill_x += run * dt * 0.1
 		city_x += run * dt * 0.28
 	var night := _sky_is_night()
@@ -2333,7 +2346,10 @@ func _draw_background(dt: float) -> void:
 	var moving := state == "play" and not paused
 	for cl in bg_clouds:
 		if moving or state == "title":
-			cl.x -= (0.35 if cl.layer else 0.18) * speed * dt * (0.4 if state == "title" else 1.0)
+			if wonder:
+				cl.x -= (14.0 if cl.layer else 8.0) * dt
+			else:
+				cl.x -= (0.35 if cl.layer else 0.18) * speed * dt * (0.4 if state == "title" else 1.0)
 		if cl.x < -140:
 			cl.x = W + randf_range(40, 200)
 			cl.y = randf_range(30, H - 60)
@@ -2342,18 +2358,49 @@ func _draw_background(dt: float) -> void:
 		# draw with alpha via modulated circles: puff uses fixed colors, wrap with canvas alpha
 		_puff_alpha(cl.x, cl.y, cl.s, old_a)
 
-	# Puffy cloud floor — the reason she can never falls
-	var off := fmod(t * speed * 0.5, 80.0)
-	var night := _sky_is_night()
-	var fcx := -40.0 - off
-	while fcx <= W + 120:
-		var fcp := Vector2(fcx, H - 8)
-		_fill_ellipse(fcp, 36, 36, Color(1, 1, 1, 0.94))
-		_fill_ellipse(fcp + Vector2(0, 14), 34, 24, Color(0.79, 0.79, 0.95, 0.5 if night else 0.34))
-		_fill_ellipse(fcp + Vector2(-7, -12), 20, 13, Color(1, 1, 1, 0.75))
-		fcx += 80
-	# Blue-grey valley shading between the puffs.
-	_fill_ellipse(Vector2(W / 2, H + 16), W * 0.62, 26, Color(0.72, 0.72, 0.92, 0.4))
+	if wonder:
+		_draw_solid_ground()
+	else:
+		# Puffy cloud floor — the reason she can never falls
+		var off := fmod(t * speed * 0.5, 80.0)
+		var night := _sky_is_night()
+		var fcx := -40.0 - off
+		while fcx <= W + 120:
+			var fcp := Vector2(fcx, H - 8)
+			_fill_ellipse(fcp, 36, 36, Color(1, 1, 1, 0.94))
+			_fill_ellipse(fcp + Vector2(0, 14), 34, 24, Color(0.79, 0.79, 0.95, 0.5 if night else 0.34))
+			_fill_ellipse(fcp + Vector2(-7, -12), 20, 13, Color(1, 1, 1, 0.75))
+			fcx += 80
+		# Blue-grey valley shading between the puffs.
+		_fill_ellipse(Vector2(W / 2, H + 16), W * 0.62, 26, Color(0.72, 0.72, 0.92, 0.4))
+
+
+func _draw_solid_ground() -> void:
+	# Chapter 2's meadow floor: solid earth that never scrolls. The grass
+	# top edge sits at H - 60, exactly where her hooves land.
+	var gy := H - 60.0
+	draw_rect(Rect2(0, gy + 26, W, H - gy - 18), Color("6b4526"))
+	draw_rect(Rect2(0, gy + 16, W, 10), Color("7a5230"))
+	draw_rect(Rect2(0, gy, W, 16), Color("4fa361"))
+	draw_rect(Rect2(0, gy, W, 4), Color("7ed6a8"))
+	# Static tufts and flowers, hashed by column so nothing slides.
+	var i := 0
+	var gx := 26.0
+	while gx < W - 10:
+		if _hash01(i * 13 + 5) < 0.5:
+			draw_line(Vector2(gx, gy + 2), Vector2(gx - 3, gy - 5), Color("2f9e5f"), 2)
+			draw_line(Vector2(gx + 2, gy + 2), Vector2(gx + 4, gy - 6), Color("2f9e5f"), 2)
+			draw_line(Vector2(gx + 1, gy + 2), Vector2(gx + 1, gy - 3), Color("3cb973"), 2)
+		if _hash01(i * 29 + 11) < 0.35:
+			var fcol: Color = [Color("ff9ccf"), Color("fff4b0"), Color("bfe9ff")][i % 3]
+			var fcx := gx + 30
+			draw_line(Vector2(fcx, gy + 2), Vector2(fcx, gy - 7), Color("2f9e5f"), 2)
+			for pi in 4:
+				var pa := pi * TAU / 4.0 + 0.4
+				draw_circle(Vector2(fcx + cos(pa) * 3, gy - 7 + sin(pa) * 3), 1.8, fcol)
+			draw_circle(Vector2(fcx, gy - 7), 1.4, Color("ffd23f"))
+		gx += 64.0
+		i += 1
 
 
 func _puff_alpha(x: float, y: float, s: float, a: float) -> void:

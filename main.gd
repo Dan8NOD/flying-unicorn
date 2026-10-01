@@ -139,6 +139,8 @@ var wonder_unlocked := false
 var powered := false
 var play_time := 0.0
 const WONDER_AT := 480.0
+# Chapter 2 start option: begin 30s before the Wonder World transition.
+const CH2_TIME := 450.0
 var bits := 0
 var _air_jump := true
 var _walk_touch := Vector2(-1, -1)
@@ -148,6 +150,7 @@ var font: Font
 var sky_tex: Texture2D
 var btn_tex: Texture2D
 var _btn_play := Rect2()
+var _btn_ch2 := Rect2()
 var _btn_again := Rect2()
 var _btn_resume := Rect2()
 var _btn_sky := Rect2()
@@ -306,6 +309,7 @@ var _autostart := false
 var _force_level := 0
 var _force_vertical := false
 var _force_wonder := false
+var _force_ch2 := false
 var _start_time := 0.0
 
 
@@ -331,6 +335,9 @@ func _parse_args() -> void:
 			_force_wonder = true
 		elif a.begins_with("--time="):
 			_start_time = float(a.get_slice("=", 1))
+		elif a == "--chapter2":
+			_force_ch2 = true
+			_autostart = true
 
 
 # Screenshot/QA hooks: jump straight to a level's palette or force the
@@ -349,6 +356,9 @@ func _apply_test_hooks() -> void:
 	if _start_time > 0.0:
 		play_time = _start_time
 		print("FU start at t=%s" % _start_time)
+	if _force_ch2:
+		play_time = CH2_TIME
+		print("FU chapter2 start at t=%s" % play_time)
 
 
 func _save_cfg() -> void:
@@ -1854,6 +1864,10 @@ func _press_at(vp: Vector2) -> void:
 		if _btn_play.has_point(dp):
 			start()
 			return
+		if _btn_ch2.has_point(dp):
+			start()
+			play_time = CH2_TIME
+			return
 		if _teaser_rect.has_point(dp):
 			OS.shell_open("https://fatcatcruz.itch.io/fat-cat-cruz")
 			return
@@ -2852,6 +2866,18 @@ func _play_button(center: Vector2, text: String) -> Rect2:
 	return rect
 
 
+func _ch2_button(center: Vector2, text: String) -> Rect2:
+	var rect := Rect2(center - Vector2(95, 20), Vector2(190, 40))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.55, 0.35, 0.85, 0.55)
+	sb.border_color = Color("ffd23f")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(20)
+	draw_style_box(sb, rect)
+	_text_c(center + Vector2(0, 6), text, 17, Color("fff4b0"))
+	return rect
+
+
 func _pill(center: Vector2, text: String) -> void:
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 24
 	var sb := StyleBoxFlat.new()
@@ -2897,7 +2923,9 @@ func _draw_title_card() -> void:
 		y += 24
 	y += 16
 	_btn_play = _play_button(Vector2(W / 2, y + 24), "Fly! ✨")
-	y += 72
+	y += 60
+	_btn_ch2 = _ch2_button(Vector2(W / 2, y + 20), "⭐ Chapter 2")
+	y += 52
 	_teaser_rect = _teaser(Vector2(W / 2, y + 29))
 
 

@@ -112,6 +112,24 @@ var over_card_timer := 0.0
 var over_card_visible := false
 var over_is_best := false
 
+# ─── Hyper spear + triple-zap pickup ─────────────────────────────────────────
+# DAN, 2026-10-02: the headline weapon — a hyper shooting spear from her
+# right arm. Fast (1100 px/s), snappy 1.8s cooldown, detonates on any impact
+# (or at max range, or on a wall): a 120px blast chips everything hostile
+# around — clouds, bosses, the drone, pods, tadpoles, barrels, city blocks.
+# Maze walls stay solid, they just take the explosion. One code path for
+# every chapter, fired from the lance button above the rocket/zap button or
+# J / gamepad X. The ✨ spread pickup upgrades her horn zap to a triple fan
+# for 20s — a toy-box extra riding the existing wzaps system.
+const SPEAR_CD := 1.8
+const SPEAR_SPD := 1100.0
+const SPEAR_BLAST := 120.0
+var spears: Array = []
+var spear_cd := 0.0
+var _spear_tap := false
+var spread_t := 0.0
+var spreads: Array = []
+
 var uni := { "x": 190.0, "y": H / 2, "vx": 0.0, "vy": 0.0, "flap": 0.0, "tilt": 0.0 }
 
 var rings: Array = []
@@ -315,6 +333,15 @@ class Rocket:
 	var life := 3.0
 	var dead := false
 	var lock = null
+
+
+class Spear:
+	var x: float
+	var y: float
+	var vx: float
+	var vy: float
+	var life := 1.15
+	var dead := false
 
 
 class Laser:
@@ -827,6 +854,10 @@ func _setup_input() -> void:
 	_add_key("rockets", KEY_R)
 	_add_joy_button("rockets", JOY_BUTTON_Y)
 	_add_joy_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+	_add_action("spear")
+	_add_key("spear", KEY_J)
+	_add_key("spear", KEY_L)
+	_add_joy_button("spear", JOY_BUTTON_X)
 	_add_action("pause_game")
 	_add_key("pause_game", KEY_P)
 	_add_key("pause_game", KEY_ESCAPE)
@@ -883,6 +914,7 @@ func reset() -> void:
 	wobs = []; wcur = []; towers = []; mwalls = []; maze_exit = Vector2.ZERO
 	ch6 = false; ch6_pending = 0.0; ch6_end = false
 	pz_pieces = []; pz_sel = null; pz_done_t = 0.0; pz_kind = 0; pz_tex = null
+	spears = []; spear_cd = 0.0; _spear_tap = false; spread_t = 0.0; spreads = []
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
@@ -1020,10 +1052,12 @@ func _game_update(dt: float) -> void:
 	if flash > 0: flash -= dt
 	if hurt_timer > 0: hurt_timer -= dt
 	fire_cooldown = maxf(0, fire_cooldown - dt)
+	spread_t = maxf(0.0, spread_t - dt)
 	_tick_weapons(dt)
 	_boss_update(dt)
 	_mermaid_update(dt)
 	_update_rockets(dt)
+	_update_spears(dt)
 	_dash_step(dt)
 	# Feel timers: reactions decay, ambient life goes on.
 	react_pop = maxf(0.0, react_pop - dt * 3.5)
@@ -1703,6 +1737,237 @@ func _update_rockets(dt: float) -> void:
 	rockets = rockets.filter(func(r): return not r.dead and r.x > -60 and r.x < (VW if vertical else W) + 60 and r.y > -60 and r.y < (VH if vertical else H) + 60)
 
 
+# Combat contexts where the spear button shows and the spear may fly.
+func _spear_available() -> bool:
+	if not wonder:
+		return true
+	if ch6:
+		return false
+	if ch5:
+		return true
+	if under:
+		return pods_left > 0
+	if ch3:
+		return false
+	return drone != null and drone.alive
+
+
+func _fire_spear() -> void:
+	if state != "play" or spear_cd > 0 or not _spear_available():
+		return
+	spear_cd = SPEAR_CD
+	var s := Spear.new()
+	if wonder and (ch3 or ch5):
+		# Overhead: right-hand offset from the facing vector.
+		var r := Vector2(-_o_face.y, _o_face.x)
+		s.x = uni.x + _o_face.x * 26.0 + r.x * 16.0
+		s.y = uni.y + _o_face.y * 26.0 + r.y * 16.0
+		s.vx = _o_face.x * SPEAR_SPD
+		s.vy = _o_face.y * SPEAR_SPD
+	elif vertical:
+		# Portrait sky: travels up-screen, right hand is +x.
+		s.x = uni.x + 16.0
+		s.y = uni.y - 44.0
+		s.vx = 0.0
+		s.vy = -SPEAR_SPD
+	elif wonder:
+		# Meadow walk: the way she's facing, at arm height.
+		s.x = uni.x + _w_face * 30.0
+		s.y = uni.y - 26.0
+		s.vx = _w_face * SPEAR_SPD
+		s.vy = 0.0
+	else:
+		# Side view: the rider's reaching right arm, local (24, -28), tilted.
+		var cc := cos(uni.tilt)
+		var ss := sin(uni.tilt)
+		s.x = uni.x + 24.0 * cc + 28.0 * ss
+		s.y = uni.y + 24.0 * ss - 28.0 * cc
+		s.vx = SPEAR_SPD
+		s.vy = 0.0
+	spears.append(s)
+	react_pop = maxf(react_pop, 0.5)
+	synth.spear()
+
+
+func _update_spears(dt: float) -> void:
+	if state == "play":
+		spear_cd = maxf(0.0, spear_cd - dt)
+		if Input.is_action_just_pressed("spear") or _spear_tap:
+			_spear_tap = false
+			_fire_spear()
+	for s in spears:
+		if s.dead:
+			continue
+		s.x += s.vx * dt
+		s.y += s.vy * dt
+		s.life -= dt
+		# Golden comet trail.
+		var tp := Particle.new()
+		tp.x = s.x
+		tp.y = s.y
+		tp.vx = -s.vx * 0.06 + randf_range(-24, 24)
+		tp.vy = -s.vy * 0.06 + randf_range(-24, 24)
+		tp.life = 0.3
+		tp.max_life = 0.3
+		tp.r = randf_range(3, 5)
+		tp.c = Color("ffd23f") if randf() < 0.5 else Color.WHITE
+		tp.star = true
+		particles.append(tp)
+		if s.life <= 0 or _spear_impact(s):
+			s.dead = true
+			_spear_boom(s.x, s.y)
+	spears = spears.filter(func(s): return not s.dead)
+
+
+# Contact tests per combat context. The boom does the damage; this only says
+# the spear met something solid (maze walls included — they eat the blast).
+func _spear_impact(s) -> bool:
+	var p := Vector2(s.x, s.y)
+	if not wonder:
+		for c in clouds:
+			if not c.dead and Vector2(c.x - p.x, c.y - p.y).length() < c.r + 10:
+				return true
+		if boss != null and not boss.dead and not boss.leaving and Vector2(boss.x - p.x, boss.y - p.y).length() < 70:
+			return true
+		return false
+	if ch5:
+		if ch5_city:
+			for tw in towers:
+				if not tw.rubble and Rect2(tw.x - 4, tw.y - 4, tw.w + 8, tw.d + 8).has_point(p):
+					return true
+			for wr in mwalls:
+				if wr.has_point(p):
+					return true
+			return false
+		for b in wobs:
+			if b.alive and Vector2(b.x - p.x, b.y - p.y).length() < 28.0:
+				return true
+		return false
+	if ch3:
+		if under:
+			for pd in pods:
+				if pd.alive and Vector2(pd.x - p.x, pd.y - p.y).length() < 46:
+					return true
+			for td in tadpoles:
+				if td.alive and Vector2(td.x - p.x, td.y - p.y).length() < 34:
+					return true
+		return false
+	if drone != null and drone.alive and Vector2(drone.x - p.x, drone.y - p.y).length() < 44:
+		return true
+	return false
+
+
+# The detonation: big visual, then 2 damage to everything hostile within
+# SPEAR_BLAST. Shielded pods just spark, rubble is skipped, maze walls are
+# outside this list by design.
+func _spear_boom(x: float, y: float) -> void:
+	flash = maxf(flash, 0.1)
+	shock.append({ "x": x, "y": y, "life": 0.5, "max": 0.5 })
+	_burst(x, y, 44, [Color.WHITE, Color("ffb13d"), Color("ff4d5e"), Color("ffd23f")], 380)
+	_burst(x, y, 18, [Color("7a7a8a"), Color.WHITE], 200)
+	synth.spear_boom()
+	for c in clouds:
+		if not c.dead and Vector2(c.x - x, c.y - y).length() < SPEAR_BLAST:
+			_hurt_cloud(c, 2)
+	if boss != null and not boss.dead and not boss.leaving and Vector2(boss.x - x, boss.y - y).length() < SPEAR_BLAST + 20.0:
+		_damage_boss(2)
+	if not wonder:
+		return
+	if drone != null and drone.alive and Vector2(drone.x - x, drone.y - y).length() < SPEAR_BLAST:
+		_hurt_drone(2)
+	if under:
+		for pd in pods:
+			if not pd.alive or Vector2(pd.x - x, pd.y - y).length() > SPEAR_BLAST + 20.0:
+				continue
+			if _pod_shield(pd):
+				_burst(pd.x, pd.y, 5, [Color("9adcff"), Color.WHITE], 110)
+				synth.ring(1)
+			else:
+				pd.hp -= 2
+				pd.hit = 0.12
+				if pd.hp <= 0:
+					_pop_pod(pd)
+		for td in tadpoles:
+			if td.alive and Vector2(td.x - x, td.y - y).length() < SPEAR_BLAST:
+				td.hp -= 2
+				td.hit = 0.12
+				if td.hp <= 0:
+					td.alive = false
+					score += 20
+					_popup(td.x, td.y - 30, "+20", Color("ffd23f"))
+					_burst(td.x, td.y, 16, [Color("b77bff"), Color("9df08a"), Color.WHITE], 200)
+					synth.poof()
+	if ch5:
+		if ch5_city:
+			for tw in towers:
+				if tw.rubble:
+					continue
+				var qx: float = clampf(x, tw.x, tw.x + tw.w)
+				var qy: float = clampf(y, tw.y, tw.y + tw.d)
+				if Vector2(qx - x, qy - y).length() < SPEAR_BLAST:
+					_hit_tower(tw)
+					if not tw.rubble:
+						_hit_tower(tw)
+		else:
+			for b in wobs:
+				if b.alive and Vector2(b.x - x, b.y - y).length() < SPEAR_BLAST:
+					b.alive = false
+					score += 5
+					_popup(b.x, b.y - 30, "POP! +5", Color("bfe9ff"))
+					_burst(b.x, b.y, 14, [Color("8a5f3d"), Color("d9c48f"), Color.WHITE], 180)
+					synth.pop()
+
+
+# The practice drone takes spear splash too (same rules as the horn zap).
+func _hurt_drone(n: int) -> void:
+	drone.hp -= n
+	drone.hit = 0.12
+	_burst(drone.x, drone.y, 6, [Color.WHITE, Color("ff4d5e")], 140)
+	if drone.hp <= 0:
+		drone.alive = false
+		drone.respawn_t = 3.0
+		score += 50
+		_popup(drone.x, drone.y - 44, "BOOM! +50", Color("ffd23f"))
+		_burst(drone.x, drone.y, 30, [Color("ff4d5e"), Color("ffd23f"), Color.WHITE], 240)
+		synth.poof()
+
+
+# The lance button above the rocket/zap button, with a cooldown sweep.
+func _draw_spear_button(c: Vector2) -> void:
+	_draw_round_button(c, "")
+	var dim := 0.45 if spear_cd > 0 else 1.0
+	draw_line(c + Vector2(-8, 8), c + Vector2(8, -8), Color(1, 0.9, 0.6, dim), 4, true)
+	draw_colored_polygon(PackedVector2Array([c + Vector2(12, -12), c + Vector2(2, -9), c + Vector2(9, -2)]), Color(1, 0.3, 0.37, dim))
+	draw_line(c + Vector2(-8, 8), c + Vector2(-12, 12), Color(0.79, 0.81, 0.88, dim), 3, true)
+	if spear_cd > 0:
+		draw_arc(c, 26, -PI / 2, -PI / 2 + TAU * (1.0 - spear_cd / SPEAR_CD), 32, Color("ffd23f"), 4, true)
+
+
+# ✨ spread pickup: touch it and the horn zap fans out three ways for 20s.
+func _spread_collect() -> void:
+	for sp in spreads:
+		if sp.dead:
+			continue
+		if Vector2(uni.x - sp.x, uni.y - sp.y).length() < 38.0:
+			sp.dead = true
+			spread_t = 20.0
+			_popup(uni.x, uni.y - 70, "TRIPLE ZAP! ✨", Color("7df0ff"))
+			_burst(sp.x, sp.y, 20, [Color("7df0ff"), Color.WHITE, Color("ffd23f")], 220)
+			synth.powerup()
+	spreads = spreads.filter(func(sp): return not sp.dead)
+
+
+func _draw_spreads() -> void:
+	for sp in spreads:
+		var p := Vector2(sp.x, sp.y + sin(t * 2.6 + float(sp.phase)) * 5.0)
+		var tw := 0.75 + 0.25 * sin(t * 5.0 + float(sp.phase))
+		draw_texture_rect(_radial_glow_tex(Color(0.5, 0.9, 1, 0.4 * tw), Color(0.2, 0.6, 1, 0)), Rect2(p.x - 26, p.y - 26, 52, 52), false)
+		for k in [-1.0, 0.0, 1.0]:
+			var a: float = -PI / 2 + k * 0.5
+			draw_line(p, p + Vector2(cos(a), sin(a)) * 14.0, Color("7df0ff"), 3, true)
+		draw_colored_polygon(_sparkle_poly(p.x, p.y, 6.0 * tw), Color.WHITE)
+
+
 func _draw_mermaid() -> void:
 	var mp := _mer_pos()
 	var spooling := mer_spool > 0
@@ -2183,6 +2448,10 @@ func _press_at(vp: Vector2) -> void:
 		return
 	if wonder and not vertical and not ch6 and state == "play" and not paused and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
 		_w_zap = true
+		return
+	# The spear lance button rides above the rocket/zap button.
+	if state == "play" and not paused and not settings_open and _spear_available() and vp.distance_to(Vector2(VW - 44, VH - 160)) < 32:
+		_spear_tap = true
 		return
 	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
 		synth.muted = not synth.muted
@@ -3482,6 +3751,9 @@ func _draw_hud() -> void:
 			any_target = true
 		if not vertical and any_target:
 			_draw_round_button(Vector2(VW - 44, VH - 100), "⚡")
+			_draw_spear_button(Vector2(VW - 44, VH - 160))
+			if spread_t > 0:
+				_stroke_text(Vector2(VW - 108, VH - 92), "3× %ds" % int(ceil(spread_t)), 16, Color("7df0ff"), HORIZONTAL_ALIGNMENT_RIGHT, 4)
 		if transitioning:
 			_pill(Vector2(VW / 2, 76), "TURNING…")
 		return
@@ -3526,6 +3798,7 @@ func _draw_hud() -> void:
 	draw_colored_polygon(PackedVector2Array([rp + Vector2(-5, 0), rp + Vector2(-10, -4), rp + Vector2(-10, 4)]), Color(1, 0.69, 0.24, rdim))
 	if rocket_cd > 0:
 		draw_arc(Vector2(VW - 44, VH - 100), 26, -PI / 2, -PI / 2 + TAU * (1.0 - rocket_cd / ROCKET_CD), 32, Color("ffd23f"), 4, true)
+	_draw_spear_button(Vector2(VW - 44, VH - 160))
 	if transitioning and state == "play":
 		_pill(Vector2(VW / 2, 76), "TURNING…")
 
@@ -3548,9 +3821,11 @@ func _enter_wonder() -> void:
 	_save_cfg()
 	rings = []; clouds = []; lasers = []; pickups = []; popups = []
 	boss = null; bolts = []; rockets = []; arcs = []; dash_t = 0; dash_lock = null
+	spears = []
 	bits = 0
 	cam_x = 0.0; stride = 0.0; _w_face = 1.0; _w_zap = false; _w_fire_cd = 0.0; _fin_cd = 0.0
 	wzaps = []
+	spreads = [{ "x": WCOLS * WCOL * 0.72, "y": H - 120.0, "dead": false, "phase": randf() * TAU }]
 	drone = { "x": WCOLS * WCOL * 0.5, "y": 210.0, "dir": 1.0, "hp": 6, "hit": 0.0, "alive": true, "respawn_t": 0.0, "phase": randf() * TAU }
 	uni.x = 220.0
 	uni.y = H - 160.0
@@ -3694,7 +3969,12 @@ func _wonder_side(dt: float) -> void:
 		_w_zap = false
 		if _w_fire_cd <= 0:
 			_w_fire_cd = 0.22
-			wzaps.append({ "x": uni.x + _w_face * 30, "y": uni.y - 14, "dir": _w_face, "dy": 0.0, "life": 0.9, "dead": false })
+			var offs := [0.0]
+			if spread_t > 0:
+				offs = [-0.35, 0.0, 0.35]
+			for off in offs:
+				var v := Vector2(_w_face, 0.0).rotated(off)
+				wzaps.append({ "x": uni.x + v.x * 30, "y": uni.y - 14, "dir": v.x, "dy": v.y, "life": 0.9, "dead": false })
 			synth.zap()
 	for z in wzaps:
 		if z.dead:
@@ -3765,6 +4045,7 @@ func _wonder_side(dt: float) -> void:
 					score += 5
 					_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 160)
 					synth.ring(bits)
+	_spread_collect()
 	# Powered aura sparkles.
 	if randf() < 0.5:
 		var p := Particle.new()
@@ -3795,6 +4076,7 @@ func _enter_ch3() -> void:
 	_w_zap = false
 	_w_fire_cd = 0.0
 	wzaps = []
+	spears = []
 	drone = null
 	pods = []; tadpoles = []; goo_bits = []
 	uni.x = W / 2
@@ -3985,7 +4267,7 @@ func _lagoon_over(dt: float) -> void:
 			bits += 1
 			score += 5
 			_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 150)
-			synth.ring(bits)
+			synth.pearl()
 	var whirl := Vector2(LAG_W * 0.68, LAG_H * 0.52)
 	var wd: float = Vector2(uni.x - whirl.x, uni.y - whirl.y).length()
 	if wd < 64.0:
@@ -4007,6 +4289,7 @@ func _enter_under() -> void:
 	tadpoles = []
 	goo_bits = []
 	wzaps = []
+	spears = []
 	_under_won = false
 	_stun_t = 0.0
 	for i in POD_N:
@@ -4076,7 +4359,12 @@ func _under_swim(dt: float) -> void:
 				if dv.length() > 1.0 and dv.length() < best:
 					best = dv.length()
 					aim = dv.normalized()
-			wzaps.append({ "x": uni.x + aim.x * 30, "y": uni.y + aim.y * 30, "dir": aim.x, "dy": aim.y, "life": 0.9, "dead": false })
+			var offs := [0.0]
+			if spread_t > 0:
+				offs = [-0.35, 0.0, 0.35]
+			for off in offs:
+				var v := aim.rotated(off)
+				wzaps.append({ "x": uni.x + v.x * 30, "y": uni.y + v.y * 30, "dir": v.x, "dy": v.y, "life": 0.9, "dead": false })
 			synth.zap()
 	# Zaps fly; they clip pods only while a shield is flickered off.
 	for z in wzaps:
@@ -4221,6 +4509,7 @@ func _under_swim(dt: float) -> void:
 		_popup(uni.x, uni.y - 80, "CHAPTER 5! 🌊", Color("7df0ff"))
 		_popup(uni.x, uni.y - 118, "Out to the open water!", Color("bfe9ff"))
 		_burst(uni.x, uni.y, 40, RAINBOW, 280)
+		synth.gate()
 		synth.level_up()
 	# Ambient bubbles rising through the cavern.
 	if randf() < 0.3:
@@ -4355,6 +4644,7 @@ func _draw_wonder() -> void:
 		for bi in L[3]:
 			if not _bit_taken.has("%d:%d" % [c, bi]):
 				_bit_star(_wonder_bit_pos(c, bi))
+	_draw_spreads()
 	_draw_wzaps()
 
 
@@ -4785,6 +5075,18 @@ func _draw() -> void:
 		var fl := 10.0 + sin(t * 50 + r.x) * 4.0
 		draw_colored_polygon(PackedVector2Array([Vector2(-8, -4), Vector2(-8 - fl, 0), Vector2(-8, 4)]), Color("ffb13d"))
 		_world_apply()
+	# Hyper spears: a golden lance with a red tip and flickering glow.
+	for s in spears:
+		var sang := Vector2(s.vx, s.vy).angle()
+		_wxf(Vector2(s.x, s.y), sang, Vector2.ONE)
+		var glw := 0.6 + 0.4 * sin(t * 30.0)
+		draw_line(Vector2(-34, 0), Vector2(0, 0), Color(1, 0.85, 0.3, 0.25 + 0.3 * glw), 7, true)
+		draw_line(Vector2(-30, 0), Vector2(4, 0), Color("ffd9c9"), 4, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(16, 0), Vector2(2, -6), Vector2(6, 0), Vector2(2, 6)]), Color("ff4d5e"))
+		draw_colored_polygon(_sparkle_poly(18.0, 0.0, 5.0 + 2.0 * glw), Color("ffd23f"))
+		draw_line(Vector2(-10, -4), Vector2(-22, -9), Color("c9cde0"), 3, true)
+		draw_line(Vector2(-10, 4), Vector2(-22, 9), Color("c9cde0"), 3, true)
+		_world_apply()
 	for za in arcs:
 		var ak := clampf(za.life / za.max, 0.0, 1.0)
 		var zp0 := Vector2(za.ax, za.ay)
@@ -4906,6 +5208,7 @@ func _enter_ch5() -> void:
 	ch5_city = false
 	ch5_pending = 0.0
 	wzaps = []
+	spears = []
 	towers = []
 	mwalls = []
 	wobs = []
@@ -4919,6 +5222,10 @@ func _enter_ch5() -> void:
 	_o_face = Vector2.RIGHT
 	cam_x = 0.0
 	cam_y = clampf(uni.y - H * 0.5, 0.0, W5H - H)
+	# Two spread pickups float along the swim.
+	spreads = []
+	for i in 2:
+		spreads.append({ "x": 900.0 + i * 700.0 + _hash01(i * 31 + 7) * 300.0, "y": 300.0 + _hash01(i * 17 + 3) * (W5H - 600.0), "dead": false, "phase": randf() * TAU })
 	# Drifting junk to dodge or zap, and three current lanes that shove.
 	for i in 10:
 		wobs.append({
@@ -4964,7 +5271,8 @@ func _water_over(dt: float) -> void:
 			bits += 1
 			score += 5
 			_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 150)
-			synth.ring(bits)
+			synth.pearl()
+	_spread_collect()
 	# Ambient bubbles rising.
 	if randf() < 0.25:
 		var p := Particle.new()
@@ -4980,6 +5288,7 @@ func _water_over(dt: float) -> void:
 	# The flag buoy: touch it and the city swallows her.
 	var flag := Vector2(W5W - 260.0, W5H * 0.45)
 	if Vector2(uni.x - flag.x, uni.y - flag.y).length() < 60.0:
+		synth.fanfare()
 		_enter_city()
 
 
@@ -4992,7 +5301,12 @@ func _ch5_zap(dt: float, in_city: bool) -> void:
 		_w_zap = false
 		if _w_fire_cd <= 0:
 			_w_fire_cd = 0.22
-			wzaps.append({ "x": uni.x + _o_face.x * 30, "y": uni.y + _o_face.y * 30, "dir": _o_face.x, "dy": _o_face.y, "life": 0.9, "dead": false })
+			var offs := [0.0]
+			if spread_t > 0:
+				offs = [-0.35, 0.0, 0.35]
+			for off in offs:
+				var v := _o_face.rotated(off)
+				wzaps.append({ "x": uni.x + v.x * 30, "y": uni.y + v.y * 30, "dir": v.x, "dy": v.y, "life": 0.9, "dead": false })
 			synth.zap()
 	for z in wzaps:
 		if z.dead:
@@ -5028,7 +5342,7 @@ func _ch5_zap(dt: float, in_city: bool) -> void:
 					score += 5
 					_popup(b.x, b.y - 30, "POP! +5", Color("bfe9ff"))
 					_burst(b.x, b.y, 14, [Color("8a5f3d"), Color("d9c48f"), Color.WHITE], 180)
-					synth.poof()
+					synth.pop()
 	wzaps = wzaps.filter(func(z): return not z.dead)
 
 
@@ -5040,7 +5354,7 @@ func _hit_tower(tw) -> void:
 		score += 50
 		_popup(tw.x + tw.w * 0.5, tw.y - 20, "CRASH! +50", Color("ffb13b"))
 		_burst(tw.x + tw.w * 0.5, tw.y + tw.d * 0.5, 46, [Color("8b8fa0"), Color("5a5f6e"), Color("ffb13b"), Color.WHITE], 320)
-		synth.boom()
+		synth.crumble()
 	else:
 		_burst(tw.x + tw.w * 0.5, tw.y + tw.d * 0.6, 8, [Color("8b8fa0"), Color.WHITE], 150)
 		synth.zap()
@@ -5049,6 +5363,7 @@ func _hit_tower(tw) -> void:
 func _enter_city() -> void:
 	ch5_city = true
 	wzaps = []
+	spears = []
 	wobs = []
 	_maze_hint = false
 	uni.x = 240.0
@@ -5057,6 +5372,11 @@ func _enter_city() -> void:
 	uni.vy = 0.0
 	_o_face = Vector2.RIGHT
 	_build_city()
+	# Two spread pickups out on the streets.
+	spreads = [
+		{ "x": 370.0, "y": 1065.0, "dead": false, "phase": randf() * TAU },
+		{ "x": 1150.0, "y": 345.0, "dead": false, "phase": randf() * TAU },
+	]
 	cam_x = 0.0
 	cam_y = clampf(uni.y - H * 0.5, 0.0, CITY_H - H)
 	flash = maxf(flash, 0.35)
@@ -5169,12 +5489,14 @@ func _city_over(dt: float) -> void:
 	for tw in towers:
 		tw.hit = maxf(0.0, tw.hit - dt)
 	_ch5_zap(dt, true)
+	_spread_collect()
 	# The lit entrance calls itself out on first approach.
 	var mo := _maze_origin()
 	var gate_in := Vector2(mo.x, mo.y + (MAZE_R / 2) * MAZE_CELL + MAZE_CELL * 0.5)
 	if not _maze_hint and Vector2(uni.x - gate_in.x, uni.y - gate_in.y).length() < 420.0:
 		_maze_hint = true
 		_popup(gate_in.x + 60, gate_in.y - 90, "The maze! 🌀", Color("9df08a"))
+		synth.maze_in()
 	# Out the east gap: puzzle time.
 	if ch6_pending <= 0 and Vector2(uni.x - maze_exit.x, uni.y - maze_exit.y).length() < 56.0:
 		ch6_pending = 1.6
@@ -5182,7 +5504,7 @@ func _city_over(dt: float) -> void:
 		_popup(uni.x, uni.y - 80, "MAZE CLEARED! 🎉", Color("ffd23f"))
 		_popup(uni.x, uni.y - 118, "CHAPTER 6! 🧩", Color("7df0ff"))
 		_burst(uni.x, uni.y, 44, RAINBOW, 300)
-		synth.level_up()
+		synth.fanfare()
 
 
 func _city_push(r: Rect2) -> void:
@@ -5242,6 +5564,7 @@ func _draw_water() -> void:
 	for i in 8:
 		if not _bit_taken.has("W5:%d" % i):
 			_bit_star(Vector2(220.0 + _hash01(i * 13 + 5) * (W5W - 440.0), 160.0 + _hash01(i * 29 + 3) * (W5H - 320.0)))
+	_draw_spreads()
 	# Drifting barrels.
 	for b in wobs:
 		if not b.alive:
@@ -5301,6 +5624,7 @@ func _draw_city() -> void:
 		_draw_tower(tw)
 	for wr in mwalls:
 		_draw_maze_wall(wr)
+	_draw_spreads()
 	# The lit entrance on the west face of the maze.
 	var gate_in := Vector2(mo.x, mo.y + (MAZE_R / 2) * MAZE_CELL + MAZE_CELL * 0.5)
 	var gp := 0.6 + 0.4 * sin(t * 4.0)
@@ -5434,6 +5758,8 @@ func _enter_ch6() -> void:
 	ch6_pending = 0.0
 	ch6_end = false
 	wzaps = []
+	spears = []
+	spreads = []
 	drone = null
 	umer = null
 	cam_x = 0.0
@@ -5529,7 +5855,7 @@ func _pz_release() -> void:
 		score += 25
 		_popup(slot.x + 80, slot.y - 8, "Snap! +25", Color("ffd23f"))
 		_burst(slot.x + 80, slot.y + 60, 16, RAINBOW, 200)
-		synth.gold()
+		synth.snap()
 		var done := true
 		for q in pz_pieces:
 			if not q.locked:

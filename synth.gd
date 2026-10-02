@@ -233,6 +233,86 @@ func powerup() -> void:
 	])
 
 
+# Hyper spear: a bright rising zing over a low whoosh.
+func spear() -> void:
+	_play("spear", [
+		{ "f": 1400.0, "dur": 0.16, "wave": Wave.SAWTOOTH, "vol": 0.05, "slide": 1800.0 },
+		{ "f": 320.0, "dur": 0.22, "wave": Wave.TRIANGLE, "vol": 0.09, "slide": 620.0 },
+	])
+
+
+# Spear detonation: bigger and sharper than the rocket boom — layered thump,
+# mid crack, high shatter.
+func spear_boom() -> void:
+	_play("spearboom", [
+		{ "f": 160.0, "dur": 0.55, "wave": Wave.SAWTOOTH, "vol": 0.13, "slide": -110.0 },
+		{ "f": 980.0, "dur": 0.2, "wave": Wave.SQUARE, "vol": 0.07, "slide": -760.0 },
+		{ "f": 2400.0, "dur": 0.08, "wave": Wave.TRIANGLE, "vol": 0.08 },
+	])
+
+
+# Building collapse: a low rumble with debris clatter on top (ch5 city).
+func crumble() -> void:
+	_play("crumble", [
+		{ "f": 210.0, "dur": 0.6, "wave": Wave.SAWTOOTH, "vol": 0.11, "slide": -150.0 },
+		{ "f": 140.0, "dur": 0.5, "wave": Wave.SQUARE, "vol": 0.06, "slide": -70.0, "delay": 0.1 },
+		{ "f": 760.0, "dur": 0.09, "wave": Wave.TRIANGLE, "vol": 0.08, "delay": 0.05 },
+		{ "f": 620.0, "dur": 0.09, "wave": Wave.TRIANGLE, "vol": 0.07, "delay": 0.16 },
+		{ "f": 880.0, "dur": 0.07, "wave": Wave.TRIANGLE, "vol": 0.06, "delay": 0.28 },
+	])
+
+
+# Bright five-note rising run: flag buoy, maze exit.
+func fanfare() -> void:
+	var notes: Array = []
+	var i := 0
+	for f in [587.0, 740.0, 880.0, 1174.0, 1480.0]:
+		notes.append({ "f": f, "dur": 0.16, "wave": Wave.TRIANGLE, "vol": 0.11, "delay": i * 0.08 })
+		i += 1
+	_play("fanfare", notes)
+
+
+# Mysterious two-note chill with a high echo: the maze entrance reveals.
+func maze_in() -> void:
+	_play("mazein", [
+		{ "f": 440.0, "dur": 0.22, "wave": Wave.TRIANGLE, "vol": 0.1 },
+		{ "f": 415.0, "dur": 0.3, "wave": Wave.TRIANGLE, "vol": 0.09, "delay": 0.18 },
+		{ "f": 880.0, "dur": 0.12, "wave": Wave.SINE, "vol": 0.06, "delay": 0.36 },
+	])
+
+
+# Puzzle piece lock: its own little tick, brighter than gold().
+func snap() -> void:
+	_play("snap", [
+		{ "f": 1500.0, "dur": 0.05, "wave": Wave.TRIANGLE, "vol": 0.12 },
+		{ "f": 2100.0, "dur": 0.07, "wave": Wave.TRIANGLE, "vol": 0.1, "delay": 0.04 },
+	])
+
+
+# Pearl pickup: soft high pling.
+func pearl() -> void:
+	_play("pearl", [
+		{ "f": 1180.0, "dur": 0.1, "wave": Wave.SINE, "vol": 0.11 },
+		{ "f": 1770.0, "dur": 0.14, "wave": Wave.SINE, "vol": 0.09, "delay": 0.06 },
+	])
+
+
+# Barrel pop: a short woody knock.
+func pop() -> void:
+	_play("pop", [
+		{ "f": 420.0, "dur": 0.1, "wave": Wave.SQUARE, "vol": 0.08, "slide": -220.0 },
+		{ "f": 260.0, "dur": 0.12, "wave": Wave.TRIANGLE, "vol": 0.09, "slide": 120.0 },
+	])
+
+
+# Current-gate tear (underworld → chapter 5): a long rising whoosh.
+func gate() -> void:
+	_play("gate", [
+		{ "f": 220.0, "dur": 0.7, "wave": Wave.SAWTOOTH, "vol": 0.08, "slide": 880.0 },
+		{ "f": 990.0, "dur": 0.4, "wave": Wave.TRIANGLE, "vol": 0.08, "slide": 660.0, "delay": 0.3 },
+	])
+
+
 # Looping ambience beds on dedicated players (never stolen by one-shots).
 # Callers poll every frame; starting is idempotent and muting is honored.
 func _looper(cue: String) -> AudioStreamPlayer:

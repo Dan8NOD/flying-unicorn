@@ -197,12 +197,51 @@ var _fall_spawn := 0.0
 var _o_face := Vector2.RIGHT
 var _top_rot := 0.0
 
+# ─── Chapter 5 · Open water and the bad part of town ─────────────────────────
+# DAN, 2026-10-01: clearing the underworld tears open a current gate at the
+# east wall. It spits her into open water — swim to the flag buoy. The flag
+# drops her into the bad area city, GTA 2 format: angled overhead, blocks with
+# real height, and every building destructible under her horn (the rubble
+# stays as a walkable scar). A walled maze squats at the east end with one lit
+# entrance; slipping out its exit opens chapter 6.
+var ch5 := false
+var ch5_city := false
+var ch5_pending := 0.0
+var _maze_hint := false
+var wobs := []
+var wcur := []
+var towers := []
+var mwalls := []
+var maze_exit := Vector2.ZERO
+
+# ─── Chapter 6 · Three little jigsaws ────────────────────────────────────────
+# DAN, 2026-10-01: the calm after the city — snap the pony back together, then
+# the mermaid, then her rider. Nine chunky pieces each, press-drag with a
+# finger, snap onto the ghost board, happy sound on lock. Portraits are baked
+# from procedural art in a private SubViewport and sliced into a 3x3 grid.
+# After the rider: "The End … for now", fireworks, back to title.
+var ch6 := false
+var ch6_pending := 0.0
+var ch6_end := false
+var pz_kind := 0
+var pz_pieces := []
+var pz_sel = null
+var pz_grab := Vector2.ZERO
+var pz_tex: Texture2D = null
+var pz_done_t := 0.0
+var pvp: SubViewport = null
+var painter = null
+var _pz_bake_seq := 0
+
 # rendering resources
 var font: Font
 var sky_tex: Texture2D
 var btn_tex: Texture2D
 var _btn_play := Rect2()
 var _btn_ch2 := Rect2()
+var _btn_ch5 := Rect2()
+var _btn_ch6 := Rect2()
+var _btn_end := Rect2()
 var _btn_again := Rect2()
 var _btn_resume := Rect2()
 var _btn_sky := Rect2()
@@ -315,6 +354,152 @@ class ScorePopup:
 	var life := 1.0
 
 
+# Chapter 6 puzzle portraits: the pony, the mermaid and her rider, drawn big
+# and friendly into the bake SubViewport. Self-contained on purpose — inner
+# classes can't reach the host's palette or helpers.
+class PortraitPainter extends Node2D:
+	var kind := 0
+	const RB := ["ff5e7e", "ffb13b", "ffe45c", "5fe08b", "4fc3ff", "b77bff"]
+
+
+	func _draw() -> void:
+		match kind:
+			0:
+				_pony()
+			1:
+				_merm()
+			_:
+				_knight()
+
+
+	func _rc(i: int) -> Color:
+		return Color(RB[i % 6])
+
+
+	func _el(c: Vector2, rx: float, ry: float, col: Color) -> void:
+		var pts := PackedVector2Array()
+		for i in 28:
+			pts.append(c + Vector2(cos(i * TAU / 28) * rx, sin(i * TAU / 28) * ry))
+		draw_colored_polygon(pts, col)
+
+
+	func _sp(c: Vector2, r: float) -> PackedVector2Array:
+		return PackedVector2Array([
+			c + Vector2(0, -r), c + Vector2(r * 0.3, -r * 0.3), c + Vector2(r, 0), c + Vector2(r * 0.3, r * 0.3),
+			c + Vector2(0, r), c + Vector2(-r * 0.3, r * 0.3), c + Vector2(-r, 0), c + Vector2(-r * 0.3, -r * 0.3),
+		])
+
+
+	func _pony() -> void:
+		# Sky backdrop, two lazy clouds.
+		draw_rect(Rect2(0, 0, 480, 360), Color("aee3ff"))
+		draw_rect(Rect2(0, 250, 480, 110), Color("8fd0f5"))
+		_el(Vector2(96, 78), 48, 18, Color(1, 1, 1, 0.85))
+		_el(Vector2(128, 68), 30, 14, Color(1, 1, 1, 0.85))
+		_el(Vector2(402, 302), 52, 16, Color(1, 1, 1, 0.6))
+		# Rainbow tail streaming left.
+		for i in 6:
+			draw_line(Vector2(164, 192 + i * 5), Vector2(96 - i * 2, 232 + i * 8), _rc(i), 9, true)
+		# Legs with armored hooves.
+		for lx in [196.0, 226.0, 272.0, 298.0]:
+			draw_line(Vector2(lx, 228), Vector2(lx - 4, 290), Color("ff9ccf"), 14, true)
+			draw_rect(Rect2(lx - 13, 286, 19, 12), Color("b9bfd6"))
+			draw_rect(Rect2(lx - 13, 286, 19, 12), Color("5d6384"), false, 1.5)
+		# Body + belly.
+		_el(Vector2(240, 208), 68, 36, Color("ff9ccf"))
+		_el(Vector2(244, 222), 54, 22, Color("ffc9e4"))
+		# Back plate with the gold cat dot.
+		draw_rect(Rect2(208, 180, 70, 40), Color("c9cde0"))
+		draw_rect(Rect2(208, 180, 70, 40), Color("5d6384"), false, 2.5)
+		draw_circle(Vector2(243, 200), 7, Color("ffd23f"))
+		# Wing folded over the plate.
+		_el(Vector2(226, 166), 40, 15, Color("ffe3f1"))
+		draw_line(Vector2(194, 170), Vector2(258, 162), Color("d9468f"), 2.5, true)
+		# Neck and head.
+		draw_colored_polygon(PackedVector2Array([Vector2(288, 196), Vector2(322, 126), Vector2(356, 136), Vector2(322, 210)]), Color("ff9ccf"))
+		_el(Vector2(346, 118), 26, 20, Color("ff9ccf"))
+		_el(Vector2(372, 130), 16, 12, Color("ffc6e2"))
+		draw_circle(Vector2(379, 132), 3, Color("d9468f"))
+		# Ear + golden horn.
+		draw_colored_polygon(PackedVector2Array([Vector2(332, 102), Vector2(326, 78), Vector2(344, 96)]), Color("ff9ccf"))
+		draw_colored_polygon(PackedVector2Array([Vector2(352, 96), Vector2(372, 98), Vector2(366, 58)]), Color("ffd23f"))
+		draw_polyline(PackedVector2Array([Vector2(352, 96), Vector2(372, 98), Vector2(366, 58), Vector2(352, 96)]), Color("e0a800"), 2, true)
+		# Rainbow mane down the neck.
+		for i in 5:
+			draw_circle(Vector2(318 + i * 7, 96 + i * 22), 11, _rc(i))
+		# Eye.
+		_el(Vector2(352, 116), 5, 6, Color("2a1650"))
+		draw_circle(Vector2(354, 113), 2, Color.WHITE)
+
+
+	func _merm() -> void:
+		# Lagoon backdrop with rising bubbles.
+		draw_rect(Rect2(0, 0, 480, 360), Color("8fd8ee"))
+		draw_rect(Rect2(0, 180, 480, 180), Color("4fa8d8"))
+		for i in 7:
+			draw_circle(Vector2(60 + i * 60, 40 + (i * 53) % 280), 4 + (i % 3) * 2, Color(1, 1, 1, 0.35))
+		# Flowing pink hair.
+		draw_circle(Vector2(238, 92), 30, Color("ff6fb5"))
+		draw_circle(Vector2(212, 120), 18, Color("ff9ccf"))
+		draw_circle(Vector2(200, 152), 14, Color("ff9ccf"))
+		draw_circle(Vector2(262, 116), 16, Color("ff9ccf"))
+		draw_circle(Vector2(272, 146), 12, Color("ff9ccf"))
+		# Face + star hairpin.
+		draw_circle(Vector2(240, 106), 22, Color("ffd9c9"))
+		draw_circle(Vector2(232, 104), 3, Color("2a1650"))
+		draw_circle(Vector2(248, 104), 3, Color("2a1650"))
+		draw_arc(Vector2(240, 112), 8, PI * 0.15, PI * 0.85, 12, Color("2a1650"), 2, true)
+		draw_circle(Vector2(224, 112), 3, Color("ff9ccf"))
+		draw_colored_polygon(_sp(Vector2(268, 82), 7), Color("ffd23f"))
+		# Torso, shells, reaching arm.
+		_el(Vector2(240, 152), 18, 24, Color("ffd9c9"))
+		draw_circle(Vector2(230, 142), 6, Color("ff9ccf"))
+		draw_circle(Vector2(250, 142), 6, Color("ff9ccf"))
+		draw_line(Vector2(254, 148), Vector2(292, 128), Color("ffd9c9"), 7, true)
+		draw_circle(Vector2(294, 127), 4.5, Color("ffd9c9"))
+		# Tail curving down-right with a split fluke.
+		for i in 6:
+			var k := i / 5.0
+			var tp := Vector2(240 + sin(k * 1.9) * 46, 178 + k * 118)
+			draw_circle(tp, 20 - k * 9, Color("1f9e85"))
+			draw_circle(tp + Vector2(3, 2), (20 - k * 9) * 0.55, Color("7df0c8"))
+		draw_colored_polygon(PackedVector2Array([Vector2(282, 296), Vector2(320, 282), Vector2(312, 314)]), Color("2fbfa0"))
+		draw_colored_polygon(PackedVector2Array([Vector2(282, 298), Vector2(322, 310), Vector2(300, 330)]), Color("2fbfa0"))
+
+
+	func _knight() -> void:
+		# Castle-dusk backdrop with a friendly moon.
+		draw_rect(Rect2(0, 0, 480, 360), Color("cdbde0"))
+		draw_rect(Rect2(0, 200, 480, 160), Color("9a86b5"))
+		draw_circle(Vector2(410, 66), 26, Color("fff4b0"))
+		draw_circle(Vector2(410, 66), 20, Color("ffe45c"))
+		# Lance first (behind the body).
+		draw_line(Vector2(300, 300), Vector2(342, 84), Color("8a5f3d"), 7, true)
+		draw_colored_polygon(PackedVector2Array([Vector2(342, 84), Vector2(330, 116), Vector2(352, 110)]), Color("ff4d5e"))
+		# Legs + sabatons.
+		draw_rect(Rect2(218, 250, 18, 60), Color("23232e"))
+		draw_rect(Rect2(246, 250, 18, 60), Color("23232e"))
+		draw_rect(Rect2(214, 302, 24, 12), Color("0f0f16"))
+		draw_rect(Rect2(244, 302, 24, 12), Color("0f0f16"))
+		# Arm to the lance, body armor, pauldrons, shine.
+		draw_line(Vector2(276, 200), Vector2(300, 240), Color("23232e"), 9, true)
+		_el(Vector2(240, 208), 38, 52, Color("23232e"))
+		draw_line(Vector2(224, 170), Vector2(216, 220), Color(1, 1, 1, 0.4), 3, true)
+		_el(Vector2(198, 178), 16, 12, Color("3a3a4e"))
+		_el(Vector2(282, 178), 16, 12, Color("3a3a4e"))
+		# Shield with the gold cat dot.
+		_el(Vector2(188, 226), 24, 30, Color("c9cde0"))
+		draw_circle(Vector2(188, 226), 7, Color("ffd23f"))
+		# Helm + glint + glowing eyes + pink plume.
+		draw_circle(Vector2(240, 118), 30, Color("23232e"))
+		draw_arc(Vector2(240, 118), 30, PI * 0.9, PI * 1.6, 16, Color(1, 1, 1, 0.4), 3, true)
+		draw_rect(Rect2(214, 112, 52, 10), Color("0f0f16"))
+		draw_circle(Vector2(232, 117), 3.5, Color("7df0ff"))
+		draw_circle(Vector2(250, 117), 3.5, Color("7df0ff"))
+		for i in 4:
+			draw_circle(Vector2(240 - i * 4, 84 - i * 12), 9 - i, Color("ff6fb5"))
+
+
 func _ready() -> void:
 	for h in RAINBOW_HEX:
 		RAINBOW.append(Color(h))
@@ -348,6 +533,15 @@ func _ready() -> void:
 	_layout()
 
 	btn_tex = _rounded_gradient_tex(Color("ff6fb5"), Color("b77bff"), Vector2i(190, 48), 24)
+	# Chapter 6 portrait bake target: a private SubViewport the painter
+	# redraws into; only updates while a puzzle is being baked.
+	pvp = SubViewport.new()
+	pvp.size = Vector2i(480, 360)
+	pvp.transparent_bg = true
+	pvp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(pvp)
+	painter = PortraitPainter.new()
+	pvp.add_child(painter)
 	_set_level_sky()
 	_setup_input()
 	_parse_args()
@@ -363,6 +557,9 @@ var _force_vertical := false
 var _force_wonder := false
 var _force_ch2 := false
 var _force_ch3 := false
+var _force_ch5 := false
+var _force_ch6 := false
+var _force_city := false
 var _force_under := false
 var _force_lagoon := false
 var _start_time := 0.0
@@ -402,6 +599,15 @@ func _parse_args() -> void:
 		elif a == "--under":
 			_force_under = true
 			_autostart = true
+		elif a == "--chapter5":
+			_force_ch5 = true
+			_autostart = true
+		elif a == "--chapter6":
+			_force_ch6 = true
+			_autostart = true
+		elif a == "--city":
+			_force_city = true
+			_autostart = true
 
 
 # Screenshot/QA hooks: jump straight to a level's palette or force the
@@ -434,6 +640,16 @@ func _apply_test_hooks() -> void:
 		_enter_wonder()
 		_enter_ch3()
 		_enter_under()
+	if _force_ch5:
+		_enter_wonder()
+		_enter_ch5()
+	if _force_city:
+		_enter_wonder()
+		_enter_ch5()
+		_enter_city()
+	if _force_ch6:
+		_enter_wonder()
+		_enter_ch6()
 
 
 func _save_cfg() -> void:
@@ -663,6 +879,10 @@ func reset() -> void:
 	_under_won = false; _stun_t = 0.0; _crack_hint = false; umer = null
 	splashed = false; fall_d = 0.0; tobs = []; _fall_spawn = 0.0
 	_o_face = Vector2.RIGHT; _top_rot = 0.0
+	ch5 = false; ch5_city = false; ch5_pending = 0.0; _maze_hint = false
+	wobs = []; wcur = []; towers = []; mwalls = []; maze_exit = Vector2.ZERO
+	ch6 = false; ch6_pending = 0.0; ch6_end = false
+	pz_pieces = []; pz_sel = null; pz_done_t = 0.0; pz_kind = 0; pz_tex = null
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
 	uni.y = H / 2; uni.vy = 0; uni.vx = 0
 	last_ring_x = VW / 2
@@ -736,6 +956,15 @@ func _process(delta: float) -> void:
 		ch3_pending -= delta
 		if ch3_pending <= 0:
 			_enter_ch3()
+	# Chapter 5 opens from the underworld gate; chapter 6 from the maze exit.
+	if ch5_pending > 0 and state == "play" and wonder and not ch5:
+		ch5_pending -= delta
+		if ch5_pending <= 0:
+			_enter_ch5()
+	if ch6_pending > 0 and state == "play" and wonder and ch5 and not ch6:
+		ch6_pending -= delta
+		if ch6_pending <= 0:
+			_enter_ch6()
 	if state == "play" and not wonder and play_time >= WONDER_AT:
 		_enter_wonder()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
@@ -835,7 +1064,14 @@ func _game_update(dt: float) -> void:
 		return
 
 	if wonder:
-		if ch3:
+		if ch6:
+			_pz_update(dt)
+		elif ch5:
+			if ch5_city:
+				_city_over(dt)
+			else:
+				_water_over(dt)
+		elif ch3:
 			if under:
 				_under_swim(dt)
 			elif splashed:
@@ -1945,7 +2181,7 @@ func _press_at(vp: Vector2) -> void:
 	if not wonder and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
 		_rocket_tap = true
 		return
-	if wonder and not vertical and state == "play" and not paused and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
+	if wonder and not vertical and not ch6 and state == "play" and not paused and vp.distance_to(Vector2(VW - 44, VH - 100)) < 32:
 		_w_zap = true
 		return
 	if vp.distance_to(Vector2(VW - 87, 33)) < 26:
@@ -1978,6 +2214,16 @@ func _press_at(vp: Vector2) -> void:
 			start()
 			play_time = CH2_TIME
 			return
+		if _btn_ch5.has_point(dp):
+			start()
+			_enter_wonder()
+			_enter_ch5()
+			return
+		if _btn_ch6.has_point(dp):
+			start()
+			_enter_wonder()
+			_enter_ch6()
+			return
 		if _teaser_rect.has_point(dp):
 			OS.shell_open("https://fatcatcruz.itch.io/fat-cat-cruz")
 			return
@@ -1988,6 +2234,10 @@ func _press_at(vp: Vector2) -> void:
 		if _teaser_over_rect.has_point(dp):
 			OS.shell_open("https://fatcatcruz.itch.io/fat-cat-cruz")
 			return
+	if ch6_end:
+		if _btn_end.has_point(dp):
+			_back_to_title()
+		return
 	if state == "play" and paused:
 		if _btn_resume.has_point(dp):
 			toggle_pause()
@@ -1995,6 +2245,11 @@ func _press_at(vp: Vector2) -> void:
 		if wonder and _btn_sky.has_point(dp):
 			_exit_wonder()
 			return
+	if wonder and ch6 and state == "play" and not paused:
+		_pz_press(_to_logic(vp))
+		pointer_down = true
+		pointer_pos = vp
+		return
 	if wonder and state == "play" and not paused:
 		_walk_touch = _to_logic(vp) if not vertical else _to_virtual(vp)
 		if not vertical:
@@ -2015,36 +2270,46 @@ func _input(event: InputEvent) -> void:
 		if event.pressed:
 			_press_at(_to_virtual(event.position))
 		else:
+			if wonder and ch6:
+				_pz_release()
 			pointer_down = false
 			pointer_y = null
 			_walk_touch = Vector2(-1, -1)
 	elif event is InputEventScreenDrag:
 		if pointer_down:
-			pointer_pos = _to_virtual(event.position)
-			pointer_y = _to_logic(pointer_pos).y
-			if wonder:
-				_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
-				if not vertical:
-					_walk_touch.x += cam_x
-					if ch3:
-						_walk_touch.y += cam_y
+			if wonder and ch6:
+				_pz_move(_to_logic(_to_virtual(event.position)))
+			else:
+				pointer_pos = _to_virtual(event.position)
+				pointer_y = _to_logic(pointer_pos).y
+				if wonder:
+					_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
+					if not vertical:
+						_walk_touch.x += cam_x
+						if ch3:
+							_walk_touch.y += cam_y
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_press_at(_to_virtual(event.position))
 		else:
+			if wonder and ch6:
+				_pz_release()
 			pointer_down = false
 			pointer_y = null
 			_walk_touch = Vector2(-1, -1)
 	elif event is InputEventMouseMotion:
 		if pointer_down:
-			pointer_pos = _to_virtual(event.position)
-			pointer_y = _to_logic(pointer_pos).y
-			if wonder:
-				_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
-				if not vertical:
-					_walk_touch.x += cam_x
-					if ch3:
-						_walk_touch.y += cam_y
+			if wonder and ch6:
+				_pz_move(_to_logic(_to_virtual(event.position)))
+			else:
+				pointer_pos = _to_virtual(event.position)
+				pointer_y = _to_logic(pointer_pos).y
+				if wonder:
+					_walk_touch = _to_logic(pointer_pos) if not vertical else pointer_pos
+					if not vertical:
+						_walk_touch.x += cam_x
+						if ch3:
+							_walk_touch.y += cam_y
 
 
 # ─── Drawing helpers ──────────────────────────────────────────────────────
@@ -3053,6 +3318,19 @@ func _ch2_button(center: Vector2, text: String) -> Rect2:
 	return rect
 
 
+# Smaller chapter-jump button; three sit in a row under Fly! on the title card.
+func _chapter_btn(center: Vector2, text: String) -> Rect2:
+	var rect := Rect2(center - Vector2(62, 18), Vector2(124, 36))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.55, 0.35, 0.85, 0.55)
+	sb.border_color = Color("ffd23f")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(18)
+	draw_style_box(sb, rect)
+	_text_c(center + Vector2(0, 5), text, 15, Color("fff4b0"))
+	return rect
+
+
 func _pill(center: Vector2, text: String) -> void:
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 24
 	var sb := StyleBoxFlat.new()
@@ -3098,9 +3376,11 @@ func _draw_title_card() -> void:
 		y += 24
 	y += 16
 	_btn_play = _play_button(Vector2(W / 2, y + 24), "Fly! ✨")
-	y += 60
-	_btn_ch2 = _ch2_button(Vector2(W / 2, y + 20), "⭐ Chapter 2")
-	y += 52
+	y += 56
+	_btn_ch2 = _chapter_btn(Vector2(W / 2 - 132, y + 18), "⭐ Ch. 2")
+	_btn_ch5 = _chapter_btn(Vector2(W / 2, y + 18), "🌊 Ch. 5")
+	_btn_ch6 = _chapter_btn(Vector2(W / 2 + 132, y + 18), "🧩 Ch. 6")
+	y += 48
 	_teaser_rect = _teaser(Vector2(W / 2, y + 29))
 
 
@@ -3183,7 +3463,11 @@ func _draw_hud() -> void:
 		_stroke_text(Vector2(22, 44), str(score), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, 5)
 		_stroke_text(Vector2(22, 76), "⭐ x%d" % bits, 20, Color("ffd23f"), HORIZONTAL_ALIGNMENT_LEFT, 4)
 		var label := "Chapter 2"
-		if ch3:
+		if ch6:
+			label = "Puzzle %d/3 · %s" % [pz_kind + 1, _pz_name(pz_kind)]
+		elif ch5:
+			label = "Bad City 🏙" if ch5_city else "Open Water 🌊"
+		elif ch3:
 			label = "The Underworld 👽" if under else "Chapter 3"
 		_stroke_text(Vector2(VW / 2, 40), label, 22, RAINBOW[int(t * 8) % 6], HORIZONTAL_ALIGNMENT_CENTER, 5)
 		if under:
@@ -3193,6 +3477,8 @@ func _draw_hud() -> void:
 		_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 		var any_target: bool = drone != null and drone.alive
 		if under and pods_left > 0:
+			any_target = true
+		if ch5:
 			any_target = true
 		if not vertical and any_target:
 			_draw_round_button(Vector2(VW - 44, VH - 100), "⚡")
@@ -3928,6 +4214,14 @@ func _under_swim(dt: float) -> void:
 		synth.level_up()
 	if _under_won and randf() < dt * 1.5:
 		_burst(cam_x + randf_range(100, W - 100), cam_y + randf_range(80, H - 120), 24, RAINBOW, 260)
+	# Out the east gate: the current carries her to chapter 5's open water.
+	if _under_won and ch5_pending <= 0 and Vector2(uni.x - (UW - 190.0), uni.y - UH2 * 0.5).length() < 60.0:
+		ch5_pending = 1.6
+		score += 50
+		_popup(uni.x, uni.y - 80, "CHAPTER 5! 🌊", Color("7df0ff"))
+		_popup(uni.x, uni.y - 118, "Out to the open water!", Color("bfe9ff"))
+		_burst(uni.x, uni.y, 40, RAINBOW, 280)
+		synth.level_up()
 	# Ambient bubbles rising through the cavern.
 	if randf() < 0.3:
 		var p := Particle.new()
@@ -4030,6 +4324,12 @@ func _draw_wonder() -> void:
 						_bit_star(Vector2(bx, by))
 				cj += 1
 			ci += 1
+		return
+	if ch6:
+		_draw_ch6()
+		return
+	if ch5:
+		_draw_ch5()
 		return
 	if ch3:
 		_draw_ch3()
@@ -4183,6 +4483,14 @@ func _draw_under() -> void:
 	draw_arc(port, 34 * pp, 0, TAU, 40, Color("bfe9ff"), 4, true)
 	draw_arc(port, 24 * pp, t, t + PI * 1.4, 32, Color.WHITE, 3, true)
 	_text_c(port + Vector2(0, -52), "LAGOON", 13, Color("bfe9ff"))
+	# Chapter 5 gate: a bright current tearing open the east wall once won.
+	if _under_won:
+		var gate := Vector2(UW - 190.0, UH2 * 0.5)
+		var gp := 1.0 + 0.15 * sin(t * 4.0)
+		draw_texture_rect(_radial_glow_tex(Color(0.3, 0.9, 1, 0.5), Color(0.1, 0.4, 0.9, 0)), Rect2(gate.x - 80 * gp, gate.y - 80 * gp, 160 * gp, 160 * gp), false)
+		draw_arc(gate, 36 * gp, 0, TAU, 40, Color("7df0ff"), 4, true)
+		draw_arc(gate, 26 * gp, t * 2.0, t * 2.0 + PI * 1.4, 32, Color.WHITE, 3, true)
+		_text_c(gate + Vector2(0, -56), "CHAPTER 5 🌊", 13, Color("7df0ff"))
 	for g in goo_bits:
 		_bit_star(Vector2(g.x, g.y))
 	for pd in pods:
@@ -4397,6 +4705,13 @@ func _draw() -> void:
 	_world_begin()
 	if vertical:
 		_draw_over_bg()
+	elif wonder and ch6:
+		_draw_ch6_bg()
+	elif wonder and ch5:
+		if ch5_city:
+			_draw_city_bg()
+		else:
+			_draw_water_bg()
 	elif wonder and ch3:
 		if under:
 			_draw_under_bg()
@@ -4489,7 +4804,8 @@ func _draw() -> void:
 			var slx: float = uni.x - 80 - si * 38
 			draw_line(Vector2(slx, sly), Vector2(slx - 64, sly), Color(1, 1, 1, 0.5), 3, true)
 
-	_draw_mermaid()
+	if not ch6:
+		_draw_mermaid()
 	if vertical:
 		_draw_pony_top()
 		if state == "over" and over_card_visible:
@@ -4500,11 +4816,11 @@ func _draw() -> void:
 			var sh_h := clampf(H - 60 - uni.y, 0.0, 600.0)
 			var sh_k := 1.0 - sh_h / 600.0
 			_fill_ellipse(Vector2(uni.x, H - 56), 46.0 * (0.5 + 0.5 * sh_k), 10.0, Color(0.35, 0.3, 0.55, 0.22 * sh_k))
-		if not (wonder and ch3 and under):
+		if not ch6 and not (wonder and ch3 and under):
 			_draw_mermaid()
-		if wonder and ch3:
+		if wonder and (ch3 or ch5):
 			_draw_pony_top()
-		else:
+		elif not wonder:
 			_draw_unicorn()
 		if state == "over" and over_card_visible:
 			_puff(uni.x, uni.y + 44, 1.6)
@@ -4557,6 +4873,10 @@ func _draw() -> void:
 		_card_begin()
 		_draw_over_card()
 		_card_end()
+	elif ch6_end:
+		_card_begin()
+		_draw_end_card()
+		_card_end()
 	elif state == "play" and paused:
 		_card_begin()
 		_draw_pause_card()
@@ -4565,6 +4885,747 @@ func _draw() -> void:
 		_card_begin()
 		_draw_settings_card()
 		_card_end()
+
+
+# ─── Chapter 5: open water → the bad part of town ────────────────────────────
+const W5W := 2400.0
+const W5H := 1500.0
+const CITY_W := 3200.0
+const CITY_H := 2000.0
+const MAZE_C := 13
+const MAZE_R := 9
+const MAZE_CELL := 110.0
+
+
+func _maze_origin() -> Vector2:
+	return Vector2(CITY_W - 1690.0, (CITY_H - MAZE_R * MAZE_CELL) * 0.5)
+
+
+func _enter_ch5() -> void:
+	ch5 = true
+	ch5_city = false
+	ch5_pending = 0.0
+	wzaps = []
+	towers = []
+	mwalls = []
+	wobs = []
+	wcur = []
+	drone = null
+	umer = null
+	uni.x = 300.0
+	uni.y = W5H * 0.5
+	uni.vx = 0.0
+	uni.vy = 0.0
+	_o_face = Vector2.RIGHT
+	cam_x = 0.0
+	cam_y = clampf(uni.y - H * 0.5, 0.0, W5H - H)
+	# Drifting junk to dodge or zap, and three current lanes that shove.
+	for i in 10:
+		wobs.append({
+			"x": 700.0 + _hash01(i * 17 + 3) * (W5W - 1100.0),
+			"y": 140.0 + _hash01(i * 29 + 7) * (W5H - 280.0),
+			"alive": true, "phase": randf() * TAU,
+		})
+	for i in 3:
+		wcur.append({ "y": 200.0 + _hash01(i * 43 + 11) * (W5H - 500.0), "dir": 1.0 if i % 2 == 0 else -1.0 })
+	flash = maxf(flash, 0.3)
+	_popup(uni.x + 260, uni.y - 70, "Open Water! 🌊", Color("bfe9ff"))
+	_popup(uni.x + 260, uni.y - 34, "Swim to the flag! 🚩", Color.WHITE)
+	_burst(uni.x, uni.y, 36, [Color.WHITE, Color("bfe9ff"), Color("7df0c8")], 260)
+	synth.powerup()
+
+
+func _water_over(dt: float) -> void:
+	if state != "play":
+		return
+	_over_swim(dt, W5W, W5H)
+	# Current lanes push sideways; the streaks show which way.
+	for cb in wcur:
+		if uni.y > cb.y and uni.y < cb.y + 130.0:
+			uni.x = clampf(uni.x + cb.dir * 130.0 * dt, 56.0, W5W - 56.0)
+	# Barrels bob; a bump shoves her (never hurts), a zap pops them.
+	for b in wobs:
+		if not b.alive:
+			continue
+		if _stun_t <= 0 and Vector2(uni.x - b.x, uni.y - b.y).length() < 42.0:
+			_stun_t = 0.35
+			var away := Vector2(uni.x - b.x, uni.y - b.y).normalized()
+			uni.vx = away.x * 300.0
+			uni.vy = away.y * 300.0
+			_popup(uni.x, uni.y - 48, "Bump!", Color("bfe9ff"))
+			_burst(b.x, b.y, 8, [Color("8a5f3d"), Color.WHITE], 140)
+			synth.poof()
+	_ch5_zap(dt, false)
+	# Pearls scattered across the swim.
+	for i in 8:
+		var bp := Vector2(220.0 + _hash01(i * 13 + 5) * (W5W - 440.0), 160.0 + _hash01(i * 29 + 3) * (W5H - 320.0))
+		if not _bit_taken.has("W5:%d" % i) and Vector2(uni.x - bp.x, uni.y - bp.y).length() < 36:
+			_bit_taken["W5:%d" % i] = t
+			bits += 1
+			score += 5
+			_burst(bp.x, bp.y, 8, [Color("ffd23f"), Color.WHITE], 150)
+			synth.ring(bits)
+	# Ambient bubbles rising.
+	if randf() < 0.25:
+		var p := Particle.new()
+		p.x = cam_x + randf_range(0, W)
+		p.y = cam_y + H + 10
+		p.vx = randf_range(-8, 8)
+		p.vy = randf_range(-70, -40)
+		p.life = 2.2
+		p.max_life = 2.2
+		p.r = randf_range(2, 4)
+		p.c = Color(0.7, 0.95, 1, 0.5)
+		particles.append(p)
+	# The flag buoy: touch it and the city swallows her.
+	var flag := Vector2(W5W - 260.0, W5H * 0.45)
+	if Vector2(uni.x - flag.x, uni.y - flag.y).length() < 60.0:
+		_enter_city()
+
+
+# Horn zaps for both ch5 phases: straight along the facing. Barrels pop,
+# buildings chip toward collapse, maze walls just spark — the maze is the one
+# thing she has to walk, not blast.
+func _ch5_zap(dt: float, in_city: bool) -> void:
+	_w_fire_cd = maxf(0.0, _w_fire_cd - dt)
+	if Input.is_action_just_pressed("rockets") or _w_zap:
+		_w_zap = false
+		if _w_fire_cd <= 0:
+			_w_fire_cd = 0.22
+			wzaps.append({ "x": uni.x + _o_face.x * 30, "y": uni.y + _o_face.y * 30, "dir": _o_face.x, "dy": _o_face.y, "life": 0.9, "dead": false })
+			synth.zap()
+	for z in wzaps:
+		if z.dead:
+			continue
+		z.x += z.dir * 760 * dt
+		z.y += z.dy * 760 * dt
+		z.life -= dt
+		if z.life <= 0:
+			z.dead = true
+		if z.dead:
+			continue
+		if in_city:
+			for tw in towers:
+				if z.dead or tw.rubble:
+					continue
+				if Rect2(tw.x - 4, tw.y - 4, tw.w + 8, tw.d + 8).has_point(Vector2(z.x, z.y)):
+					z.dead = true
+					_hit_tower(tw)
+			if not z.dead:
+				for wr in mwalls:
+					if wr.has_point(Vector2(z.x, z.y)):
+						z.dead = true
+						_burst(z.x, z.y, 4, [Color("ffd23f"), Color.WHITE], 100)
+						synth.ring(1)
+						break
+		else:
+			for b in wobs:
+				if z.dead or not b.alive:
+					continue
+				if Vector2(z.x - b.x, z.y - b.y).length() < 26.0:
+					z.dead = true
+					b.alive = false
+					score += 5
+					_popup(b.x, b.y - 30, "POP! +5", Color("bfe9ff"))
+					_burst(b.x, b.y, 14, [Color("8a5f3d"), Color("d9c48f"), Color.WHITE], 180)
+					synth.poof()
+	wzaps = wzaps.filter(func(z): return not z.dead)
+
+
+func _hit_tower(tw) -> void:
+	tw.hp -= 1
+	tw.hit = 0.12
+	if tw.hp <= 0:
+		tw.rubble = true
+		score += 50
+		_popup(tw.x + tw.w * 0.5, tw.y - 20, "CRASH! +50", Color("ffb13b"))
+		_burst(tw.x + tw.w * 0.5, tw.y + tw.d * 0.5, 46, [Color("8b8fa0"), Color("5a5f6e"), Color("ffb13b"), Color.WHITE], 320)
+		synth.boom()
+	else:
+		_burst(tw.x + tw.w * 0.5, tw.y + tw.d * 0.6, 8, [Color("8b8fa0"), Color.WHITE], 150)
+		synth.zap()
+
+
+func _enter_city() -> void:
+	ch5_city = true
+	wzaps = []
+	wobs = []
+	_maze_hint = false
+	uni.x = 240.0
+	uni.y = CITY_H * 0.5
+	uni.vx = 0.0
+	uni.vy = 0.0
+	_o_face = Vector2.RIGHT
+	_build_city()
+	cam_x = 0.0
+	cam_y = clampf(uni.y - H * 0.5, 0.0, CITY_H - H)
+	flash = maxf(flash, 0.35)
+	_popup(uni.x + 320, uni.y - 70, "The Bad Part of Town 🏙", Color("ffb13b"))
+	_popup(uni.x + 320, uni.y - 34, "Zap the blocks! Find the maze!", Color.WHITE)
+	_burst(uni.x, uni.y, 40, [Color("ffb13b"), Color("8b8fa0"), Color.WHITE], 300)
+	synth.level_up()
+
+
+# Blocks on a street grid east of the spawn, all destructible; a real walled
+# maze (recursive backtracker, one entrance west, one exit east) squats at the
+# far end. Sorted far-to-near once so the 2.5D faces overlap right.
+func _build_city() -> void:
+	var mo := _maze_origin()
+	var mz := Rect2(mo, Vector2(MAZE_C * MAZE_CELL, MAZE_R * MAZE_CELL))
+	towers = []
+	var pal := ["6a6f7e", "7a5248", "5a6a5e", "6e5a7a", "5f6672"]
+	var bi := 0
+	var gx := 140.0
+	while gx < CITY_W - 320.0:
+		var gy := 140.0
+		while gy < CITY_H - 300.0:
+			var bw := 120.0 + _hash01(bi * 7 + 1) * 70.0
+			var bd := 110.0 + _hash01(bi * 13 + 3) * 60.0
+			if _hash01(bi * 31 + 5) < 0.6 and gx > 620.0 and not mz.grow(160.0).intersects(Rect2(gx, gy, bw, bd)):
+				var th := 60.0 + _hash01(bi * 17 + 9) * 130.0
+				var thp := 3 + int(th / 55.0)
+				towers.append({
+					"x": gx, "y": gy, "w": bw, "d": bd, "h": th,
+					"hp": thp, "max_hp": thp, "hit": 0.0, "rubble": false,
+					"col": Color(pal[bi % pal.size()]), "seed": bi,
+				})
+			bi += 1
+			gy += 240.0
+		gx += 260.0
+	towers.sort_custom(func(a, b): return a.y + a.d < b.y + b.d)
+	_maze_gen()
+
+
+func _maze_gen() -> void:
+	mwalls = []
+	var mo := _maze_origin()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261005
+	# vw[c][r]: wall on the west edge of cell c (c == MAZE_C is the east rim).
+	# hw[c][r]: wall on the north edge of cell r.
+	var vw := []
+	for c in MAZE_C + 1:
+		var col := []
+		col.resize(MAZE_R)
+		col.fill(true)
+		vw.append(col)
+	var hw := []
+	for c in MAZE_C:
+		var col2 := []
+		col2.resize(MAZE_R + 1)
+		col2.fill(true)
+		hw.append(col2)
+	var seen := {}
+	var start := Vector2i(0, MAZE_R / 2)
+	var stack := [start]
+	seen[start] = true
+	while not stack.is_empty():
+		var cur: Vector2i = stack[stack.size() - 1]
+		var opts := []
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = cur + d
+			if n.x >= 0 and n.x < MAZE_C and n.y >= 0 and n.y < MAZE_R and not seen.has(n):
+				opts.append(d)
+		if opts.is_empty():
+			stack.pop_back()
+			continue
+		var d: Vector2i = opts[rng.randi() % opts.size()]
+		var nxt: Vector2i = cur + d
+		if d == Vector2i(1, 0):
+			vw[cur.x + 1][cur.y] = false
+		elif d == Vector2i(-1, 0):
+			vw[cur.x][cur.y] = false
+		elif d == Vector2i(0, 1):
+			hw[cur.x][cur.y + 1] = false
+		else:
+			hw[cur.x][cur.y] = false
+		seen[nxt] = true
+		stack.append(nxt)
+	# One entrance west, one exit east, both mid-row.
+	vw[0][MAZE_R / 2] = false
+	vw[MAZE_C][MAZE_R / 2] = false
+	for c in MAZE_C + 1:
+		for r in MAZE_R:
+			if vw[c][r]:
+				mwalls.append(Rect2(mo.x + c * MAZE_CELL - 9.0, mo.y + r * MAZE_CELL, 18.0, MAZE_CELL))
+	for c in MAZE_C:
+		for r in MAZE_R + 1:
+			if hw[c][r]:
+				mwalls.append(Rect2(mo.x + c * MAZE_CELL, mo.y + r * MAZE_CELL - 9.0, MAZE_CELL, 18.0))
+	mwalls.sort_custom(func(a, b): return a.position.y + a.size.y < b.position.y + b.size.y)
+	maze_exit = Vector2(mo.x + MAZE_C * MAZE_CELL + 80.0, mo.y + (MAZE_R / 2) * MAZE_CELL + MAZE_CELL * 0.5)
+
+
+func _city_over(dt: float) -> void:
+	if state != "play":
+		return
+	_over_swim(dt, CITY_W, CITY_H)
+	# Solid things: standing towers and the maze walls push her out.
+	for tw in towers:
+		if not tw.rubble:
+			_city_push(Rect2(tw.x, tw.y, tw.w, tw.d))
+	for wr in mwalls:
+		_city_push(wr)
+	for tw in towers:
+		tw.hit = maxf(0.0, tw.hit - dt)
+	_ch5_zap(dt, true)
+	# The lit entrance calls itself out on first approach.
+	var mo := _maze_origin()
+	var gate_in := Vector2(mo.x, mo.y + (MAZE_R / 2) * MAZE_CELL + MAZE_CELL * 0.5)
+	if not _maze_hint and Vector2(uni.x - gate_in.x, uni.y - gate_in.y).length() < 420.0:
+		_maze_hint = true
+		_popup(gate_in.x + 60, gate_in.y - 90, "The maze! 🌀", Color("9df08a"))
+	# Out the east gap: puzzle time.
+	if ch6_pending <= 0 and Vector2(uni.x - maze_exit.x, uni.y - maze_exit.y).length() < 56.0:
+		ch6_pending = 1.6
+		score += 100
+		_popup(uni.x, uni.y - 80, "MAZE CLEARED! 🎉", Color("ffd23f"))
+		_popup(uni.x, uni.y - 118, "CHAPTER 6! 🧩", Color("7df0ff"))
+		_burst(uni.x, uni.y, 44, RAINBOW, 300)
+		synth.level_up()
+
+
+func _city_push(r: Rect2) -> void:
+	var cx := clampf(uni.x, r.position.x, r.end.x)
+	var cy := clampf(uni.y, r.position.y, r.end.y)
+	var dx: float = uni.x - cx
+	var dy: float = uni.y - cy
+	var dl := Vector2(dx, dy).length()
+	if dl >= 26.0:
+		return
+	if dl < 0.01:
+		# Dead inside (dragged against a corner): pop her out the west side.
+		uni.x = r.position.x - 26.0
+		return
+	uni.x = cx + dx / dl * 26.0
+	uni.y = cy + dy / dl * 26.0
+
+
+func _draw_ch5() -> void:
+	if ch5_city:
+		_draw_city()
+	else:
+		_draw_water()
+	_draw_wzaps()
+
+
+func _draw_water() -> void:
+	# World space: open sea — deep edges, current streaks, drifting barrels,
+	# pearls, and the flag buoy that ends the swim.
+	var cx0 := cam_x - 80.0
+	var cx1 := cam_x + W + 80.0
+	var cy0 := cam_y - 80.0
+	var cy1 := cam_y + H + 80.0
+	# The edge of the map reads as deeper, darker water.
+	draw_rect(Rect2(cx0, -70, cx1 - cx0, 70), Color("0a1c38"))
+	draw_rect(Rect2(cx0, W5H, cx1 - cx0, 70), Color("0a1c38"))
+	draw_rect(Rect2(-70, cy0, 70, cy1 - cy0), Color("0a1c38"))
+	draw_rect(Rect2(W5W, cy0, 70, cy1 - cy0), Color("0a1c38"))
+	# Current lanes: animated streak arrows sliding along the band.
+	for cb in wcur:
+		for row in 2:
+			for i in 9:
+				var sx2: float = fmod(i * 300.0 + t * 110.0 * cb.dir + row * 150.0, W5W)
+				var sy2: float = cb.y + 30.0 + row * 70.0
+				draw_line(Vector2(sx2, sy2), Vector2(sx2 + 44.0 * cb.dir, sy2), Color(1, 1, 1, 0.22), 4, true)
+				draw_colored_polygon(PackedVector2Array([
+					Vector2(sx2 + 52.0 * cb.dir, sy2),
+					Vector2(sx2 + 40.0 * cb.dir, sy2 - 6),
+					Vector2(sx2 + 40.0 * cb.dir, sy2 + 6),
+				]), Color(1, 1, 1, 0.22))
+	# Sun-shimmer ripples.
+	for i in 8:
+		var rp2 := Vector2(_hash01(i * 11 + 1) * W5W, _hash01(i * 23 + 2) * W5H)
+		var rr := 24.0 + fmod(t * 26.0 + i * 40.0, 110.0)
+		draw_arc(rp2, rr, 0, TAU, 32, Color(1, 1, 1, 0.08 * (1.0 - rr / 134.0)), 2, true)
+	# Pearls.
+	for i in 8:
+		if not _bit_taken.has("W5:%d" % i):
+			_bit_star(Vector2(220.0 + _hash01(i * 13 + 5) * (W5W - 440.0), 160.0 + _hash01(i * 29 + 3) * (W5H - 320.0)))
+	# Drifting barrels.
+	for b in wobs:
+		if not b.alive:
+			continue
+		var by2: float = b.y + sin(t * 2.0 + float(b.phase)) * 4.0
+		draw_circle(Vector2(b.x + 3, by2 + 5), 18, Color(0, 0, 0, 0.18))
+		draw_circle(Vector2(b.x, by2), 18, Color("8a5f3d"))
+		draw_arc(Vector2(b.x, by2), 18, 0, TAU, 24, Color("5d3f26"), 2, true)
+		draw_line(Vector2(b.x - 17, by2 - 6), Vector2(b.x + 17, by2 - 6), Color("5d3f26"), 3, true)
+		draw_line(Vector2(b.x - 17, by2 + 6), Vector2(b.x + 17, by2 + 6), Color("5d3f26"), 3, true)
+		draw_circle(Vector2(b.x - 5, by2 - 6), 4, Color(1, 1, 1, 0.3))
+	# The flag buoy, waving her in.
+	var flag := Vector2(W5W - 260.0, W5H * 0.45)
+	var fp := 1.0 + 0.1 * sin(t * 3.0)
+	draw_texture_rect(_radial_glow_tex(Color(1, 0.85, 0.3, 0.4), Color(1, 0.85, 0.3, 0)), Rect2(flag.x - 70 * fp, flag.y - 70 * fp, 140 * fp, 140 * fp), false)
+	_fill_ellipse(flag + Vector2(0, 18), 26, 10, Color("ff4d5e"))
+	_fill_ellipse(flag + Vector2(0, 22), 26, 6, Color("a31220"))
+	for i in 4:
+		draw_rect(Rect2(flag.x - 3, flag.y - 60 + i * 18, 6, 18), Color.WHITE if i % 2 == 0 else Color("ff4d5e"))
+	for i in 6:
+		var wave := sin(t * 5.0 + i * 0.8) * 2.0
+		draw_colored_polygon(PackedVector2Array([Vector2(flag.x + 3, flag.y - 62 + i * 5), Vector2(flag.x + 44 - i * 2, flag.y - 59 + i * 5 + wave), Vector2(flag.x + 3, flag.y - 55 + i * 5)]), RAINBOW[i])
+	_text_c(flag + Vector2(6, -74), "FLAG 🚩", 13, Color.WHITE)
+
+
+func _draw_city() -> void:
+	# World space, GTA 2 angle: asphalt ground plane, street grid, then the
+	# blocks pulled up-screen by their height so the tops read as roofs.
+	var cx0 := cam_x - 220.0
+	var cx1 := cam_x + W + 220.0
+	var cy0 := cam_y - 260.0
+	var cy1 := cam_y + H + 120.0
+	draw_rect(Rect2(cx0, cy0, cx1 - cx0, cy1 - cy0), Color("33363e"))
+	# Streets: darker bands with tired lane dashes.
+	var sy := 140.0
+	while sy < CITY_H:
+		draw_rect(Rect2(cx0, sy + 170.0, cx1 - cx0, 70.0), Color("26282e"))
+		var dx0 := floorf(cx0 / 60.0) * 60.0
+		while dx0 < cx1:
+			draw_rect(Rect2(dx0, sy + 202.0, 30.0, 4.0), Color(1, 0.8, 0.3, 0.16))
+			dx0 += 60.0
+		sy += 240.0
+	var sx := 140.0
+	while sx < CITY_W:
+		draw_rect(Rect2(sx + 190.0, cy0, 70.0, cy1 - cy0), Color("26282e"))
+		sx += 260.0
+	# Grime and old stains.
+	for i in 14:
+		var gxp := _hash01(i * 57 + 3) * CITY_W
+		var gyp := _hash01(i * 73 + 9) * CITY_H
+		draw_circle(Vector2(gxp, gyp), 20.0 + _hash01(i * 7) * 30.0, Color(0, 0, 0, 0.12))
+	# The maze district slab, darker than the streets around it.
+	var mo := _maze_origin()
+	draw_rect(Rect2(mo.x - 40, mo.y - 40, MAZE_C * MAZE_CELL + 80, MAZE_R * MAZE_CELL + 80), Color("1e2026"))
+	# Blocks far-to-near, then the maze walls.
+	for tw in towers:
+		_draw_tower(tw)
+	for wr in mwalls:
+		_draw_maze_wall(wr)
+	# The lit entrance on the west face of the maze.
+	var gate_in := Vector2(mo.x, mo.y + (MAZE_R / 2) * MAZE_CELL + MAZE_CELL * 0.5)
+	var gp := 0.6 + 0.4 * sin(t * 4.0)
+	draw_texture_rect(_radial_glow_tex(Color(0.6, 1, 0.55, 0.25 + 0.2 * gp), Color(0, 0.5, 0.2, 0)), Rect2(gate_in.x - 70, gate_in.y - 70, 140, 140), false)
+	_text_c(gate_in + Vector2(-6, -60), "MAZE ➡", 15, Color("9df08a"))
+	# The exit beacon with its own little rainbow flag.
+	var bp := 1.0 + 0.12 * sin(t * 3.0)
+	draw_texture_rect(_radial_glow_tex(Color(1, 0.85, 0.3, 0.45), Color(1, 0.85, 0.3, 0)), Rect2(maze_exit.x - 60 * bp, maze_exit.y - 60 * bp, 120 * bp, 120 * bp), false)
+	draw_arc(maze_exit, 30 * bp, 0, TAU, 36, Color("ffd23f"), 3, true)
+	draw_rect(Rect2(maze_exit.x - 2, maze_exit.y - 66, 4, 66), Color("8a8fa0"))
+	for i in 6:
+		var wave := sin(t * 5.0 + i * 0.8) * 1.6
+		draw_colored_polygon(PackedVector2Array([Vector2(maze_exit.x + 2, maze_exit.y - 66 + i * 4), Vector2(maze_exit.x + 34 - i * 2, maze_exit.y - 63 + i * 4 + wave), Vector2(maze_exit.x + 2, maze_exit.y - 59 + i * 4)]), RAINBOW[i])
+	_text_c(maze_exit + Vector2(0, 44), "EXIT 🧩", 13, Color("ffd23f"))
+
+
+func _draw_tower(tw) -> void:
+	var base := Rect2(tw.x, tw.y, tw.w, tw.d)
+	if tw.rubble:
+		# A crossable scar: cracked slab, lumps, settling dust.
+		draw_rect(base.grow(3), Color("22242a"))
+		for i in 7:
+			var lx: float = tw.x + _hash01(tw.seed * 41 + i * 7) * tw.w
+			var ly: float = tw.y + _hash01(tw.seed * 23 + i * 13) * tw.d
+			var lr := 6.0 + _hash01(tw.seed * 11 + i * 3) * 12.0
+			draw_circle(Vector2(lx, ly), lr, Color("4a4e5a"))
+			draw_circle(Vector2(lx - lr * 0.3, ly - lr * 0.3), lr * 0.4, Color("6a6f7e"))
+		draw_rect(base.grow(3), Color(0, 0, 0, 0.25), false, 2)
+		return
+	var lift: Vector2 = Vector2(-0.22, -1.0) * tw.h
+	var p00 := Vector2(tw.x, tw.y)
+	var p10 := Vector2(tw.x + tw.w, tw.y)
+	var p11 := Vector2(tw.x + tw.w, tw.y + tw.d)
+	var p01 := Vector2(tw.x, tw.y + tw.d)
+	var col: Color = tw.col
+	if tw.hit > 0:
+		col = Color.WHITE
+	# Shadow spilling onto the street, south face, east cheek, roof.
+	draw_colored_polygon(PackedVector2Array([p01, p11 + Vector2(14, 10), p11 + lift + Vector2(14, 10), p01 + lift]), Color(0, 0, 0, 0.22))
+	draw_colored_polygon(PackedVector2Array([p01, p11, p11 + lift, p01 + lift]), col.darkened(0.30))
+	draw_colored_polygon(PackedVector2Array([p10, p11, p11 + lift, p10 + lift]), col.darkened(0.45))
+	var roof := PackedVector2Array([p00 + lift, p10 + lift, p11 + lift, p01 + lift])
+	draw_colored_polygon(roof, col.darkened(0.12))
+	var roof_line := roof.duplicate()
+	roof_line.append(roof[0])
+	draw_polyline(roof_line, col.darkened(0.55), 2, true)
+	# Rooftop clutter: an AC box and, on the tall ones, a water tank.
+	draw_rect(Rect2(tw.x + lift.x + 12, tw.y + lift.y + 12, 22, 16), col.darkened(0.4))
+	if tw.h > 140.0:
+		draw_circle(Vector2(tw.x + lift.x + tw.w - 24, tw.y + lift.y + 22), 11, col.darkened(0.3))
+	# Tired windows on the south face, some lit sodium-amber.
+	var rows := int(tw.h / 34.0)
+	var cols := int(tw.w / 30.0)
+	for wy in rows:
+		for wx in cols:
+			var k := float(wy + 1) / float(rows + 1)
+			var wpx: float = p01.x + (float(wx) + 0.5) / cols * tw.w + lift.x * k
+			var wpy: float = p01.y + lift.y * k
+			var lit := _hash01(tw.seed * 97 + wy * 13 + wx * 7) < 0.4
+			var wcol := Color(1, 0.75, 0.35, 0.85) if lit else Color(0.12, 0.12, 0.18, 0.8)
+			draw_rect(Rect2(wpx - 6, wpy - 9, 12, 16), wcol)
+	# Cracks creep as her horn chips the HP away.
+	var dmg := 1.0 - float(tw.hp) / float(maxi(tw.max_hp, 1))
+	if dmg > 0.01:
+		var nc := int(dmg * 4.0)
+		for ci2 in nc:
+			var kx: float = tw.x + _hash01(tw.seed * 53 + ci2 * 17) * tw.w
+			var pts := PackedVector2Array()
+			for s in 4:
+				var kk := float(s) / 3.0
+				pts.append(Vector2(kx + sin(s * 2.4 + tw.seed) * 8.0 + lift.x * kk, tw.y + tw.d + lift.y * kk))
+			draw_polyline(pts, Color(0.1, 0.1, 0.14, 0.7), 2.5, true)
+	# Some blocks buzz neon.
+	if _hash01(tw.seed * 71 + 3) < 0.35:
+		var ncol := Color("ff4d9a") if tw.seed % 2 == 0 else Color("4dd2ff")
+		var nk := 0.5 + 0.5 * sin(t * 7.0 + tw.seed)
+		var ns := Vector2(tw.x + 10 + lift.x * 0.5, tw.y + tw.d + lift.y * 0.5)
+		draw_rect(Rect2(ns.x, ns.y - 5, 26, 8), Color(ncol.r, ncol.g, ncol.b, 0.5 + 0.4 * nk))
+
+
+func _draw_maze_wall(wr: Rect2) -> void:
+	# Low hazard-striped blocks: same 2.5D lift as the towers, but solid.
+	var lift: Vector2 = Vector2(-0.22, -1.0) * 44.0
+	var p00 := wr.position
+	var p11 := wr.end
+	var col := Color("4e4658")
+	draw_colored_polygon(PackedVector2Array([Vector2(p00.x, p11.y), p11, p11 + lift, Vector2(p00.x, p11.y) + lift]), col.darkened(0.3))
+	draw_colored_polygon(PackedVector2Array([p00 + lift, Vector2(p11.x, p00.y) + lift, p11 + lift, Vector2(p00.x, p11.y) + lift]), col.lightened(0.15))
+	# Hazard dashes along the top slab so the maze reads "keep out".
+	var top := Rect2(p00 + lift, wr.size)
+	var n := int(maxf(top.size.x, top.size.y) / 16.0)
+	for i in n:
+		if i % 2 != 0:
+			continue
+		var q := float(i) / maxf(1, n)
+		if wr.size.x >= wr.size.y:
+			draw_rect(Rect2(top.position.x + q * top.size.x, top.position.y + 2, minf(14.0, top.size.x - q * top.size.x), top.size.y - 4), Color(1, 0.82, 0.2, 0.55))
+		else:
+			draw_rect(Rect2(top.position.x + 2, top.position.y + q * top.size.y, top.size.x - 4, minf(14.0, top.size.y - q * top.size.y)), Color(1, 0.82, 0.2, 0.55))
+
+
+func _draw_water_bg() -> void:
+	# Screen space: open-sea blue with a soft sun shimmer.
+	var bands := 10
+	for i in bands:
+		var k0 := float(i) / bands
+		var k1 := float(i + 1) / bands
+		draw_rect(Rect2(0, VH * k0, VW, VH * (k1 - k0) + 1), Color("1c5a9e").lerp(Color("0c2f5e"), k0))
+	draw_texture_rect(_radial_glow_tex(Color(0.6, 0.95, 1, 0.14), Color(0.2, 0.6, 0.9, 0)), Rect2(VW * 0.25, VH * 0.1, VW * 0.5, VH * 0.6), false)
+
+
+func _draw_city_bg() -> void:
+	# Screen space: smog over the bad blocks — bruised amber sinking to soot.
+	var bands := 10
+	for i in bands:
+		var k0 := float(i) / bands
+		var k1 := float(i + 1) / bands
+		draw_rect(Rect2(0, VH * k0, VW, VH * (k1 - k0) + 1), Color("4a3040").lerp(Color("14101a"), k0))
+	var pulse := 0.5 + 0.5 * sin(t * 0.7)
+	draw_texture_rect(_radial_glow_tex(Color(1, 0.6, 0.25, 0.10 + 0.05 * pulse), Color(0.4, 0.15, 0.05, 0)), Rect2(VW * 0.1, VH * 0.55, VW * 0.8, VH * 0.5), false)
+
+
+# ─── Chapter 6: three little jigsaws ─────────────────────────────────────────
+const PZ_O := Vector2(240.0, 76.0)
+const PZ_PW := 160.0
+const PZ_PH := 120.0
+
+
+func _enter_ch6() -> void:
+	ch6 = true
+	ch6_pending = 0.0
+	ch6_end = false
+	wzaps = []
+	drone = null
+	umer = null
+	cam_x = 0.0
+	cam_y = 0.0
+	flash = maxf(flash, 0.3)
+	synth.powerup()
+	_pz_setup(0)
+
+
+func _pz_name(idx: int) -> String:
+	return ["The Pony 🦄", "The Mermaid 🧜‍♀️", "Her Rider 🛡"][clampi(idx, 0, 2)]
+
+
+func _pz_setup(idx: int) -> void:
+	pz_kind = idx
+	pz_sel = null
+	pz_done_t = 0.0
+	pz_pieces = []
+	for i in 9:
+		var left_side := i % 2 == 0
+		pz_pieces.append({
+			"gx": i % 3, "gy": i / 3, "locked": false,
+			"pos": Vector2(randf_range(14.0, 70.0) if left_side else randf_range(730.0, 786.0), randf_range(30.0, 400.0)),
+		})
+	pz_pieces.shuffle()
+	_popup(W * 0.5, 60.0, "Puzzle %d/3 · %s" % [idx + 1, _pz_name(idx)], Color("ffd23f"))
+	_pz_bake()
+
+
+# Portrait bake: the painter redraws pony/mermaid/rider into the private
+# SubViewport; we snapshot it and slice the grid. Headless QA gets a flat
+# stand-in so the smoke run never touches the dummy renderer.
+func _pz_bake() -> void:
+	_pz_bake_seq += 1
+	var seq := _pz_bake_seq
+	if DisplayServer.get_name() == "headless":
+		pz_tex = _pz_fallback_tex(pz_kind)
+		return
+	painter.kind = pz_kind
+	painter.queue_redraw()
+	pvp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	if seq != _pz_bake_seq:
+		return
+	pvp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	var img := pvp.get_texture().get_image()
+	if img == null or img.is_empty():
+		pz_tex = _pz_fallback_tex(pz_kind)
+	else:
+		pz_tex = ImageTexture.create_from_image(img)
+
+
+func _pz_fallback_tex(idx: int) -> Texture2D:
+	var img := Image.create(480, 360, false, Image.FORMAT_RGBA8)
+	var base: Color = [Color("ff9ccf"), Color("7df0c8"), Color("8a8fa8")][clampi(idx, 0, 2)]
+	img.fill(base.darkened(0.15))
+	for i in 9:
+		var gx := i % 3
+		var gy := i / 3
+		img.fill_rect(Rect2i(gx * 160 + 3, gy * 120 + 3, 154, 114), base.lightened(0.25) if (gx + gy) % 2 == 0 else base)
+	return ImageTexture.create_from_image(img)
+
+
+func _pz_press(lp: Vector2) -> void:
+	for i in range(pz_pieces.size() - 1, -1, -1):
+		var pc = pz_pieces[i]
+		if pc.locked:
+			continue
+		if Rect2(pc.pos, Vector2(PZ_PW, PZ_PH)).has_point(lp):
+			pz_sel = pc
+			pz_grab = lp - pc.pos
+			pz_pieces.erase(pc)
+			pz_pieces.append(pc)
+			synth.ring(1)
+			return
+
+
+func _pz_move(lp: Vector2) -> void:
+	if pz_sel != null:
+		pz_sel.pos = lp - pz_grab
+
+
+func _pz_release() -> void:
+	if pz_sel == null:
+		return
+	var pc = pz_sel
+	pz_sel = null
+	var slot := PZ_O + Vector2(pc.gx * PZ_PW, pc.gy * PZ_PH)
+	if (pc.pos - slot).length() < 52.0:
+		pc.pos = slot
+		pc.locked = true
+		score += 25
+		_popup(slot.x + 80, slot.y - 8, "Snap! +25", Color("ffd23f"))
+		_burst(slot.x + 80, slot.y + 60, 16, RAINBOW, 200)
+		synth.gold()
+		var done := true
+		for q in pz_pieces:
+			if not q.locked:
+				done = false
+				break
+		if done:
+			pz_done_t = 1.8
+			_popup(PZ_O.x + 240, PZ_O.y - 30, "Beautiful! 🎉", Color("ff6fb5"))
+			synth.level_up()
+
+
+func _pz_update(dt: float) -> void:
+	if pz_done_t > 0:
+		if randf() < dt * 6.0:
+			_burst(randf_range(300.0, 660.0), randf_range(120.0, 420.0), 18, RAINBOW, 240)
+		pz_done_t -= dt
+		if pz_done_t <= 0:
+			if pz_kind < 2:
+				_pz_setup(pz_kind + 1)
+			else:
+				ch6_end = true
+				score += 250
+				synth.powerup()
+	if ch6_end and randf() < dt * 2.0:
+		_burst(randf_range(200.0, 760.0), randf_range(100.0, 400.0), 22, RAINBOW, 260)
+
+
+func _draw_ch6() -> void:
+	# The ghost board: the full portrait, faint, with the grid on top.
+	var board := Rect2(PZ_O, Vector2(480, 360))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.2, 0.1, 0.35, 0.30)
+	sb.border_color = Color(1, 1, 1, 0.5)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(16)
+	draw_style_box(sb, board.grow(10))
+	if pz_tex != null:
+		draw_texture_rect(pz_tex, board, false, Color(1, 1, 1, 0.13))
+	for gy in 3:
+		for gx in 3:
+			draw_rect(Rect2(PZ_O + Vector2(gx * PZ_PW, gy * PZ_PH), Vector2(PZ_PW, PZ_PH)), Color(1, 1, 1, 0.35), false, 1.5)
+	if not ch6_end:
+		_stroke_text(Vector2(W / 2, 462), "Drag the pieces onto the picture!", 18, Color(1, 1, 1, 0.75), HORIZONTAL_ALIGNMENT_CENTER, 4)
+	# Locked pieces sit flush; loose ones cast a shadow, dragged rides on top.
+	if pz_tex != null:
+		for pc in pz_pieces:
+			var src := Rect2(pc.gx * PZ_PW, pc.gy * PZ_PH, PZ_PW, PZ_PH)
+			if pc.locked:
+				draw_texture_rect_region(pz_tex, Rect2(PZ_O + Vector2(pc.gx * PZ_PW, pc.gy * PZ_PH), Vector2(PZ_PW, PZ_PH)), src)
+			else:
+				draw_rect(Rect2(pc.pos + Vector2(5, 7), Vector2(PZ_PW, PZ_PH)), Color(0.1, 0.05, 0.2, 0.3))
+				draw_texture_rect_region(pz_tex, Rect2(pc.pos, Vector2(PZ_PW, PZ_PH)), src)
+				draw_rect(Rect2(pc.pos, Vector2(PZ_PW, PZ_PH)), Color(1, 1, 1, 0.6), false, 2)
+	# Progress dots.
+	var locked := pz_pieces.filter(func(q): return q.locked).size()
+	for i in 9:
+		draw_circle(Vector2(W / 2 - 64 + i * 16, H - 24), 5, Color("ffd23f") if i < locked else Color(1, 1, 1, 0.3))
+
+
+func _draw_ch6_bg() -> void:
+	# Screen space: calm crafting-table pastel after the grit of the city.
+	var bands := 8
+	for i in bands:
+		var k0 := float(i) / bands
+		var k1 := float(i + 1) / bands
+		draw_rect(Rect2(0, VH * k0, VW, VH * (k1 - k0) + 1), Color("ffeef7").lerp(Color("dccbf5"), k0))
+	for i in 24:
+		var dx := _hash01(i * 17 + 3) * VW
+		var dy := _hash01(i * 29 + 7) * VH
+		draw_circle(Vector2(dx, dy), 5.0 + _hash01(i * 7) * 8.0, Color(1, 1, 1, 0.25))
+
+
+func _draw_end_card() -> void:
+	_card(Rect2(W / 2 - 230, H / 2 - 190, 460, 380))
+	var y := H / 2 - 190 + 46
+	_rainbow_title(W / 2, y, "The End … for now", 36)
+	y += 44
+	_text_c(Vector2(W / 2, y), "The pony, the mermaid and her knight —", 15, Color("ffd9ef"))
+	y += 20
+	_text_c(Vector2(W / 2, y), "all snapped back together. 🧩", 15, Color("ffd9ef"))
+	y += 40
+	_text_c(Vector2(W / 2, y), str(score), 40, Color("ffd23f"))
+	y += 34
+	_text_c(Vector2(W / 2, y), "Chapters 1–6 complete. Chapter 7 soon? 🦄", 14, Color("f3e9ff"))
+	y += 36
+	_btn_end = _play_button(Vector2(W / 2, y + 24), "Back to Title 🏠")
+
+
+func _back_to_title() -> void:
+	wonder = false
+	powered = false
+	paused = false
+	play_time = 0.0
+	reset()
+	state = "title"
+	_layout()
 
 
 # ─── Screenshot test hook ─────────────────────────────────────────────────

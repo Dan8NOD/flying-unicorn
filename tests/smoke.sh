@@ -32,5 +32,7 @@ check "version" "$GODOT_BIN" --version
 check "import" "$GODOT_BIN" --headless --path . --import
 check "gameplay landscape" "$GODOT_BIN" --headless --path . --quit-after "$FRAMES" -- --autostart
 check "gameplay portrait" "$GODOT_BIN" --headless --resolution 540x960 --path . --quit-after "$FRAMES" -- --autostart
+check "chapter5" "$GODOT_BIN" --headless --path . --quit-after 900 -- --chapter5
+check "chapter6" "$GODOT_BIN" --headless --path . --quit-after 900 -- --chapter6
 
 [ "$fail" = 0 ] && echo "SMOKE PASS" || { echo "SMOKE FAIL"; exit 1; }

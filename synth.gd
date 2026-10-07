@@ -313,6 +313,14 @@ func gate() -> void:
 	])
 
 
+func crystal() -> void:
+	_play("crystal_pickup", [
+		{ "f": 784.0, "dur": 0.16, "wave": Wave.SINE, "vol": 0.09 },
+		{ "f": 1174.0, "dur": 0.22, "wave": Wave.SINE, "vol": 0.08, "delay": 0.05 },
+		{ "f": 1568.0, "dur": 0.28, "wave": Wave.TRIANGLE, "vol": 0.06, "delay": 0.1 },
+	])
+
+
 # Looping ambience beds on dedicated players (never stolen by one-shots).
 # Callers poll every frame; starting is idempotent and muting is honored.
 func _looper(cue: String) -> AudioStreamPlayer:
@@ -344,12 +352,64 @@ func stop_wind() -> void:
 		p.stop()
 
 
+func start_crystal() -> void:
+	_loop("crystal_loop", -25.0)
+
+
+func stop_crystal() -> void:
+	var p: AudioStreamPlayer = _loopers.get("crystal_loop")
+	if p and p.playing:
+		p.stop()
+
+
+func start_sky() -> void:
+	_loop("sky_loop", -27.0)
+
+
+func stop_sky() -> void:
+	var p: AudioStreamPlayer = _loopers.get("sky_loop")
+	if p and p.playing:
+		p.stop()
+
+
+func _procedural_ambience(cue: String) -> AudioStreamWAV:
+	const SECONDS := 4.0
+	var frames := int(SECONDS * SR)
+	var frequencies: Array[float]
+	var gains: Array[float]
+	if cue == "crystal_loop":
+		frequencies = [130.81, 196.0, 261.63, 392.0, 523.25]
+		gains = [0.13, 0.08, 0.055, 0.035, 0.02]
+	else:
+		frequencies = [55.0, 82.5, 110.0, 165.0]
+		gains = [0.12, 0.07, 0.04, 0.025]
+	var samples := PackedByteArray()
+	samples.resize(frames * 2)
+	for i in frames:
+		var sample := 0.0
+		var phase := float(i) / SR
+		for tone in frequencies.size():
+			sample += sin(TAU * frequencies[tone] * phase) * gains[tone]
+		samples.encode_s16(i * 2, int(clampf(sample, -1.0, 1.0) * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = int(SR)
+	wav.stereo = false
+	wav.data = samples
+	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	wav.loop_begin = 0
+	wav.loop_end = frames
+	return wav
+
+
 func _loop(cue: String, db: float) -> void:
 	if muted:
 		return
 	var p := _looper(cue)
 	if p.stream == null:
 		p.stream = _file_stream(cue)
+	if p.stream == null and cue in ["crystal_loop", "sky_loop"]:
+		p.stream = _procedural_ambience(cue)
 	if p.stream == null:
 		return
 	if not p.playing:

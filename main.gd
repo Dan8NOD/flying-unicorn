@@ -241,6 +241,10 @@ var maze_exit := Vector2.ZERO
 var ch6 := false
 var ch6_pending := 0.0
 var ch6_end := false
+var ch7 := false
+var ch7_crystals := 0
+var ch8 := false
+var ch8_pending := 0.0
 var pz_kind := 0
 var pz_pieces := []
 var pz_sel = null
@@ -586,6 +590,8 @@ var _force_ch2 := false
 var _force_ch3 := false
 var _force_ch5 := false
 var _force_ch6 := false
+var _force_ch7 := false
+var _force_ch8 := false
 var _force_city := false
 var _force_under := false
 var _force_lagoon := false
@@ -632,6 +638,12 @@ func _parse_args() -> void:
 		elif a == "--chapter6":
 			_force_ch6 = true
 			_autostart = true
+		elif a == "--chapter7":
+			_force_ch7 = true
+			_autostart = true
+		elif a == "--chapter8":
+			_force_ch8 = true
+			_autostart = true
 		elif a == "--city":
 			_force_city = true
 			_autostart = true
@@ -677,6 +689,12 @@ func _apply_test_hooks() -> void:
 	if _force_ch6:
 		_enter_wonder()
 		_enter_ch6()
+	if _force_ch7:
+		_enter_wonder()
+		_enter_ch7()
+	if _force_ch8:
+		_enter_wonder()
+		_enter_ch8()
 
 
 func _save_cfg() -> void:
@@ -913,6 +931,8 @@ func reset() -> void:
 	ch5 = false; ch5_city = false; ch5_pending = 0.0; _maze_hint = false
 	wobs = []; wcur = []; towers = []; mwalls = []; maze_exit = Vector2.ZERO
 	ch6 = false; ch6_pending = 0.0; ch6_end = false
+	ch7 = false; ch7_crystals = 0
+	ch8 = false; ch8_pending = 0.0
 	pz_pieces = []; pz_sel = null; pz_done_t = 0.0; pz_kind = 0; pz_tex = null
 	spears = []; spear_cd = 0.0; _spear_tap = false; spread_t = 0.0; spreads = []
 	_bit_taken = {}; _walk_touch = Vector2(-1, -1); _wonder_jump = false
@@ -997,6 +1017,10 @@ func _process(delta: float) -> void:
 		ch6_pending -= delta
 		if ch6_pending <= 0:
 			_enter_ch6()
+	if ch8_pending > 0 and state == "play" and wonder and ch7 and not ch8:
+		ch8_pending -= delta
+		if ch8_pending <= 0:
+			_enter_ch8()
 	if state == "play" and not wonder and play_time >= WONDER_AT:
 		_enter_wonder()
 	# Gradual orientation tilt; gameplay freezes mid-spin so an
@@ -1041,6 +1065,8 @@ func _process(delta: float) -> void:
 	else:
 		synth.stop_rain()
 		synth.stop_wind()
+		synth.stop_crystal()
+		synth.stop_sky()
 	queue_redraw()
 
 
@@ -1098,8 +1124,13 @@ func _game_update(dt: float) -> void:
 		return
 
 	if wonder:
+		if ch6_end:
+			_update_particles(dt)
+			return
 		if ch6:
 			_pz_update(dt)
+		elif ch7 or ch8:
+			_wonder_side(dt)
 		elif ch5:
 			if ch5_city:
 				_city_over(dt)
@@ -1119,6 +1150,8 @@ func _game_update(dt: float) -> void:
 			for k in _bit_taken.keys():
 				if t - _bit_taken[k] > 6.0:
 					_bit_taken.erase(k)
+		if ch7 or ch8:
+			_manage_ambience()
 		_update_particles(dt)
 		return
 
@@ -2153,6 +2186,20 @@ func _roll_cloud_kind(c: StormCloud) -> void:
 
 # Rain patter while a rain cloud is alive; wind bed through every round.
 func _manage_ambience() -> void:
+	if ch7:
+		synth.stop_rain()
+		synth.stop_wind()
+		synth.stop_sky()
+		synth.start_crystal()
+		return
+	if ch8:
+		synth.stop_rain()
+		synth.stop_wind()
+		synth.stop_crystal()
+		synth.start_sky()
+		return
+	synth.stop_crystal()
+	synth.stop_sky()
 	var any_rain := false
 	for c in clouds:
 		if not c.dead and c.rain:
@@ -3855,6 +3902,14 @@ func _wonder_col(c: int) -> Array:
 	var py := 300.0 + _hash01(c * 7 + 3) * 150.0
 	var pw := 120.0 + _hash01(c * 5 + 1) * 60.0
 	var bounce := _hash01(c * 11 + 2) < 0.3
+	if ch7:
+		py = 300.0 + _hash01(c * 7 + 3) * 118.0
+		pw = 132.0 + _hash01(c * 5 + 1) * 64.0
+		bounce = _hash01(c * 11 + 2) < 0.24
+	elif ch8:
+		py = 260.0 + _hash01(c * 7 + 3) * 150.0
+		pw = 116.0 + _hash01(c * 5 + 1) * 56.0
+		bounce = _hash01(c * 11 + 2) < 0.4
 	var nb := 1 + int(_hash01(c * 13 + 7) * 3.0)
 	return [py, pw, bounce, nb]
 
@@ -4021,9 +4076,29 @@ func _wonder_side(dt: float) -> void:
 				drone.x = clampf(uni.x + _w_face * 500.0, WCOLS * WCOL * 0.25, WCOLS * WCOL * 0.8)
 				drone.dir = -_w_face
 				_popup(drone.x, drone.y - 40, "He's back!", Color("bfe9ff"))
-	# FINISH flag: touching the pole opens Chapter 3 — the tunnel drop.
+	# Each expedition has its own finish gate; the regular meadow still opens
+	# the tunnel drop into Chapter 3.
 	_fin_cd = maxf(0.0, _fin_cd - dt)
-	if uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0 and ch3_pending <= 0:
+	if (ch7 or ch8) and uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0:
+		_fin_cd = 2.5
+		if ch7:
+			if ch7_crystals >= 4:
+				score += 150
+				_popup(uni.x, uni.y - 70, "CRYSTAL GATE! ⭐", Color("b8fff4"))
+				_burst(uni.x + 40, uni.y - 40, 40, [Color("76f7e2"), Color("b8fff4"), Color.WHITE], 260)
+				synth.fanfare()
+				ch8_pending = 1.6
+			else:
+				_popup(uni.x, uni.y - 70, "Find all 4 crystals! %d/4" % ch7_crystals, Color("b8fff4"))
+				synth.crystal()
+		else:
+			score += 250
+			_popup(uni.x, uni.y - 70, "SUMMIT REACHED! 🌈", Color("ffd23f"))
+			_burst(uni.x + 40, uni.y - 40, 50, RAINBOW, 300)
+			synth.fanfare()
+			ch8 = false
+			ch6_end = true
+	elif not ch7 and not ch8 and uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0 and ch3_pending <= 0:
 		_fin_cd = 5.0
 		score += 50
 		bits += 3
@@ -4032,6 +4107,17 @@ func _wonder_side(dt: float) -> void:
 		_burst(uni.x + 40, uni.y - 40, 40, RAINBOW, 260)
 		synth.level_up()
 		ch3_pending = 1.6
+	if ch7:
+		for i in 4:
+			if i < ch7_crystals:
+				continue
+			var crystal_pos := Vector2([4, 10, 17, 24][i] * WCOL, H - 125.0)
+			if Vector2(uni.x, uni.y - 15).distance_to(crystal_pos) < 46.0:
+				ch7_crystals += 1
+				score += 35
+				_popup(crystal_pos.x, crystal_pos.y - 30, "Crystal! +35", Color("b8fff4"))
+				_burst(crystal_pos.x, crystal_pos.y, 18, [Color("76f7e2"), Color("b8fff4"), Color.WHITE], 210)
+				synth.crystal()
 	# Star bits: collect on touch, twinkle back a few seconds later.
 	for c in _wonder_cols():
 		var L := _wonder_col(c)
@@ -5755,6 +5841,8 @@ const PZ_PH := 120.0
 
 func _enter_ch6() -> void:
 	ch6 = true
+	ch7 = false
+	ch8 = false
 	ch6_pending = 0.0
 	ch6_end = false
 	wzaps = []
@@ -5767,6 +5855,67 @@ func _enter_ch6() -> void:
 	flash = maxf(flash, 0.3)
 	synth.powerup()
 	_pz_setup(0)
+
+
+func _enter_ch7() -> void:
+	ch3 = false
+	under = false
+	ch5 = false
+	ch5_city = false
+	ch6 = false
+	ch6_end = false
+	ch7 = true
+	ch8 = false
+	ch8_pending = 0.0
+	ch7_crystals = 0
+	ch6_pending = 0.0
+	cam_x = 0.0
+	uni.x = 220.0
+	uni.y = H - 160.0
+	uni.vx = 0.0
+	uni.vy = 0.0
+	_fin_cd = 0.0
+	_w_fire_cd = 0.0
+	_w_face = 1.0
+	_air_jump = true
+	wzaps = []
+	drone = null
+	_bit_taken = {}
+	flash = maxf(flash, 0.3)
+	level_banner = 2.4
+	_popup(W / 2, 90, "Chapter 7 · Crystalwood", Color("b8fff4"))
+	_burst(uni.x, uni.y, 34, [Color("76f7e2"), Color("b8fff4"), Color.WHITE], 250)
+	synth.powerup()
+
+
+func _enter_ch8() -> void:
+	ch3 = false
+	under = false
+	ch5 = false
+	ch5_city = false
+	ch6 = false
+	ch6_end = false
+	ch7 = false
+	ch8 = true
+	ch8_pending = 0.0
+	ch7_crystals = 0
+	cam_x = 0.0
+	uni.x = 220.0
+	uni.y = H - 160.0
+	uni.vx = 0.0
+	uni.vy = 0.0
+	_fin_cd = 0.0
+	_w_fire_cd = 0.0
+	_w_face = 1.0
+	_air_jump = true
+	wzaps = []
+	drone = null
+	_bit_taken = {}
+	flash = maxf(flash, 0.3)
+	level_banner = 2.4
+	_popup(W / 2, 90, "Chapter 8 · Cloudbreak Summit", Color("fff0ba"))
+	_burst(uni.x, uni.y, 34, [Color("a8e8ff"), Color.WHITE, Color("ffd23f")], 250)
+	synth.powerup()
 
 
 func _pz_name(idx: int) -> String:
@@ -5876,9 +6025,7 @@ func _pz_update(dt: float) -> void:
 			if pz_kind < 2:
 				_pz_setup(pz_kind + 1)
 			else:
-				ch6_end = true
-				score += 250
-				synth.powerup()
+				_enter_ch7()
 	if ch6_end and randf() < dt * 2.0:
 		_burst(randf_range(200.0, 760.0), randf_range(100.0, 400.0), 22, RAINBOW, 260)
 

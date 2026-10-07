@@ -1020,7 +1020,7 @@ func _process(delta: float) -> void:
 		ch6_pending -= delta
 		if ch6_pending <= 0:
 			_enter_ch6()
-	if ch8_pending > 0 and state == "play" and wonder and ch7 and not ch8:
+	if ch8_pending > 0 and state == "play" and not paused and not transitioning and not settings_open and wonder and ch7 and not ch8:
 		ch8_pending -= delta
 		if ch8_pending <= 0:
 			_enter_ch8()

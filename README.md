@@ -28,3 +28,7 @@ xcrun devicectl device install app --device <UDID> build/ios/FlyingUnicorn.xcarc
 - **Touch:** drag to fly, hold to fire horn lasers
 - **Keyboard:** W/S or ↑/↓ to fly, Space to fire, P to pause
 - **Gamepad:** left stick / D-pad to fly, A / right trigger to fire, Start to pause
+
+The title screen also has chapter shortcuts. Chapters 7 and 8 add a crystal
+forest expedition and a cloud-island summit, with original procedural
+backgrounds and synthesized ambient audio.

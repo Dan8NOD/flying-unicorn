@@ -378,7 +378,7 @@ func _procedural_ambience(cue: String) -> AudioStreamWAV:
 	var frequencies: Array[float]
 	var gains: Array[float]
 	if cue == "crystal_loop":
-		frequencies = [130.81, 196.0, 261.63, 392.0, 523.25]
+		frequencies = [130.75, 196.0, 261.5, 392.0, 523.25]
 		gains = [0.13, 0.08, 0.055, 0.035, 0.02]
 	else:
 		frequencies = [55.0, 82.5, 110.0, 165.0]
@@ -404,6 +404,9 @@ func _procedural_ambience(cue: String) -> AudioStreamWAV:
 
 func _loop(cue: String, db: float) -> void:
 	if muted:
+		var current: AudioStreamPlayer = _loopers.get(cue)
+		if current and current.playing:
+			current.stop()
 		return
 	var p := _looper(cue)
 	if p.stream == null:

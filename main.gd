@@ -243,6 +243,7 @@ var ch6_pending := 0.0
 var ch6_end := false
 var ch7 := false
 var ch7_crystals := 0
+var _ch7_crystal_taken := {}
 var ch8 := false
 var ch8_pending := 0.0
 var pz_kind := 0
@@ -263,6 +264,8 @@ var _btn_play := Rect2()
 var _btn_ch2 := Rect2()
 var _btn_ch5 := Rect2()
 var _btn_ch6 := Rect2()
+var _btn_ch7 := Rect2()
+var _btn_ch8 := Rect2()
 var _btn_end := Rect2()
 var _btn_again := Rect2()
 var _btn_resume := Rect2()
@@ -931,7 +934,7 @@ func reset() -> void:
 	ch5 = false; ch5_city = false; ch5_pending = 0.0; _maze_hint = false
 	wobs = []; wcur = []; towers = []; mwalls = []; maze_exit = Vector2.ZERO
 	ch6 = false; ch6_pending = 0.0; ch6_end = false
-	ch7 = false; ch7_crystals = 0
+	ch7 = false; ch7_crystals = 0; _ch7_crystal_taken = {}
 	ch8 = false; ch8_pending = 0.0
 	pz_pieces = []; pz_sel = null; pz_done_t = 0.0; pz_kind = 0; pz_tex = null
 	spears = []; spear_cd = 0.0; _spear_tap = false; spread_t = 0.0; spreads = []
@@ -2540,6 +2543,16 @@ func _press_at(vp: Vector2) -> void:
 			_enter_wonder()
 			_enter_ch6()
 			return
+		if _btn_ch7.has_point(dp):
+			start()
+			_enter_wonder()
+			_enter_ch7()
+			return
+		if _btn_ch8.has_point(dp):
+			start()
+			_enter_wonder()
+			_enter_ch8()
+			return
 		if _teaser_rect.has_point(dp):
 			OS.shell_open("https://fatcatcruz.itch.io/fat-cat-cruz")
 			return
@@ -3071,6 +3084,16 @@ func _draw_solid_ground() -> void:
 	var dirt := Color("7a5230").darkened(0.35) if night else Color("7a5230")
 	var grass := Color("4fa361").darkened(0.3) if night else Color("4fa361")
 	var lip := Color("7ed6a8").darkened(0.3) if night else Color("7ed6a8")
+	if ch7:
+		soil = Color("26314f")
+		dirt = Color("3c4967")
+		grass = Color("315c72")
+		lip = Color("76f7e2")
+	elif ch8:
+		soil = Color("586c91")
+		dirt = Color("7892b6")
+		grass = Color("b4d8ec")
+		lip = Color("f3fdff")
 	draw_rect(Rect2(0, gy + 26, WCOLS * WCOL, H - gy - 18), soil)
 	draw_rect(Rect2(0, gy + 16, WCOLS * WCOL, 10), dirt)
 	draw_rect(Rect2(0, gy, WCOLS * WCOL, 16), grass)
@@ -3696,7 +3719,10 @@ func _draw_title_card() -> void:
 	_btn_ch2 = _chapter_btn(Vector2(W / 2 - 132, y + 18), "⭐ Ch. 2")
 	_btn_ch5 = _chapter_btn(Vector2(W / 2, y + 18), "🌊 Ch. 5")
 	_btn_ch6 = _chapter_btn(Vector2(W / 2 + 132, y + 18), "🧩 Ch. 6")
-	y += 48
+	y += 38
+	_btn_ch7 = _chapter_btn(Vector2(W / 2 - 66, y + 18), "💎 Ch. 7")
+	_btn_ch8 = _chapter_btn(Vector2(W / 2 + 66, y + 18), "☁️ Ch. 8")
+	y += 42
 	_teaser_rect = _teaser(Vector2(W / 2, y + 29))
 
 
@@ -3781,6 +3807,10 @@ func _draw_hud() -> void:
 		var label := "Chapter 2"
 		if ch6:
 			label = "Puzzle %d/3 · %s" % [pz_kind + 1, _pz_name(pz_kind)]
+		elif ch7:
+			label = "Crystalwood · Chapter 7"
+		elif ch8:
+			label = "Cloudbreak Summit · Chapter 8"
 		elif ch5:
 			label = "Bad City 🏙" if ch5_city else "Open Water 🌊"
 		elif ch3:
@@ -3789,6 +3819,12 @@ func _draw_hud() -> void:
 		if under:
 			var pcol := Color("9df08a") if pods_left > 0 else Color("ffd23f")
 			_stroke_text(Vector2(22, 108), "👽 x%d left" % pods_left if pods_left > 0 else "👽 ALL CLEAR!", 20, pcol, HORIZONTAL_ALIGNMENT_LEFT, 4)
+		elif ch7:
+			_stroke_text(Vector2(22, 108), "💎 %d/4" % ch7_crystals, 20, Color("b8fff4"), HORIZONTAL_ALIGNMENT_LEFT, 4)
+			if ch7_crystals < 4:
+				_stroke_text(Vector2(VW / 2, VH - 30), "Find 4 crystals to open the gate", 16, Color("e5fffb"), HORIZONTAL_ALIGNMENT_CENTER, 4)
+		elif ch8:
+			_stroke_text(Vector2(VW / 2, VH - 30), "Reach the summit flag!", 16, Color("eafaff"), HORIZONTAL_ALIGNMENT_CENTER, 4)
 		_draw_round_button(Vector2(VW - 87, 33), "🔇" if synth.muted else "🔊")
 		_draw_round_button(Vector2(VW - 33, 33), "❚❚")
 		var any_target: bool = drone != null and drone.alive
@@ -3856,6 +3892,7 @@ func _draw_hud() -> void:
 # hostile, pony arrives powered up with a rainbow double jump).
 const WCOL := 170.0
 const WCELL := 190.0
+const CH7_CRYSTAL_COLUMNS := [4, 10, 17, 24]
 var _bit_taken := {}
 var _wonder_jump := false
 
@@ -4096,6 +4133,7 @@ func _wonder_side(dt: float) -> void:
 			_popup(uni.x, uni.y - 70, "SUMMIT REACHED! 🌈", Color("ffd23f"))
 			_burst(uni.x + 40, uni.y - 40, 50, RAINBOW, 300)
 			synth.fanfare()
+			synth.stop_sky()
 			ch8 = false
 			ch6_end = true
 	elif not ch7 and not ch8 and uni.x >= WCOLS * WCOL - 170 and _fin_cd <= 0 and ch3_pending <= 0:
@@ -4109,11 +4147,12 @@ func _wonder_side(dt: float) -> void:
 		ch3_pending = 1.6
 	if ch7:
 		for i in 4:
-			if i < ch7_crystals:
+			if _ch7_crystal_taken.has(i):
 				continue
-			var crystal_pos := Vector2([4, 10, 17, 24][i] * WCOL, H - 125.0)
+			var crystal_pos := Vector2(CH7_CRYSTAL_COLUMNS[i] * WCOL, H - 125.0)
 			if Vector2(uni.x, uni.y - 15).distance_to(crystal_pos) < 46.0:
-				ch7_crystals += 1
+				_ch7_crystal_taken[i] = true
+				ch7_crystals = _ch7_crystal_taken.size()
 				score += 35
 				_popup(crystal_pos.x, crystal_pos.y - 30, "Crystal! +35", Color("b8fff4"))
 				_burst(crystal_pos.x, crystal_pos.y, 18, [Color("76f7e2"), Color("b8fff4"), Color.WHITE], 210)
@@ -4709,6 +4748,9 @@ func _draw_wonder() -> void:
 	if ch3:
 		_draw_ch3()
 		return
+	if ch7 or ch8:
+		_draw_ch7_ch8()
+		return
 	# Side view: solid ground, markers, drone, cloud platforms, star bits,
 	# and her zap bolts — all world coords; the camera transform is on.
 	_draw_solid_ground()
@@ -4758,7 +4800,78 @@ func _draw_wonder_markers() -> void:
 		var wave := sin(t * 5.0 + i * 0.8) * 2.0
 		draw_colored_polygon(PackedVector2Array([Vector2(fx + 3, gy - 124 + i * 7), Vector2(fx + 54 - i * 3, gy - 120 + i * 7 + wave), Vector2(fx + 3, gy - 117 + i * 7)]), RAINBOW[i])
 	draw_colored_polygon(_sparkle_poly(fx, gy - 136, 11), Color("ffd23f"))
-	_text_c(Vector2(fx + 34, gy - 98), "FINISH", 14, Color.WHITE)
+	var finish_label := "CRYSTAL GATE" if ch7 else ("SUMMIT" if ch8 else "FINISH")
+	_text_c(Vector2(fx + 42, gy - 98), finish_label, 14, Color.WHITE)
+
+
+func _draw_ch7_ch8() -> void:
+	_draw_solid_ground()
+	_draw_wonder_markers()
+	for c in _wonder_cols():
+		var L := _wonder_col(c)
+		var px := Vector2(c * WCOL, L[0])
+		var hw: float = L[1] * 0.5
+		if ch7:
+			_fill_ellipse(px + Vector2(0, 9), hw, 18, Color("182f53"))
+			draw_rect(Rect2(px.x - hw, px.y - 10, L[1], 13), Color("344d79"))
+			draw_circle(px + Vector2(-hw + 10, -9), 12, Color("344d79"))
+			draw_circle(px + Vector2(0, -14), 15, Color("344d79"))
+			draw_circle(px + Vector2(hw - 12, -8), 12, Color("344d79"))
+			draw_rect(Rect2(px.x - hw, px.y - 1, L[1], 4), Color("76f7e2"))
+			if L[2]:
+				draw_polyline(_arc_pts(px.x, px.y - 12, hw + 6, 16, PI * 1.1, PI * 1.9, 16), Color("b8fff4"), 3, true)
+		else:
+			_fill_ellipse(px + Vector2(0, 10), hw, 19, Color("455d89"))
+			draw_rect(Rect2(px.x - hw, px.y - 11, L[1], 15), Color("d9f4ff"))
+			draw_circle(px + Vector2(-hw + 10, -11), 12, Color("d9f4ff"))
+			draw_circle(px + Vector2(0, -16), 16, Color("eafaff"))
+			draw_circle(px + Vector2(hw - 12, -9), 12, Color("d9f4ff"))
+			draw_rect(Rect2(px.x - hw, px.y + 1, L[1], 4), Color("82c6f7"))
+		for bi in L[3]:
+			if not _bit_taken.has("%d:%d" % [c, bi]):
+				_bit_star(_wonder_bit_pos(c, bi))
+	var first_col := int(floor(cam_x / 340.0)) - 1
+	var col := first_col
+	while col * 340.0 < cam_x + W + 340.0:
+		var x := col * 340.0 + 100.0
+		if ch7 and _hash01(col * 37 + 2) < 0.78:
+			var tree_ground := H - 60.0
+			var tree_height := 80.0 + _hash01(col * 19 + 8) * 100.0
+			draw_rect(Rect2(x - 5, tree_ground - tree_height * 0.35, 10, tree_height * 0.35), Color("33415f"))
+			for tier in 3:
+				var size := 30.0 - tier * 6.0
+				var top := tree_ground - tree_height + tier * 27.0
+				draw_colored_polygon(PackedVector2Array([
+					Vector2(x, top), Vector2(x - size, top + 38), Vector2(x + size, top + 38)
+				]), Color("315c72").lerp(Color("557c82"), _hash01(col + tier)))
+				draw_line(Vector2(x, top + 2), Vector2(x, top + 30), Color("76f7e2", 0.6), 3)
+		elif ch8 and _hash01(col * 23 + 9) < 0.72:
+			var rock_ground := H - 60.0
+			var rock_height := 34.0 + _hash01(col * 17 + 4) * 68.0
+			var rock := PackedVector2Array([
+				Vector2(x - 30, rock_ground), Vector2(x - 16, rock_ground - rock_height * 0.55),
+				Vector2(x - 5, rock_ground - rock_height), Vector2(x + 8, rock_ground - rock_height * 0.62),
+				Vector2(x + 27, rock_ground - rock_height * 0.82), Vector2(x + 36, rock_ground)
+			])
+			draw_colored_polygon(rock, Color("7892b6"))
+			draw_polyline(PackedVector2Array([rock[1], rock[2], rock[3]]), Color("d9f4ff"), 3, true)
+		col += 1
+	if ch7:
+		for i in 4:
+			if _ch7_crystal_taken.has(i):
+				continue
+			var cp := Vector2(CH7_CRYSTAL_COLUMNS[i] * WCOL, H - 125.0)
+			var pulse := 0.78 + 0.22 * sin(t * 4.0 + i)
+			draw_texture_rect(_radial_glow_tex(Color(0.3, 1, 0.9, 0.45 * pulse), Color(0.3, 1, 0.9, 0)), Rect2(cp - Vector2(35, 35), Vector2(70, 70)), false)
+			var gem := PackedVector2Array([
+				cp + Vector2(0, -19), cp + Vector2(13, -3), cp + Vector2(8, 17),
+				cp + Vector2(-8, 17), cp + Vector2(-13, -3)
+			])
+			draw_colored_polygon(gem, Color("76f7e2"))
+			draw_polyline(gem, Color("e5fffb"), 2, true)
+			draw_line(cp + Vector2(0, -12), cp + Vector2(0, 10), Color.WHITE, 2, true)
+	_draw_spreads()
+	_draw_wzaps()
 
 
 func _draw_drone(d = null) -> void:
@@ -5083,6 +5196,10 @@ func _draw() -> void:
 		_draw_over_bg()
 	elif wonder and ch6:
 		_draw_ch6_bg()
+	elif wonder and ch7:
+		_draw_ch7_bg()
+	elif wonder and ch8:
+		_draw_ch8_bg()
 	elif wonder and ch5:
 		if ch5_city:
 			_draw_city_bg()
@@ -5208,6 +5325,8 @@ func _draw() -> void:
 			_draw_mermaid()
 		if wonder and (ch3 or ch5):
 			_draw_pony_top()
+		elif wonder and (ch7 or ch8):
+			_draw_unicorn()
 		elif not wonder:
 			_draw_unicorn()
 		if state == "over" and over_card_visible:
@@ -5833,6 +5952,62 @@ func _draw_city_bg() -> void:
 	draw_texture_rect(_radial_glow_tex(Color(1, 0.6, 0.25, 0.10 + 0.05 * pulse), Color(0.4, 0.15, 0.05, 0)), Rect2(VW * 0.1, VH * 0.55, VW * 0.8, VH * 0.5), false)
 
 
+func _draw_ch7_bg() -> void:
+	var bands := 10
+	for i in bands:
+		var k := float(i) / bands
+		draw_rect(Rect2(0, VH * k, VW, VH / bands + 1), Color("27365a").lerp(Color("694e7a"), k))
+	draw_texture_rect(_radial_glow_tex(Color(0.45, 1, 0.88, 0.18), Color(0.45, 1, 0.88, 0)), Rect2(VW * 0.25, VH * 0.08, VW * 0.5, VH * 0.7), false)
+	for layer in 3:
+		var base_y := VH * (0.64 + layer * 0.08)
+		var shift := cam_x * (0.05 + layer * 0.035)
+		var step := 180.0 + layer * 85.0
+		var first := int(floor(shift / step)) - 1
+		var segment := first
+		while segment * step - shift < VW + step:
+			var x := segment * step - shift
+			var height := 110.0 + _hash01(segment * 29 + layer * 17) * (100.0 + layer * 20.0)
+			var width := 90.0 + _hash01(segment * 13 + layer * 41) * 90.0
+			var silhouette := PackedVector2Array([
+				Vector2(x - width, base_y), Vector2(x - width * 0.55, base_y - height * 0.65),
+				Vector2(x, base_y - height), Vector2(x + width * 0.62, base_y - height * 0.48),
+				Vector2(x + width, base_y)
+			])
+			var shade := 0.12 + layer * 0.075
+			draw_colored_polygon(silhouette, Color("102541").lerp(Color("263b5b"), shade))
+			if layer == 2:
+				for star in 2:
+					var sx := x + (star - 0.5) * 42.0
+					draw_circle(Vector2(sx, base_y - height * 0.62), 2.0, Color("76f7e2", 0.65))
+			segment += 1
+
+
+func _draw_ch8_bg() -> void:
+	var bands := 12
+	for i in bands:
+		var k := float(i) / bands
+		draw_rect(Rect2(0, VH * k, VW, VH / bands + 1), Color("5e83bd").lerp(Color("c5eaff"), k))
+	draw_texture_rect(_radial_glow_tex(Color(1, 0.96, 0.75, 0.5), Color(1, 0.96, 0.75, 0)), Rect2(VW * 0.68, VH * 0.08, 180, 180), false)
+	for i in 9:
+		var x := fposmod(i * 173.0 - cam_x * 0.11, VW + 260.0) - 130.0
+		var y := VH * (0.28 + _hash01(i * 31 + 6) * 0.38)
+		var size := 40.0 + _hash01(i * 23 + 4) * 54.0
+		var cloud := Color(0.93, 0.98, 1.0, 0.64)
+		_fill_ellipse(Vector2(x, y + size * 0.1), size * 1.25, size * 0.32, Color(0.53, 0.68, 0.85, 0.27))
+		draw_circle(Vector2(x - size * 0.5, y), size * 0.36, cloud)
+		draw_circle(Vector2(x, y - size * 0.13), size * 0.48, cloud)
+		draw_circle(Vector2(x + size * 0.53, y + size * 0.04), size * 0.33, cloud)
+	for i in 7:
+		var island_x := fposmod(i * 219.0 - cam_x * 0.2, VW + 320.0) - 160.0
+		var peak := VH * (0.52 + _hash01(i * 19 + 1) * 0.2)
+		var width := 90.0 + _hash01(i * 13 + 7) * 80.0
+		var island := PackedVector2Array([
+			Vector2(island_x - width, VH), Vector2(island_x - width * 0.4, peak + 35),
+			Vector2(island_x, peak), Vector2(island_x + width * 0.55, peak + 30), Vector2(island_x + width, VH)
+		])
+		draw_colored_polygon(island, Color("7294bb", 0.55))
+
+
 # ─── Chapter 6: three little jigsaws ─────────────────────────────────────────
 const PZ_O := Vector2(240.0, 76.0)
 const PZ_PW := 160.0
@@ -5868,6 +6043,7 @@ func _enter_ch7() -> void:
 	ch8 = false
 	ch8_pending = 0.0
 	ch7_crystals = 0
+	_ch7_crystal_taken = {}
 	ch6_pending = 0.0
 	cam_x = 0.0
 	uni.x = 220.0
@@ -5899,6 +6075,7 @@ func _enter_ch8() -> void:
 	ch8 = true
 	ch8_pending = 0.0
 	ch7_crystals = 0
+	_ch7_crystal_taken = {}
 	cam_x = 0.0
 	uni.x = 220.0
 	uni.y = H - 160.0
@@ -6086,7 +6263,7 @@ func _draw_end_card() -> void:
 	y += 40
 	_text_c(Vector2(W / 2, y), str(score), 40, Color("ffd23f"))
 	y += 34
-	_text_c(Vector2(W / 2, y), "Chapters 1–6 complete. Chapter 7 soon? 🦄", 14, Color("f3e9ff"))
+	_text_c(Vector2(W / 2, y), "Chapters 1–8 complete. Your next adventure awaits! 🦄", 14, Color("f3e9ff"))
 	y += 36
 	_btn_end = _play_button(Vector2(W / 2, y + 24), "Back to Title 🏠")
 

@@ -19,6 +19,9 @@ function run(argv) {
   let data = null, err = '';
   wv.evaluateJavaScriptCompletionHandler(code, (r, e) => { if (e && !e.isNil()) err = e.userInfo.js ? JSON.stringify(ObjC.deepUnwrap(e.userInfo)).slice(0, 400) : e.localizedDescription.js; else data = ObjC.unwrap(r); });
   spin(wait);
+  let out2 = null;   // async helpers can leave base64 file data in window.__out (e.g. a WAV)
+  wv.evaluateJavaScriptCompletionHandler('window.__out || ""', (r, e) => { out2 = r && !r.isNil() ? ObjC.unwrap(r) : ''; }); spin(.5);
+  if (out2) { $.NSData.alloc.initWithBase64EncodedStringOptions(out2, 0).writeToFileAtomically(out, true); return 'saved ' + out; }
   if (err) return 'JS error: ' + err;
   if (wv.title.js && wv.title.js !== 'Pink Unicorn') return 'title: ' + wv.title.js;
   if (!data) return 'no image';

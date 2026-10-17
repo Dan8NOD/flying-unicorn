@@ -907,30 +907,94 @@ function drawTrans() {
   if (trans.label && p > .42 && p < .68) txt(trans.label, W / 2, H / 2, 34, '#fff');
 }
 
-// Short animated ending: sunrise, the unicorn and mermaid fly home, fireworks, credits.
+// ---- story: a little chat on each chapter card, and the ending ----
+const TALK = [
+  ['The clouds look grumpy today!', "Let's sprinkle some sparkle on them!"],
+  ['Whoa, the sea is so shiny!', 'This is my home! Follow me!'],
+  ['Shh... the stars are sleeping.', "Then let's be sneaky-quiet heroes!"],
+  ['Brrr! My hooves are chilly!', 'Look at the dancing lights!'],
+  ['I can see a hundred rainbows!', 'And a humming saucer behind them...'],
+  ['Can unicorns swim?', 'With a mermaid friend, they can!'],
+  ['So many sparkly crystals!', 'Careful, the pointy ones are sharp!'],
+  ['That fortress looks spooky...', "We're brave together. Let's go!"],
+  ['The fireflies are showing the way!', 'Mind the thorny bits!'],
+  ['Can I eat the clouds?', 'Yes! Just not the sour gumballs!'],
+  ['The lake is like a mirror.', 'Make a wish on the moon!'],
+  ["We're almost home!", 'One last grumpy queen to cheer up!'],
+];
+function wrapText(s, maxW) { const out = []; let line = ''; for (const w of s.split(' ')) { const tt = line ? line + ' ' + w : w; if (g.measureText(tt).width > maxW && line) { out.push(line); line = w; } else line = tt; } out.push(line); return out; }
+function bubble(x, y, s, pop, tailLeft) {   // speech bubble that pops in (pop 0..1)
+  if (pop <= 0) return;
+  g.save(); g.translate(x, y); const sc = pop < 1 ? .6 + .4 * pop + Math.sin(pop * Math.PI) * .12 : 1; g.scale(sc, sc);
+  g.font = 'bold 19px "Trebuchet MS", sans-serif'; const lines = wrapText(s, 230), w = Math.max(...lines.map(l => g.measureText(l).width)) + 36, h = lines.length * 24 + 24;
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(tailLeft ? -w / 2 + 30 : w / 2 - 30, h / 2 - 2); g.lineTo(tailLeft ? -w / 2 + 14 : w / 2 - 14, h / 2 + 22); g.lineTo(tailLeft ? -w / 2 + 52 : w / 2 - 52, h / 2 - 2); g.fill();
+  panel(-w / 2, -h / 2, w, h, 18, '#fff', '#ffb3e1');
+  g.fillStyle = '#7a1a63'; g.textAlign = 'center'; lines.forEach((l, i) => g.fillText(l, 0, -h / 2 + 30 + i * 24));
+  g.restore();
+}
+function chapterCard() {
+  const c = CHAPTERS[ch], p = Math.min(1, t / 20);
+  g.fillStyle = `rgba(42,15,61,${.45 * p})`; g.fillRect(0, 0, W, H);
+  panel(W / 2 - 250, 34 - (1 - p) * 120, 500, 106, 30, lg(0, 30, 0, 140, 'rgba(255,240,250,.97)', 'rgba(255,200,235,.97)'), '#fff');
+  fancyText(`Chapter ${ch + 1}`, W / 2, 92 - (1 - p) * 120, 46);
+  g.font = 'bold 22px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(c.name, W / 2, 126 - (1 - p) * 120);
+  const ux = 250 - (1 - p) * 300, mx = 720 + (1 - p) * 300;
+  g.save(); g.translate(ux, 360 + Math.sin(t / 15) * 6); g.scale(1.7, 1.7); drawUnicorn(0, 0); g.restore();
+  g.save(); g.translate(mx, 370 + Math.sin(t / 15 + 1) * 6); g.scale(1.5, 1.5); drawMermaid(0, 0); g.restore();
+  const [a, b] = TALK[ch] || ['', ''];
+  bubble(330, 222, a, Math.min(1, (t - 25) / 12), true);
+  bubble(640, 262, b, Math.min(1, (t - 85) / 12), false);
+  if (t > 100 && t % 50 < 36) { panel(W / 2 - 90, H - 62, 180, 40, 20, lg(0, H - 62, 0, H - 22, '#ff8fd0', '#e8279a'), '#fff'); txt('Tap to fly!', W / 2, H - 34, 20, '#fff'); }
+}
+function happySaucer(x, y, hull, s) {   // a cheered-up boss waving goodbye
+  g.save(); g.translate(x, y); g.scale(s, s); g.rotate(Math.sin(t / 12 + x) * .08);
+  g.fillStyle = 'rgba(190,240,255,.6)'; g.beginPath(); g.ellipse(0, -6, 30, 26, 0, Math.PI, 0); g.fill();
+  g.fillStyle = '#ffd1ec'; g.beginPath(); g.arc(0, -14, 12, 0, 7); g.fill();
+  g.strokeStyle = '#2b2440'; g.lineWidth = 2.2; g.beginPath(); g.arc(-4, -16, 2.5, Math.PI, 0); g.arc(4, -16, 2.5, Math.PI, 0); g.stroke();
+  g.beginPath(); g.arc(0, -10, 4, .2, Math.PI - .2); g.stroke();
+  g.strokeStyle = '#ffd1ec'; g.lineWidth = 3; g.beginPath(); g.moveTo(10, -16); g.lineTo(18, -26 + Math.sin(t / 4) * 4); g.stroke();   // waving arm
+  g.fillStyle = lg(0, -4, 0, 24, '#fff', hull); g.beginPath(); g.ellipse(0, 6, 62, 18, 0, 0, 7); g.fill();
+  for (let i = -2; i <= 2; i++) { g.fillStyle = (Math.floor(t / 8) + i) % 2 ? '#fff36b' : '#fff'; g.beginPath(); g.arc(i * 22, 10, 3.5, 0, 7); g.fill(); }
+  g.restore();
+}
+// Ending (about 25 s, tap to skip after 4 s): dawn breaks, the cheered-up saucers wave goodbye,
+// the friends fly to the castle under fireworks, then the credits roll.
 function drawEnding() {
-  const e = ending, k = Math.min(1, e / 600);
+  const e = ending, k = Math.min(1, e / 500);
   const gr = g.createLinearGradient(0, 0, 0, H);
-  gr.addColorStop(0, `rgb(${40 + 215 * k | 0},${20 + 160 * k | 0},${100 + 100 * k | 0})`); gr.addColorStop(1, `rgb(${255},${120 + 100 * k | 0},${150 + 50 * k | 0})`);
+  gr.addColorStop(0, `rgb(${40 + 215 * k | 0},${20 + 170 * k | 0},${100 + 130 * k | 0})`); gr.addColorStop(1, `rgb(255,${130 + 90 * k | 0},${170 + 40 * k | 0})`);
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#fff2a8'; g.beginPath(); g.arc(W / 2, H - 40 - k * 200, 70, 0, 7); g.fill();             // rising sun
-  for (let i = 0; i < 6; i++) blob(scroll(i, .6), 90 + i * 60 % 300, 1.5, 'rgba(255,255,255,.6)');
-  g.fillStyle = '#c15fa8'; g.beginPath(); g.moveTo(0, H); for (let x = 0; x <= W; x += 40) g.lineTo(x, H - 50 - 30 * Math.sin(x / 90)); g.lineTo(W, H); g.fill();
-  const fx = Math.min(e * 3 - 100, W / 2 - 40);   // flies in, then hovers
-  const hy = H / 2 + Math.sin(e / 20) * 12;
-  drawMermaid(fx - 120, hy + 30);
-  drawUnicorn(fx, hy);
-  if (e > 120 && e % 6 === 0) sparks.push({ x: fx - 50, y: hy, vx: -2 - Math.random() * 2, vy: (Math.random() - .5) * 2, l: 40, col: `hsl(${e * 7 % 360},90%,60%)` });
-  if (e > 300 && e % 30 === 0) boom(100 + Math.random() * (W - 200), 80 + Math.random() * 200, `hsl(${Math.random() * 360},90%,65%)`, 30);
-  if (e > 60 && e < 300) txt('The sky is safe again...', W / 2, 90, 36, '#fff');
-  if (e >= 300) { txt('Thank you, Pink Unicorn!', W / 2, 90, 44, '#fff'); txt('with Mermaid, best friend & co-pilot', W / 2, 130, 22, '#ffe84d'); }
-  if (e >= 300) { // a rainbow grows over the sunrise as the credits land
-    const cols = ['#ff5fa8', '#ff9a3c', '#ffe84d', '#7dff7d', '#4dd2ff', '#9b6bff'];
-    cols.forEach((c, i) => { g.strokeStyle = c; g.lineWidth = 10; g.globalAlpha = Math.min(1, (e - 300) / 120); g.beginPath(); g.arc(W / 2, H - 40, 300 - i * 11, Math.PI, 0); g.stroke(); });
-    g.globalAlpha = 1;
+  if (k < 1) twinkles(40, .05, H * .6);
+  sunGlow(W / 2, H - 60 - k * 180, 60, `rgba(255,240,180,${.4 + .4 * k})`);
+  g.fillStyle = '#fff2a8'; g.beginPath(); g.arc(W / 2, H - 60 - k * 180, 60, 0, 7); g.fill();
+  if (e > 200) { g.lineWidth = 12; g.globalAlpha = Math.min(.8, (e - 200) / 200); RAINBOW.forEach((c, i) => { g.strokeStyle = c; g.beginPath(); g.arc(W / 2, H + 60, 420 - i * 12, Math.PI, 0); g.stroke(); }); g.globalAlpha = 1; }
+  for (let i = 0; i < reps(300); i++) cloud(sx(i, .4, 300), 70 + (i * 61) % 120, 1.4, .7);
+  if (e > 380) {   // the castle rises into view
+    const cy = Math.max(0, 140 - (e - 380) * .8);
+    g.save(); g.translate(0, cy); g.fillStyle = '#f7a6d4'; g.fillRect(560, 250, 260, 230);
+    [[540, 180, 60], [640, 130, 70], [760, 180, 60]].forEach(([x, y, w]) => { g.fillStyle = '#f7a6d4'; g.fillRect(x, y + 40, w, 300); g.fillStyle = '#c94f9c'; g.beginPath(); g.moveTo(x - 8, y + 40); g.lineTo(x + w / 2, y - 30); g.lineTo(x + w + 8, y + 40); g.fill(); g.fillStyle = '#ff6fa8'; g.fillRect(x + w / 2 - 1, y - 52, 2, 24); g.beginPath(); g.moveTo(x + w / 2 + 1, y - 52); g.lineTo(x + w / 2 + 16, y - 46); g.lineTo(x + w / 2 + 1, y - 40); g.fill(); });
+    g.fillStyle = '#fff6c9'; [[570, 250], [660, 200], [780, 250], [670, 320]].forEach(([x, y]) => { rr(x, y, 16, 26, 8); g.fill(); });
+    g.restore();
   }
-  if (e > 420) { txt('THE END', W / 2, H - 120, 56, '#fff'); txt(`Final score ${score}   Best ${best}`, W / 2, H - 80, 24); txt(`All ${CHAPTERS.length} chapters cleared!`, W / 2, H - 52, 20, '#ffe84d'); }
-  if (e > 240 && e % 120 < 80) txt('tap to play again', W / 2, H - 22, 20);
+  hills('#e88ac4', H - 40, 26, .5, 140); hills('#d670b4', H - 12, 18, .9, 110);
+  // cheered-up saucers float away waving
+  if (e > 60 && e < 560) for (let i = 0; i < 6; i++) { const x = W + 120 - (e - 60 - i * 40) * 2.6, y = 120 + (i * 53) % 180 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55); }
+  // the friends
+  const fx = e < 380 ? Math.min(e * 2.5 - 100, 300) : 300 + (e - 380) * .5, hy = H / 2 + 20 + Math.sin(e / 20) * 12;
+  if (fx < W - 120) { drawMermaid(fx - 120, hy + 30); drawUnicorn(fx, hy); }
+  if (e > 120 && e % 5 === 0) sparks.push({ x: fx - 60, y: hy, vx: -2 - Math.random() * 2, vy: (Math.random() - .5) * 2, l: 40, col: RAINBOW[(e / 5 | 0) % 6] });
+  if (e > 420 && e % 24 === 0) boom(120 + Math.random() * (W - 240), 70 + Math.random() * 180, RAINBOW[Math.random() * 6 | 0], 34);
+  if (e > 40 && e < 300) bubble(W / 2, 80, 'The sky is happy again!', Math.min(1, (e - 40) / 14), false);
+  if (e >= 300 && e < 700) bubble(W / 2, 80, 'Thank you, Pink Unicorn and Mermaid!', Math.min(1, (e - 300) / 14), true);
+  if (e >= 700) {   // credits roll
+    const lines = ['PINK UNICORN', '', 'Starring', 'Pink Unicorn  &  Mermaid', '', 'Featuring', 'twelve cheered-up saucers', 'chunky pigs, sleepy owls, bubbly jellyfish', 'and one very sparkly queen', '', `Chapters cleared: ${CHAPTERS.length}`, `Final score: ${score}`, `Best: ${best}`, '', 'Made with love', '', 'THE END'];
+    const y0 = H + 20 - (e - 700) * .9;
+    panel(W / 2 - 250, 20, 500, H - 40, 30, 'rgba(122,26,99,.45)', 'rgba(255,255,255,.6)');
+    g.save(); rr(W / 2 - 250, 20, 500, H - 40, 30); g.clip();
+    lines.forEach((l, i) => { const y = Math.max(y0 + i * 40, i === lines.length - 1 ? H / 2 : -100); if (i === 0 || i === lines.length - 1) fancyText(l, W / 2, y, 44); else { g.font = `bold ${['Starring', 'Featuring'].includes(l) ? 16 : 22}px "Trebuchet MS", sans-serif`; g.textAlign = 'center'; g.fillStyle = ['Starring', 'Featuring'].includes(l) ? '#ffd1ec' : '#fff'; g.fillText(l, W / 2, y); } });
+    g.restore();
+  }
+  if (e > 240 && e % 120 < 80) { panel(W / 2 - 100, H - 52, 200, 34, 17, 'rgba(122,26,99,.55)'); txt('tap to play again', W / 2, H - 29, 17, '#fff'); }
 }
 // ---- interface pieces ----
 function panel(x, y, w, h, r, fill, edge) { rr(x, y, w, h, r); g.fillStyle = fill; g.fill(); g.strokeStyle = edge || 'rgba(255,255,255,.75)'; g.lineWidth = 2.5; g.stroke(); }
@@ -1029,20 +1093,20 @@ function draw() {
         g.fillStyle = lg(b.x, b.y - 9, b.x, b.y + 9, '#ffe0f6', '#ff3fb4'); g.beginPath(); g.arc(b.x, b.y, 9, 0, 7); g.fill();
         g.fillStyle = '#fff'; g.beginPath(); g.arc(b.x - 3, b.y - 3, 2.5, 0, 7); g.fill();
       }
-      if (players.length === 1) drawMermaid(mer.x, mer.y);
-      for (const p of players) {
+      if (players.length === 1 && state !== 'chapter') drawMermaid(mer.x, mer.y);
+      for (const p of state === 'chapter' ? [] : players) {
         if (p.flash > 0 && t % 8 < 4) continue;
         p === uni ? drawUnicorn(p.x, p.y, p.shield > 0) : drawMermaid(p.x, p.y, p.shield > 0);
         if (players.length > 1) { panel(p.x - 16, p.y - 92, 32, 20, 10, p.i ? 'rgba(20,160,160,.8)' : 'rgba(214,25,154,.8)'); txt('P' + (p.i + 1), p.x, p.y - 77, 14, '#fff'); }
       }
       for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
-      hud();
+      if (state !== 'chapter') hud();
       const c = CHAPTERS[ch];
       if (boss && !clear) { panel(W / 2 - 110, H - 40, 220, 28, 14, 'rgba(122,26,99,.6)'); txt(c.boss, W / 2, H - 20, 17, '#fff'); }
       if (clear) { const p = Math.min(1, clear / 20); g.save(); g.translate(W / 2, 220); g.scale(p * (1 + .05 * Math.sin(t / 4)), p * (1 + .05 * Math.sin(t / 4))); fancyText('Boss defeated!', 0, 0, 56); g.restore(); }
       if (warn > 0 && warn % 30 < 20) { panel(W / 2 - 160, 112, 320, 56, 28, 'rgba(255,60,90,.85)'); txt('!  WARNING  !', W / 2, 152, 38, '#fff'); }
       if (paused) card('Paused', ['tap or press P to resume']);
-      if (state === 'chapter') card(`Chapter ${ch + 1}`, [c.name, c.line, 'Tap to fly!'], true);
+      if (state === 'chapter') chapterCard();
       if (state === 'over') card('Game Over', [`Score ${score}   ·   Best ${best}`, 'tap to try again']);
     }
   }
@@ -1056,7 +1120,7 @@ function loop() {
   if (mode === 'guest') { guestTick(); return; }
   if (state === 'play') { if (!paused) update(); }
   else { t++; if (state === 'ending') ending++; }
-  if (state === 'chapter' && t > 150) state = 'play';
+  if (state === 'chapter' && t > 330) state = 'play';
   for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; }
   sparks = sparks.filter(p => p.l > 0);
   if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; }

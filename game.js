@@ -10,7 +10,7 @@ const IMG = {};
 const ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike',
   ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm'].map(k => 'foe_' + k),
   ...['ring', 'heart', 'star', 'rapid', 'triple', 'magnet', 'bomb'].map(k => 'pick_' + k),
-  ...Array.from({ length: 12 }, (_, i) => 'boss_' + i)];
+  ...Array.from({ length: 12 }, (_, i) => 'boss_' + i), 'happy_0', 'happy_1', 'happy_9'];
 if (typeof Image !== 'undefined') {
   for (const n of ART) { const im = new Image(); im.onload = () => { IMG[n] = im; }; im.src = 'assets/img/' + n + '.png'; }
   for (let i = 0; i < 12; i++) { const im = new Image(); im.onload = () => { IMG['bg_' + i] = im; }; im.src = 'assets/img/bg_' + i + '.jpg';
@@ -1084,7 +1084,9 @@ function chapterCard() {
   bubble(640, 262, b, Math.min(1, (t - 125) / 12), false);
   if (t > 100 && t % 50 < 36) { panel(W / 2 - 90, H - 62, 180, 40, 20, lg(0, H - 62, 0, H - 22, '#ff8fd0', '#e8279a'), '#fff'); txt('Tap to fly!', W / 2, H - 34, 20, '#fff'); }
 }
-function happySaucer(x, y, hull, s) {   // a cheered-up boss waving goodbye
+function happySaucer(x, y, hull, s, n = 0) {   // a cheered-up boss waving goodbye
+  const hs = ['happy_0', 'happy_1', 'happy_9'][n % 3];
+  if (IMG[hs]) { g.save(); g.translate(x, y); g.rotate(Math.sin(t / 12 + x) * .08); spr(hs, 0, 0, 150 * s); g.restore(); return; }
   g.save(); g.translate(x, y); g.scale(s, s); g.rotate(Math.sin(t / 12 + x) * .08);
   g.fillStyle = 'rgba(190,240,255,.6)'; g.beginPath(); g.ellipse(0, -6, 30, 26, 0, Math.PI, 0); g.fill();
   g.fillStyle = '#ffd1ec'; g.beginPath(); g.arc(0, -14, 12, 0, 7); g.fill();
@@ -1125,7 +1127,7 @@ function drawEnding() {
 }
 function endingActors(e) {
   // cheered-up saucers float away waving
-  if (e > 60 && e < 560) for (let i = 0; i < 6; i++) { const x = W + 120 - (e - 60 - i * 40) * 2.6, y = 120 + (i * 53) % 180 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55); }
+  if (e > 60 && e < 560) for (let i = 0; i < 6; i++) { const x = W + 120 - (e - 60 - i * 40) * 2.6, y = 120 + (i * 53) % 180 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55, i); }
   // the friends
   const fx = e < 380 ? Math.min(e * 2.5 - 100, 300) : 300 + (e - 380) * .5, hy = H / 2 + 20 + Math.sin(e / 20) * 12;
   if (fx < W - 120) { drawMermaid(fx - 120, hy + 30); drawUnicorn(fx, hy); }

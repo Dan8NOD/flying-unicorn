@@ -22,6 +22,8 @@ const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b',
 let state = 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
 let things = [], shots = [], bolts = [], sparks = [], boss = null, clear = 0;
 let mode = 'solo', sel = 0, reached = 0, startCh = 0, easy = false;   // solo | local (2 players, one screen) | host / guest (two devices)
+let pops = [];   // floating "+20" score pop-ups
+function pop(x, y, str, col) { if (pops.length < 30) pops.push({ x, y, str, col, l: 50 }); }
 let trans = null, ending = 0, shake = 0, paused = false, warn = 0, mt = 0;
 const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 0 };     // player 1: the unicorn
 const p2 = { x: 110, y: H / 2 + 80, ty: H / 2 + 80, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 1 };   // player 2: the mermaid
@@ -168,7 +170,7 @@ function go(fn, label) { if (!trans) trans = { t: 0, fn, label }; }
 function start(c, fresh) {
   go(() => {
     if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
-    ch = c; t = 0; things = []; shots = []; bolts = []; boss = null; clear = 0;
+    ch = c; t = 0; pops = []; things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); }
     if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
@@ -290,8 +292,8 @@ function update() {
     if (pp) {
       if (o.kind === 'spike') { hurt(pp); continue; }
       o.dead = true;
-      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); boom(o.x, o.y, '#ffc400'); }
-      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); boom(o.x, o.y, '#ff4d8d'); }
+      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); boom(o.x, o.y, '#ffc400'); pop(o.x, o.y - 10, '+' + 10 * Math.min(combo, 10), '#ffe45c'); }
+      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
@@ -306,7 +308,7 @@ function update() {
       if (!o.foe || o.dead || !hit(s, o, o.r + 8)) continue;
       s.dead = true; o.hp--; o.hit = 6; sfx('pop');
       if (o.hp <= 0) {
-        o.dead = true; score += FOE[o.kind].pts; boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
+        o.dead = true; score += FOE[o.kind].pts; pop(o.x, o.y - 20, '+' + FOE[o.kind].pts, '#fff'); boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
         const heart = o.kind === 'pig' && lives < maxLives() && Math.random() < .4;
         if (heart || Math.random() < .35) things.push({ kind: heart ? 'heart' : 'ring', x: o.x, y: o.y, y0: o.y, ph: 0, vx: -3, r: 16 });
       }
@@ -317,7 +319,7 @@ function update() {
     if (boss && hit(s, boss, 60)) {
       s.dead = true; boss.hp--; boss.hit = 4; score += 5; boom(s.x, s.y, '#ff00cc', 6); sfx('bossHit');
       if (boss.hp <= 0) {
-        score += 200 + lives * 50; shake = 40; clear = 1;
+        score += 200 + lives * 50; shake = 40; clear = 1; pop(boss.x, boss.y - 40, '+' + (200 + lives * 50), '#ffe45c');
         for (let i = 0; i < 6; i++) setTimeout(() => boom(boss ? boss.x + (Math.random() - .5) * 120 : 0, boss ? boss.y + (Math.random() - .5) * 60 : 0, '#ff00cc', 20), i * 150);
         sfx('win');
         saveBest(); bolts = [];
@@ -1121,6 +1123,7 @@ function draw() {
         if (players.length > 1) { panel(p.x - 16, p.y - 92, 32, 20, 10, p.i ? 'rgba(20,160,160,.8)' : 'rgba(214,25,154,.8)'); txt('P' + (p.i + 1), p.x, p.y - 77, 14, '#fff'); }
       }
       for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
+      for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 18 + (q.l > 42 ? (50 - q.l) : 8), q.col); } g.globalAlpha = 1;
       if (state !== 'chapter') hud();
       const c = CHAPTERS[ch];
       if (boss && !clear) { panel(W / 2 - 110, H - 40, 220, 28, 14, 'rgba(122,26,99,.6)'); txt(c.boss, W / 2, H - 20, 17, '#fff'); }
@@ -1144,6 +1147,8 @@ function loop() {
   if (state === 'chapter' && t > 330) state = 'play';
   for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; }
   sparks = sparks.filter(p => p.l > 0);
+  for (const q of pops) { q.y -= .9; q.l--; }
+  pops = pops.filter(q => q.l > 0);
   if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; }
   if (sparks.length > (fx ? 300 : 100)) sparks.splice(0, sparks.length - (fx ? 300 : 100));
   if (mode === 'host' && net.open && ++net.ntk % 2 === 0) netSnap();

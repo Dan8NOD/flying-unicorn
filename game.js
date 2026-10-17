@@ -6,7 +6,7 @@ let Q = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) |
 cv.width = W * Q; cv.height = H * Q;
 
 // ---- generated art (Meshy). IMG[name] is set once the file has loaded ----
-const NCH = 24;   // number of chapters (keep in step with CHAPTERS below)
+const NCH = 27;   // number of chapters (keep in step with CHAPTERS below)
 const IMG = {};
 const ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike',
   ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm', 'butterfly', 'balloon'].map(k => 'foe_' + k),
@@ -52,6 +52,9 @@ const CHAPTERS = [
   { name: 'Tea Party Garden', line: "Pinkies up! The teacups are flying today.", sky: ['#ffe4ef', '#d8f3e4'], time: 58, rate: 22, boss: 'Teacup Saucer', hp: 132, pat: 1, bats: 0, spikes: 0, hull: '#ff8fbf' },
   { name: 'Ice Palace', line: "Everything sparkles, and the spikes are icy!", sky: ['#cfe9ff', '#f3e6ff'], time: 58, rate: 22, boss: 'Frost Saucer', hp: 136, pat: 2, bats: 0, spikes: 1, hull: '#7fc8ff', spike: '#bfeaff' },
   { name: 'Toy Workshop', line: "Wind-up toys everywhere. Who wound them all?", sky: ['#ffe0a8', '#ffb37a'], time: 58, rate: 21, boss: 'Toybox Saucer', hp: 140, pat: 0, bats: 1, spikes: 1, hull: '#ff6b6b', spike: '#ffd36b' },
+  { name: 'Lantern Festival', line: "A thousand lanterns light the river tonight.", sky: ['#3b2160', '#ff9a6b'], time: 58, rate: 21, boss: 'Lantern Saucer', hp: 142, pat: 1, bats: 1, spikes: 0, hull: '#e8283c' },
+  { name: 'Jungle Temple', line: "Vines, waterfalls and a secret temple!", sky: ['#bff0c8', '#3f9f6b'], time: 59, rate: 21, boss: 'Temple Saucer', hp: 146, pat: 2, bats: 1, spikes: 1, hull: '#d9a43a', spike: '#9be28f' },
+  { name: 'Desert Oasis', line: "Golden dunes and a cool blue oasis.", sky: ['#ffd9a0', '#ff8f6b'], time: 59, rate: 20, boss: 'Dune Saucer', hp: 150, pat: 0, bats: 0, spikes: 1, hull: '#ff9f43', spike: '#ffd7a0' },
   { name: 'Unicorn Castle', line: "Home at last. One more grumpy queen to cheer up.", sky: ['#ffd1f0', '#ffa8d8'], time: 56, rate: 24, boss: 'Queen of Sparkles', hp: 120, pat: 2, bats: 1, spikes: 1, hull: '#b8329e', spike: '#ffd36b', crown: 1 },
 ];
 const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b', '#18a999', '#5a5f7a'];
@@ -261,7 +264,8 @@ const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'gh
   ['butterfly', 'bee', 'bird'], ['bird', 'fish', 'butterfly', 'bug'], ['balloon', 'ghost', 'storm', 'bird'],
   ['bee', 'butterfly', 'pig', 'bird'], ['storm', 'bug', 'balloon', 'bird'], ['jelly', 'ghost', 'balloon', 'storm'],
   ['owl', 'bird', 'pig', 'butterfly'], ['bird', 'balloon', 'storm', 'bee'], ['ghost', 'bird', 'balloon', 'storm'],
-  ['butterfly', 'bee', 'pig', 'bird'], ['ghost', 'bird', 'storm', 'jelly'], ['balloon', 'bird', 'pig', 'bug'], ['pig', 'bird', 'storm', 'balloon']];
+  ['butterfly', 'bee', 'pig', 'bird'], ['ghost', 'bird', 'storm', 'jelly'], ['balloon', 'bird', 'pig', 'bug'],
+  ['butterfly', 'ghost', 'balloon', 'bird'], ['bird', 'bee', 'bug', 'owl'], ['bird', 'storm', 'bug', 'pig'], ['pig', 'bird', 'storm', 'balloon']];
 const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
 function applyPower(p, k) {
   if (k !== 'bomb') { p[k] = 480; sfx('power'); voice('vo_u_power'); score += 25; return; }
@@ -699,18 +703,18 @@ function mirrorScroll(im, sp, y, h) {
 function bgFx(i) {   // light particles over the painted backgrounds
   if (!fx) return;
   if (i === 2 || i === 3 || i === 10 || i === 13 || i === 16 || i === 19) twinkles(i === 16 ? 60 : 30, .05, i === 16 ? H : H * .5);
-  if (i === 15) for (let k = 0; k < 24; k++) { g.globalAlpha = .75; g.fillStyle = k % 3 ? '#ffb36b' : '#ff6fd0'; g.beginPath(); g.arc(sx(k, .8, 40) + Math.sin(t / 25 + k) * 10, H - ((k * 53 + t * (1 + k % 3 * .5)) % H), 2 + k % 2, 0, 7); g.fill(); g.globalAlpha = 1; }   // rising glitter embers
+  if (i === 15 || i === 23) for (let k = 0; k < 24; k++) { g.globalAlpha = .75; g.fillStyle = k % 3 ? '#ffb36b' : '#ff6fd0'; g.beginPath(); g.arc(sx(k, .8, 40) + Math.sin(t / 25 + k) * 10, H - ((k * 53 + t * (1 + k % 3 * .5)) % H), 2 + k % 2, 0, 7); g.fill(); g.globalAlpha = 1; }   // rising glitter embers
   if (i === 13 && t % 70 === 0) boom(150 + (t * 37) % (W - 300), 60 + (t * 13) % 140, RAINBOW[(t / 70 | 0) % 6], 24);   // carnival fireworks
   if (i === 12) { g.fillStyle = 'rgba(255,255,255,.55)'; for (let k = 0; k < 30; k++) { g.beginPath(); g.arc(sx(k, 1.4, 34), H - ((k * 71 + t * (2 + k % 3)) % 260), 1.5 + k % 3, 0, 7); g.fill(); } }   // waterfall spray
   if (i === 3 || i === 21) { g.fillStyle = '#fff'; g.globalAlpha = .75; for (let k = 0; k < 40; k++) { g.beginPath(); g.arc(sx(k, 1.2, 24) + Math.sin(t / 30 + k) * 10, (k * 61 + t * (1 + k % 3 * .4)) % H, 1.5 + k % 3, 0, 7); g.fill(); } g.globalAlpha = 1; }
   if (i === 1 || i === 5) for (let k = 0; k < 14; k++) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(sx(k, .6, 70) + Math.sin(t / 20 + k) * 6, ((k * 83 - t * (1 + k % 3)) % H + H) % H, 3 + k % 4 * 2, 0, 7); g.stroke(); }
-  if (i === 6 || i === 8 || i === 10) fireflies(22, i === 6 ? '#b8fff2' : '#fff7a0');
+  if (i === 6 || i === 8 || i === 10 || i === 24) fireflies(22, i === 6 ? '#b8fff2' : '#fff7a0');
   if (i === 7) { g.strokeStyle = 'rgba(180,190,230,.35)'; g.lineWidth = 1.5; g.beginPath(); for (let k = 0; k < 60; k++) { const x = (k * 53 + t * 9) % (W + 100) - 50, y = (k * 97 + t * 14) % (H + 40) - 20; g.moveTo(x, y); g.lineTo(x - 6, y + 16); } g.stroke(); if (t % 240 < 8) { g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(0, 0, W, H); } }
   if (i === 9 || i === 22) { const cols = ['#ff5fa8', '#ffb347', '#7ee8e0', '#b48cff']; for (let k = 0; k < 30; k++) { g.fillStyle = cols[k % 4]; g.fillRect(sx(k, .5, 32), (k * 47 + t * (1 + k % 3)) % H, 7, 3); } }
   if (i === 11 || i === 20) for (let k = 0; k < 26; k++) { const x = sx(k, .9, 40) + Math.sin(t / 30 + k) * 20, y = (k * 67 + t * (1 + k % 3 * .5)) % (H + 20) - 10; g.save(); g.translate(x, y); g.rotate(t / 30 + k); g.fillStyle = k % 3 ? '#ffc2dc' : '#fff0f6'; g.beginPath(); g.ellipse(0, 0, 5, 3, 0, 0, 7); g.fill(); g.restore(); }   // blossom petals
   if (i === 17) for (let k = 0; k < 22; k++) { const x = sx(k, 1, 44) + Math.sin(t / 25 + k) * 24, y = (k * 71 + t * (1 + k % 3 * .4)) % (H + 20) - 10; g.save(); g.translate(x, y); g.rotate(t / 20 + k); g.fillStyle = ['#e8743b', '#ffb347', '#c94f2d'][k % 3]; g.beginPath(); g.ellipse(0, 0, 7, 4, 0, 0, 7); g.fill(); g.restore(); }   // falling leaves
-  if (i === 23 || i === 0) for (let k = 0; k < 16; k++) { g.globalAlpha = .7; g.fillStyle = k % 2 ? '#ff8fc2' : '#fff'; g.beginPath(); g.arc(sx(k, .6, 60) + Math.sin(t / 50 + k) * 12, H - ((k * 61 + t * (.8 + k % 3 * .4)) % H), 2.5, 0, 7); g.fill(); g.globalAlpha = 1; }
-  if (i === 4 || i === 14) for (let k = 0; k < 18; k++) { g.globalAlpha = .5; g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(sx(k, 1.5, 50), H - 30 - (k * 37) % 200 + Math.sin(t / 20 + k) * 6, 2, 0, 7); g.fill(); g.globalAlpha = 1; }
+  if (i === 26 || i === 0) for (let k = 0; k < 16; k++) { g.globalAlpha = .7; g.fillStyle = k % 2 ? '#ff8fc2' : '#fff'; g.beginPath(); g.arc(sx(k, .6, 60) + Math.sin(t / 50 + k) * 12, H - ((k * 61 + t * (.8 + k % 3 * .4)) % H), 2.5, 0, 7); g.fill(); g.globalAlpha = 1; }
+  if (i === 4 || i === 14 || i === 25) for (let k = 0; k < 18; k++) { g.globalAlpha = .5; g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(sx(k, 1.5, 50), H - 30 - (k * 37) % 200 + Math.sin(t / 20 + k) * 6, 2, 0, 7); g.fill(); g.globalAlpha = 1; }
 }
 function drawBg(i) {
   const c = CHAPTERS[i];
@@ -722,7 +726,7 @@ function drawBg(i) {
     if (IMG['fg_' + i]) { const im = IMG['fg_' + i], fh = Math.min(150, W * im.height / im.width); mirrorScroll(im, 1.6, H - fh, fh); }
     bgFx(i); return;
   }
-  [candyClouds, mermaidBay, starryNight, auroraPeaks, rainbowCanyon, coralReef, crystalCaves, stormFortress, forest, candyland, lake, candyClouds, mermaidBay, starryNight, candyClouds, rainbowCanyon, starryNight, forest, candyClouds, starryNight, candyland, auroraPeaks, candyland, castle][i]();
+  [candyClouds, mermaidBay, starryNight, auroraPeaks, rainbowCanyon, coralReef, crystalCaves, stormFortress, forest, candyland, lake, candyClouds, mermaidBay, starryNight, candyClouds, rainbowCanyon, starryNight, forest, candyClouds, starryNight, candyland, auroraPeaks, candyland, starryNight, forest, rainbowCanyon, castle][i]();
 }
 // ---- scenery for chapters 1-8 (each a stack of parallax layers, slowest first) ----
 function cloud(x, y, s, a, shade) { g.globalAlpha = a; blob(x, y + 5 * s, s, shade || '#f3d3ee'); blob(x, y, s, '#ffffff'); g.globalAlpha = 1; }
@@ -1032,7 +1036,7 @@ function drawThing(o) {
   if (o.kind === 'cloud' && ch === 8) { g.fillStyle = '#2a5a2a'; g.beginPath(); g.arc(o.x, o.y, 22, 0, 7); g.fill(); g.strokeStyle = '#1a3a1a'; g.lineWidth = 4; for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(o.x + Math.cos(a * .785) * 18, o.y + Math.sin(a * .785) * 18); g.lineTo(o.x + Math.cos(a * .785) * 32, o.y + Math.sin(a * .785) * 32); g.stroke(); } }
   else if (o.kind === 'cloud' && ch === 9) { g.fillStyle = '#9a4fd1'; g.beginPath(); g.arc(o.x, o.y, 24, 0, 7); g.fill(); g.fillStyle = '#d9a8ff'; g.beginPath(); g.arc(o.x - 8, o.y - 8, 5, 0, 7); g.arc(o.x + 9, o.y + 6, 4, 0, 7); g.fill(); g.strokeStyle = '#2a0a3a'; g.lineWidth = 3; g.beginPath(); g.arc(o.x, o.y + 12, 8, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
   else if (o.kind === 'cloud') {   // grumpy rain cloud
-    const dark = [7, 10, 13, 15, 16, 19].includes(ch), top = dark ? '#6a6d8c' : ch === 23 ? '#d79ac8' : '#a9a3c4', bot = dark ? '#3a3c58' : ch === 23 ? '#a96a9e' : '#7d7699';
+    const dark = [7, 10, 13, 15, 16, 19, 23].includes(ch), top = dark ? '#6a6d8c' : ch === 26 ? '#d79ac8' : '#a9a3c4', bot = dark ? '#3a3c58' : ch === 26 ? '#a96a9e' : '#7d7699';
     g.strokeStyle = 'rgba(120,170,255,.6)'; g.lineWidth = 2; for (let r = 0; r < 4; r++) { const ry = (t * 2 + r * 9) % 24; g.beginPath(); g.moveTo(o.x - 15 + r * 10, o.y + 18 + ry); g.lineTo(o.x - 17 + r * 10, o.y + 24 + ry); g.stroke(); }
     blob(o.x, o.y + 3, 1.05, bot); blob(o.x, o.y - 1, 1, top);
     g.fillStyle = 'rgba(255,255,255,.3)'; g.beginPath(); g.ellipse(o.x - 6, o.y - 16, 12, 5, 0, 0, 7); g.fill();
@@ -1120,6 +1124,9 @@ const TALK = [
   ['A tea party in the sky? How fancy!', 'Pinkies up! And dodge the flying cups!'],
   ['Everything sparkles like diamonds!', 'Brrr! Keep flying to stay warm!'],
   ["Giant toys! It's like a dream!", 'Watch out, the toys are wound up!'],
+  ['So many lanterns! Make a wish!', 'I wished for us to get home safe!'],
+  ['A secret jungle temple!', "Maybe there's treasure inside!"],
+  ['Hot sand and cool water!', 'Fly fast, the sand is ticklish!'],
   ["We're almost home!", 'One last grumpy queen to cheer up!'],
 ];
 function wrapText(s, maxW) { const out = []; let line = ''; for (const w of s.split(' ')) { const tt = line ? line + ' ' + w : w; if (g.measureText(tt).width > maxW && line) { out.push(line); line = w; } else line = tt; } out.push(line); return out; }
@@ -1183,8 +1190,8 @@ function drawEnding() {
   const gr = g.createLinearGradient(0, 0, 0, H);
   gr.addColorStop(0, `rgb(${40 + 215 * k | 0},${20 + 170 * k | 0},${100 + 130 * k | 0})`); gr.addColorStop(1, `rgb(255,${130 + 90 * k | 0},${170 + 40 * k | 0})`);
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
-  if (IMG.bg_23) {   // painted castle at dawn: starts dark, brightens as the sun rises
-    g.drawImage(IMG.bg_23, 0, 0, W, H);
+  if (IMG.bg_26) {   // painted castle at dawn: starts dark, brightens as the sun rises
+    g.drawImage(IMG.bg_26, 0, 0, W, H);
     g.fillStyle = `rgba(40,20,90,${.6 * (1 - k)})`; g.fillRect(0, 0, W, H);
     if (k < 1) twinkles(40, .05, H * .5);
     endingActors(e); return;

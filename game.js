@@ -99,12 +99,45 @@ function hurt() {
 function boom(x, y, col, n = 12) { for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
 
+// Shootable enemies. Hit them with pony dust for points (and sometimes a ring or heart); touching them hurts.
+const FOE = {
+  pig:   { hp: 4, r: 30, vx: -2,   pts: 60 },   // chunky flying pig
+  bird:  { hp: 1, r: 18, vx: -6,   pts: 20 },   // swooping angry bird
+  jelly: { hp: 2, r: 22, vx: -2.5, pts: 30 },
+  fish:  { hp: 3, r: 26, vx: -3.5, pts: 40 },   // puffer fish
+  owl:   { hp: 2, r: 24, vx: -4,   pts: 35 },   // homes in on the unicorn
+  ghost: { hp: 2, r: 22, vx: -3,   pts: 35 },
+  bug:   { hp: 2, r: 20, vx: -3.5, pts: 30 },   // crawls along the floor or ceiling
+  bee:   { hp: 1, r: 14, vx: -5,   pts: 20 },   // zig-zags
+  storm: { hp: 3, r: 32, vx: -2,   pts: 50 },   // thundercloud that throws lightning
+};
+const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'ghost'], ['bird', 'bee', 'pig'], ['fish', 'jelly'],
+  ['bug', 'ghost'], ['storm', 'bird'], ['owl', 'bee', 'pig'], ['pig', 'bee', 'bird'], ['bird', 'owl', 'ghost'], ['pig', 'bird', 'storm']];
+function moveFoe(o) {
+  const k = o.kind;
+  if (k === 'pig') o.y = o.y0 + Math.sin(t / 30 + o.ph) * 30;
+  else if (k === 'bird') o.y = o.y0 + Math.sin(t / 10 + o.ph) * 40;
+  else if (k === 'jelly') o.y = o.y0 + Math.sin(t / 25 + o.ph) * 80;
+  else if (k === 'fish') o.y = o.y0 + Math.sin(t / 18 + o.ph) * 20;
+  else if (k === 'owl') { if (o.x > 350) o.y += Math.max(-1.6, Math.min(1.6, uni.y - o.y)); }
+  else if (k === 'ghost') o.y = o.y0 + Math.sin(t / 20 + o.ph) * 50;
+  else if (k === 'bee') o.y = o.y0 + Math.sin(t / 6 + o.ph) * 50;
+  else if (k === 'storm' && o.x < W - 60 && o.x > 200 && ++o.cd % 90 === 0) {
+    const a = Math.atan2(uni.y - o.y, uni.x - o.x); bolts.push({ x: o.x, y: o.y + 20, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5 });
+  }
+  o.y = Math.max(25, Math.min(H - 25, o.y));
+}
 function spawn() {
   const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + ch * .6 + Math.random() * 2);
   let kind = r < .45 ? 'ring' : r < .6 ? 'heart' : r < .65 ? 'star' : 'cloud';
   if (kind === 'cloud' && c.bats && Math.random() < .4) kind = 'bat';
   if (kind === 'cloud' && c.spikes && Math.random() < .5) kind = 'spike';
   if (kind === 'heart' && lives >= 5) kind = 'ring';
+  if (kind === 'cloud' && Math.random() < .55) {   // swap hazard for a shootable enemy
+    const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : y;
+    things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: f.vx - ch * .1, r: f.r, top, cd: 60, hit: 0 });
+    return;
+  }
   if (kind === 'spike') { const top = Math.random() < .5; things.push({ kind, x: W + 30, y: top ? 20 : H - 20, top, vx, r: 34 }); return; }
   things.push({ kind, x: W + 30, y, y0: y, ph: Math.random() * 6, vx: kind === 'bat' ? vx - 1 : vx, r: kind === 'cloud' ? 28 : kind === 'bat' ? 20 : 16 });
 }
@@ -144,6 +177,7 @@ function update() {
 
   for (const o of things) {
     o.x += o.vx;
+    if (o.foe) { moveFoe(o); if (o.hit > 0) o.hit--; if (hit(o, uni, o.r + 20)) hurt(); if (o.x < -60) o.dead = true; continue; }
     if (o.kind === 'bat') o.y = o.y0 + Math.sin(t / 15 + o.ph) * 70;
     const d = o.kind === 'spike' ? Math.hypot(o.x - uni.x, (o.top ? o.y + 40 : o.y - 40) - uni.y) : Math.hypot(o.x - uni.x, o.y - uni.y);
     if (d < o.r + 22) {
@@ -160,6 +194,17 @@ function update() {
 
   for (const s of shots) {
     s.x += s.vx;
+    for (const o of things) {
+      if (!o.foe || o.dead || !hit(s, o, o.r + 8)) continue;
+      s.dead = true; o.hp--; o.hit = 6; beep(500, .05);
+      if (o.hp <= 0) {
+        o.dead = true; score += FOE[o.kind].pts; boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); beep(700, .12, 'triangle');
+        const heart = o.kind === 'pig' && lives < 5 && Math.random() < .4;
+        if (heart || Math.random() < .35) things.push({ kind: heart ? 'heart' : 'ring', x: o.x, y: o.y, y0: o.y, ph: 0, vx: -3, r: 16 });
+      }
+      break;
+    }
+    if (s.dead) continue;
     if (t % 2 === 0) sparks.push({ x: s.x, y: s.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + s.x) % 360},90%,75%)` });
     if (boss && hit(s, boss, 60)) {
       s.dead = true; boss.hp--; score += 5; boom(s.x, s.y, '#ff00cc', 6); beep(300, .05);
@@ -360,7 +405,69 @@ function drawBg(i) {
     if (t % 240 < 6) { g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(0, 0, W, H); }
   }
 }
+function drawFoe(o) {
+  g.save(); g.translate(o.x, o.y);
+  const h = o.hit > 0, C = c => h ? '#fff' : c, fl = Math.sin(t / 3 + o.ph) * 10, k = o.kind;
+  g.lineWidth = 3; g.lineCap = 'round';
+  if (k === 'pig') {
+    g.fillStyle = '#fff'; g.beginPath(); g.ellipse(4, -24 - fl * .6, 15, 7 + Math.abs(fl) * .4, -.4, 0, 7); g.fill();   // tiny wing
+    g.fillStyle = C('#ff9ec4'); g.beginPath(); g.ellipse(0, 0, 32, 25, 0, 0, 7); g.fill();                              // chunky body
+    g.fillStyle = C('#ff7fb0'); g.beginPath(); g.moveTo(-14, -20); g.lineTo(-24, -34); g.lineTo(-4, -24); g.fill();
+    g.fillStyle = C('#ffc2da'); g.beginPath(); g.ellipse(-30, 4, 10, 9, 0, 0, 7); g.fill();                             // snout
+    g.fillStyle = '#b8456f'; g.fillRect(-34, 2, 3, 5); g.fillRect(-27, 2, 3, 5); g.fillRect(-14, 22, 8, 6); g.fillRect(8, 22, 8, 6);
+    g.fillStyle = 'rgba(255,90,140,.5)'; g.beginPath(); g.arc(-8, 6, 6, 0, 7); g.fill();
+    g.fillStyle = '#222'; g.beginPath(); g.arc(-16, -6, 3, 0, 7); g.fill();
+    g.strokeStyle = '#222'; g.beginPath(); g.moveTo(-23, -13); g.lineTo(-11, -9); g.stroke();                          // grumpy brow
+    g.strokeStyle = C('#ff7fb0'); g.beginPath(); g.arc(34, -2, 5, 0, 5); g.stroke();                                    // curly tail
+  } else if (k === 'bird') {
+    g.fillStyle = C('#ff5a5a'); g.beginPath(); g.ellipse(0, 0, 18, 14, 0, 0, 7); g.fill();
+    g.fillStyle = C('#ff8a8a'); g.beginPath(); g.ellipse(4, -2 - fl * .4, 12, 6 + Math.abs(fl) * .6, .4, 0, 7); g.fill();  // flapping wing
+    g.fillStyle = '#ffc400'; g.beginPath(); g.moveTo(-17, -2); g.lineTo(-30, 3); g.lineTo(-17, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(-8, -4, 4, 0, 7); g.fill(); g.fillStyle = '#222'; g.beginPath(); g.arc(-9, -4, 2, 0, 7); g.fill();
+    g.strokeStyle = '#222'; g.beginPath(); g.moveTo(-14, -11); g.lineTo(-4, -7); g.stroke();
+  } else if (k === 'jelly') {
+    g.fillStyle = C('rgba(190,120,255,.85)'); g.beginPath(); g.ellipse(0, 0, 22, 18, 0, Math.PI, 0); g.fill();
+    g.strokeStyle = C('rgba(190,120,255,.85)'); for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 8, 0); g.quadraticCurveTo(i * 8 + Math.sin(t / 8 + i) * 8, 14, i * 8, 28); g.stroke(); }
+    g.fillStyle = '#222'; g.beginPath(); g.arc(-7, -6, 2.5, 0, 7); g.arc(7, -6, 2.5, 0, 7); g.fill();
+  } else if (k === 'fish') {
+    g.fillStyle = C('#ffb23c'); g.beginPath(); g.arc(0, 0, 26, 0, 7); g.fill();
+    g.fillStyle = C('#ff8a2b'); g.beginPath(); g.moveTo(24, 0); g.lineTo(38, -12 + fl * .5); g.lineTo(38, 12 - fl * .5); g.fill();
+    g.strokeStyle = C('#ff8a2b'); for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(Math.cos(a * .785) * 24, Math.sin(a * .785) * 24); g.lineTo(Math.cos(a * .785) * 33, Math.sin(a * .785) * 33); g.stroke(); }
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(-12, -6, 5, 0, 7); g.fill(); g.fillStyle = '#222'; g.beginPath(); g.arc(-13, -6, 2.5, 0, 7); g.fill();
+    g.beginPath(); g.arc(-18, 8, 5, Math.PI, 0); g.strokeStyle = '#222'; g.stroke();
+  } else if (k === 'owl') {
+    g.fillStyle = C('#9a6b3f'); g.beginPath(); g.ellipse(0, 0, 20, 24, 0, 0, 7); g.fill();
+    g.beginPath(); g.moveTo(-16, -18); g.lineTo(-14, -32); g.lineTo(-5, -22); g.moveTo(16, -18); g.lineTo(14, -32); g.lineTo(5, -22); g.fill();
+    g.fillStyle = C('#c9955f'); g.beginPath(); g.ellipse(-4 + fl * .3, 6, 14, 8 + Math.abs(fl) * .5, .3, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(-8, -8, 7, 0, 7); g.arc(8, -8, 7, 0, 7); g.fill();
+    g.fillStyle = '#222'; g.beginPath(); g.arc(-9, -8, 3, 0, 7); g.arc(7, -8, 3, 0, 7); g.fill();
+    g.fillStyle = '#ffc400'; g.beginPath(); g.moveTo(-3, -2); g.lineTo(3, -2); g.lineTo(0, 5); g.fill();
+  } else if (k === 'ghost') {
+    g.globalAlpha = .65 + .25 * Math.sin(t / 10 + o.ph); g.fillStyle = C('#eef'); g.beginPath(); g.arc(0, -4, 22, Math.PI, 0);
+    for (let i = 0; i < 4; i++) g.lineTo(22 - i * 14.7, 22 + (i % 2 ? 0 : 7) + Math.sin(t / 6 + i) * 3);
+    g.closePath(); g.fill(); g.globalAlpha = 1;
+    g.fillStyle = '#334'; g.beginPath(); g.ellipse(-8, -6, 3, 5, 0, 0, 7); g.ellipse(8, -6, 3, 5, 0, 0, 7); g.ellipse(0, 8, 4, 5, 0, 0, 7); g.fill();
+  } else if (k === 'bug') {
+    if (!o.top) g.scale(1, -1);
+    g.fillStyle = C('#57e0d0'); g.beginPath(); g.ellipse(0, 0, 22, 14, 0, Math.PI, 0); g.fill();
+    g.strokeStyle = C('#2aa595'); g.beginPath(); g.moveTo(0, -14); g.lineTo(0, 0); g.stroke();
+    for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(i * 10, 0); g.lineTo(i * 10 + Math.sin(t / 3 + i) * 5, 12); g.stroke(); }
+    g.fillStyle = '#222'; g.beginPath(); g.arc(-16, -3, 2.5, 0, 7); g.fill();
+  } else if (k === 'bee') {
+    g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.ellipse(-2, -12 - fl * .4, 8, 5 + Math.abs(fl) * .3, 0, 0, 7); g.ellipse(6, -12 + fl * .4, 8, 5 + Math.abs(fl) * .3, 0, 0, 7); g.fill();
+    g.fillStyle = C('#ffd93c'); g.beginPath(); g.ellipse(0, 0, 15, 10, 0, 0, 7); g.fill();
+    g.fillStyle = h ? '#fff' : '#222'; g.fillRect(-2, -10, 4, 20); g.fillRect(6, -9, 4, 18);
+    g.beginPath(); g.arc(-12, -2, 2, 0, 7); g.fill();
+  } else if (k === 'storm') {
+    blob(0, 0, 1.2, h ? '#fff' : '#3b3d55');
+    g.fillStyle = '#ffe84d'; g.beginPath(); g.moveTo(-2, 14); g.lineTo(8, 14); g.lineTo(0, 28); g.lineTo(10, 28); g.lineTo(-8, 48); g.lineTo(-2, 32); g.lineTo(-8, 32); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(-10, -4, 5, 0, 7); g.arc(10, -4, 5, 0, 7); g.fill();
+    g.strokeStyle = '#222'; g.beginPath(); g.moveTo(-17, -12); g.lineTo(-6, -7); g.moveTo(17, -12); g.lineTo(6, -7); g.stroke();
+  }
+  g.restore();
+}
 function drawThing(o) {
+  if (o.foe) return drawFoe(o);
   if (o.kind === 'cloud' && ch === 8) { g.fillStyle = '#2a5a2a'; g.beginPath(); g.arc(o.x, o.y, 22, 0, 7); g.fill(); g.strokeStyle = '#1a3a1a'; g.lineWidth = 4; for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(o.x + Math.cos(a * .785) * 18, o.y + Math.sin(a * .785) * 18); g.lineTo(o.x + Math.cos(a * .785) * 32, o.y + Math.sin(a * .785) * 32); g.stroke(); } }
   else if (o.kind === 'cloud' && ch === 9) { g.fillStyle = '#9a4fd1'; g.beginPath(); g.arc(o.x, o.y, 24, 0, 7); g.fill(); g.fillStyle = '#d9a8ff'; g.beginPath(); g.arc(o.x - 8, o.y - 8, 5, 0, 7); g.arc(o.x + 9, o.y + 6, 4, 0, 7); g.fill(); g.strokeStyle = '#2a0a3a'; g.lineWidth = 3; g.beginPath(); g.arc(o.x, o.y + 12, 8, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
   else if (o.kind === 'cloud') blob(o.x, o.y, 1, ch === 7 ? '#34344a' : ch === 10 ? '#1c2452' : ch === 11 ? '#b77ab0' : '#8a7a9c');

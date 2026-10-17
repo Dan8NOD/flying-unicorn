@@ -19,8 +19,8 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 8. **Feel**: screen shake, hit flashes, combo effects, boss intro animation, a satisfying boss death.
 
 ## Engineering backlog (mechanical)
-- (done) Power-ups, chapter picker with saved progress, easy mode. Still open: save the mute setting; tune power-up spawn rate and easy-mode numbers by playing.
-- A tiny automated test: a headless script that runs `game.js` with a fake canvas for a full playthrough (see git history of this note's author, or recreate with `osascript -l JavaScript`).
+- (done) Power-ups, chapter picker with saved progress, easy mode. Mute is saved too. Still open: tune power-up spawn rate and easy-mode numbers by playing.
+- (done) Automated smoke tests: `osascript -l JavaScript tools/test.js` (or `node tools/test.js`). Run them after every change.
 - Optional: online play with a tiny relay server instead of copy/paste codes.
 
 ## Putting it on the Google Play store (do this on the iMac or the external drive, not the small SSD)

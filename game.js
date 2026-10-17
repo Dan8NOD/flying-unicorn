@@ -30,15 +30,16 @@ const maxLives = () => players.length > 1 ? 7 : 5;
 const nearest = o => players.reduce((a, b) => Math.hypot(a.x - o.x, a.y - o.y) <= Math.hypot(b.x - o.x, b.y - o.y) ? a : b);
 const mer = { x: 80, y: H / 2, cd: 0 };   // computer-controlled mermaid in 1-player games
 const keys = {};
-try { best = +localStorage.getItem('pinkUnicornBest') || 0; reached = Math.min(CHAPTERS.length - 1, +localStorage.getItem('pinkUnicornReached') || 0); easy = localStorage.getItem('pinkUnicornEasy') === '1'; } catch (e) {}
+try { best = +localStorage.getItem('pinkUnicornBest') || 0; reached = Math.min(CHAPTERS.length - 1, +localStorage.getItem('pinkUnicornReached') || 0); easy = localStorage.getItem('pinkUnicornEasy') === '1'; muted = localStorage.getItem('pinkUnicornMute') === '1'; } catch (e) {}
 startCh = Math.min(startCh, reached);
 function saveOpt(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function toggleMute() { muted = !muted; saveOpt('pinkUnicornMute', muted ? 1 : 0); }
 
 // ---- input ----
 addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;   // typing in the lobby
   keys[e.key] = true;
-  if (e.key === 'm') muted = !muted;
+  if (e.key === 'm') toggleMute();
   if (state === 'title' && !trans) {
     if (e.key === 'ArrowUp') sel = (sel + 2) % 3;
     if (e.key === 'ArrowDown') sel = (sel + 1) % 3;
@@ -71,7 +72,7 @@ cv.addEventListener('pointerdown', e => {
     MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
-    if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { muted = !muted; return; }
+    if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { toggleMute(); return; }
   }
   press();
 });

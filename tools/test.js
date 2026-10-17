@@ -7,7 +7,7 @@ function readFile(p) {
   if (isNode) return require('fs').readFileSync(p, 'utf8');
   ObjC.import('Foundation'); return $.NSString.stringWithContentsOfFileEncodingError(p, 4, null).js;
 }
-const src = readFile('game.js');
+const src = readFile('audio.js') + '\n' + readFile('game.js');
 
 function makeGame(testBody) {
   const ctx = new Proxy({}, { get: (o, p) => p === 'createLinearGradient' ? () => ({ addColorStop() {} }) : (o[p] !== undefined ? o[p] : () => {}), set: (o, p, v) => { o[p] = v; return true; } });
@@ -57,6 +57,13 @@ const tests = {
     const sent = []; net.sendR = x => sent.push(x); press();
     mode = 'host'; net.role = 'host'; net.remoteTy = 400; state = 'play'; p2.y = 200; p2.ty = 200; step(60);
     return [same, sent[0] === '{"p":1}', Math.round(p2.y) === 400];`, 3],
+  'music: every song builds with valid notes': [`
+    const out = [];
+    for (const k of ['title', 'ending', ...CHAPTERS.map((_, i) => i)]) for (const b of [false, true]) {
+      const sg = makeSong(k, 5, b), notes = sg.at.flat();
+      out.push(notes.length > 50 && notes.every(e => e[1] === 'kick' || e[1] === 'hat' || e[1] === 'snare' || (isFinite(e[2]) && e[2] > 20 && e[2] < 110)));
+    }
+    return [out.every(x => x), out.length === (CHAPTERS.length + 2) * 2];`, 2],
 };
 
 let failed = 0;

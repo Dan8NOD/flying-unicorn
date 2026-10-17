@@ -20,6 +20,7 @@ function run(argv) {
   wv.evaluateJavaScriptCompletionHandler(code, (r, e) => { if (e && !e.isNil()) err = e.userInfo.js ? JSON.stringify(ObjC.deepUnwrap(e.userInfo)).slice(0, 400) : e.localizedDescription.js; else data = ObjC.unwrap(r); });
   spin(wait);
   if (err) return 'JS error: ' + err;
+  if (wv.title.js && wv.title.js !== 'Pink Unicorn') return 'title: ' + wv.title.js;
   if (!data) return 'no image';
   const d = $.NSData.alloc.initWithBase64EncodedStringOptions(data.split(',')[1], 0);
   const saved = d.writeToFileAtomically(out, true);

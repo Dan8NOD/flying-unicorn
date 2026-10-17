@@ -41,8 +41,8 @@ addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
   if (state === 'title' && !trans) {
-    if (e.key === 'ArrowUp') sel = (sel + 2) % 3;
-    if (e.key === 'ArrowDown') sel = (sel + 1) % 3;
+    if (e.key === 'ArrowUp') { sel = (sel + 2) % 3; audio(); sfx('click'); }
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % 3; audio(); sfx('click'); }
     if (e.key === 'ArrowLeft') startCh = Math.max(0, startCh - 1);
     if (e.key === 'ArrowRight') startCh = Math.min(reached, startCh + 1);
     if (e.key === 'e') { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); }
@@ -114,7 +114,7 @@ function applySnap(m) {
   things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7] }));
   shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2], vy: a[3] }));
   bolts = m.bo.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3] }));
-  for (const e of m.ev) { if (e[0] === 's') beep(e[1], e[2], e[3], e[4]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
+  for (const e of m.ev) { if (e[0] === 'x') sfx(e[1], e[2]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
 }
 function guestTick() {   // between snapshots: keep things moving smoothly and steer the mermaid
   t++;
@@ -159,29 +159,7 @@ function pollPads() {
   });
 }
 
-// ---- sound (WebAudio blips, created lazily so iOS lets it play) ----
-let ac;
-function audio() { if (!ac) try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} if (ac && ac.state === 'suspended') ac.resume(); }
-function beep(f, d = 0.1, type = 'square', v = 0.05) {
-  netEv(['s', f, d, type, v]);
-  if (muted || !ac) return;
-  const o = ac.createOscillator(), a = ac.createGain();
-  o.type = type; o.frequency.value = f; a.gain.value = v;
-  a.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d);
-  o.connect(a); a.connect(ac.destination); o.start(); o.stop(ac.currentTime + d);
-}
-function jingle(notes) { notes.forEach((f, i) => setTimeout(() => beep(f, .25, 'triangle', .06), i * 140)); }
-
-// Tiny arpeggio music: root note per chapter, faster and higher during boss fights.
-const ROOTS = [262, 294, 220, 311, 330, 278, 247, 196, 349, 233, 277, 392], SCALE = [0, 4, 7, 12, 7, 4, 9, 5];
-function music() {
-  mt++;
-  const step = boss && !clear ? 8 : 12;
-  if (mt % step) return;
-  const i = (mt / step) | 0, f = ROOTS[ch] * Math.pow(2, SCALE[i % 8] / 12) * (boss ? 1 : .5);
-  beep(f, .22, 'triangle', .025);
-  if (i % 8 === 0) beep(ROOTS[ch] / 4, .5, 'sine', .04);
-}
+// Sound effects and music live in audio.js (audio(), sfx(name), music()).
 
 // ---- game flow ----
 // A rainbow curtain sweeps across; fn runs when the screen is fully covered.
@@ -195,15 +173,15 @@ function start(c, fresh) {
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); }
     if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
     combo = 0; state = 'chapter'; ending = 0;
-    jingle([523, 659, 784]);
+    sfx('start');
   }, `Chapter ${c + 1} · ${CHAPTERS[c].name}`);
 }
 function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; }, 'Pink Unicorn'); }
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
 function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0) return;
-  lives--; combo = 0; p.flash = 90; shake = 12; beep(120, 0.4, 'sawtooth');
-  if (lives <= 0) { state = 'over'; saveBest(); }
+  lives--; combo = 0; p.flash = 90; shake = 12; sfx('hurt');
+  if (lives <= 0) { state = 'over'; saveBest(); sfx('over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
@@ -224,10 +202,10 @@ const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'gh
   ['bug', 'ghost'], ['storm', 'bird'], ['owl', 'bee', 'pig'], ['pig', 'bee', 'bird'], ['bird', 'owl', 'ghost'], ['pig', 'bird', 'storm']];
 const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
 function applyPower(p, k) {
-  if (k !== 'bomb') { p[k] = 480; jingle([660, 880]); score += 25; return; }
+  if (k !== 'bomb') { p[k] = 480; sfx('power'); score += 25; return; }
   for (const o of things) if (o.foe || o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'spike') { o.dead = true; score += o.foe ? FOE[o.kind].pts : 10; boom(o.x, o.y, '#ffb347', 10); }
   bolts = []; shake = 20; if (boss && !clear) boss.hp = Math.max(1, boss.hp - 6);
-  beep(90, .5, 'sawtooth', .08); jingle([392, 330, 262]);
+  sfx('bomb');
 }
 function moveFoe(o) {
   const k = o.kind;
@@ -272,7 +250,6 @@ function update() {
   for (const p of players) for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet']) if (p[k] > 0) p[k]--;
   if (shake > 0) shake--;
   if (warn > 0) warn--;
-  music();
   const sp = 7;
   const two = mode === 'local';   // keyboard: arrows = player 1, W/S = player 2 (in 1-player games both steer player 1)
   if (keys.ArrowUp || (!two && keys.w)) uni.ty = uni.y - 40;
@@ -290,7 +267,7 @@ function update() {
     if (t % gap === (star ? 0 : 8 % gap)) {
       const x = star ? p.x + 40 : p.x + 26, y = star ? p.y - 64 : p.y - 22;
       for (const vy of p.triple > 0 ? [-2.2, 0, 2.2] : [0]) shots.push({ x, y, vx: star ? 12 : 10, vy, m: star ? 0 : 1 });
-      if (star) { boom(x, y, '#fff', 4); beep(880, .05, 'triangle', .03); }
+      if (star) { boom(x, y, '#fff', 4); sfx('shot'); } else sfx('bubble');
     }
   }
   if (players.length === 1 && boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, vy: 0, m: 1 });
@@ -298,7 +275,7 @@ function update() {
   if (!boss && !clear && t > CHAPTERS[ch].time * 60) {
     const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1) * (easy ? .7 : 1));
     boss = { x: W + 100, y: H / 2, hp: bhp, max: bhp };
-    things = []; warn = 120; beep(200, .6, 'sawtooth');
+    things = []; warn = 120; sfx('warn'); sfx('boss');
   }
   if (!boss && !clear && t % CHAPTERS[ch].rate === 0) spawn();
 
@@ -313,10 +290,10 @@ function update() {
     if (pp) {
       if (o.kind === 'spike') { hurt(pp); continue; }
       o.dead = true;
-      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); beep(660 + combo * 40, .1); boom(o.x, o.y, '#ffc400'); }
-      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); beep(990, .2, 'sine'); boom(o.x, o.y, '#ff4d8d'); }
+      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); boom(o.x, o.y, '#ffc400'); }
+      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); boom(o.x, o.y, '#ff4d8d'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
-      else if (o.kind === 'star') { pp.shield = 360; score += 50; jingle([784, 988, 1175]); boom(o.x, o.y, '#fff', 20); }
+      else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
     }
     if (o.x < -60) { o.dead = true; if (o.kind === 'ring') combo = 0; }
@@ -327,9 +304,9 @@ function update() {
     s.x += s.vx; s.y += s.vy || 0;
     for (const o of things) {
       if (!o.foe || o.dead || !hit(s, o, o.r + 8)) continue;
-      s.dead = true; o.hp--; o.hit = 6; beep(500, .05);
+      s.dead = true; o.hp--; o.hit = 6; sfx('pop');
       if (o.hp <= 0) {
-        o.dead = true; score += FOE[o.kind].pts; boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); beep(700, .12, 'triangle');
+        o.dead = true; score += FOE[o.kind].pts; boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
         const heart = o.kind === 'pig' && lives < maxLives() && Math.random() < .4;
         if (heart || Math.random() < .35) things.push({ kind: heart ? 'heart' : 'ring', x: o.x, y: o.y, y0: o.y, ph: 0, vx: -3, r: 16 });
       }
@@ -338,11 +315,11 @@ function update() {
     if (s.dead) continue;
     if (t % 2 === 0) sparks.push({ x: s.x, y: s.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + s.x) % 360},90%,75%)` });
     if (boss && hit(s, boss, 60)) {
-      s.dead = true; boss.hp--; boss.hit = 4; score += 5; boom(s.x, s.y, '#ff00cc', 6); beep(300, .05);
+      s.dead = true; boss.hp--; boss.hit = 4; score += 5; boom(s.x, s.y, '#ff00cc', 6); sfx('bossHit');
       if (boss.hp <= 0) {
         score += 200 + lives * 50; shake = 40; clear = 1;
         for (let i = 0; i < 6; i++) setTimeout(() => boom(boss ? boss.x + (Math.random() - .5) * 120 : 0, boss ? boss.y + (Math.random() - .5) * 60 : 0, '#ff00cc', 20), i * 150);
-        jingle([523, 659, 784, 1047]);
+        sfx('win');
         saveBest(); bolts = [];
       }
     }
@@ -1075,6 +1052,7 @@ function draw() {
 
 function loop() {
   pollPads();
+  music();
   if (mode === 'guest') { guestTick(); return; }
   if (state === 'play') { if (!paused) update(); }
   else { t++; if (state === 'ending') ending++; }

@@ -16,6 +16,7 @@ function run(argv) {
   wv.loadFileURLAllowingReadAccessToURL(url, $.NSURL.fileURLWithPath(cwd));
   const spin = s => { const until = $.NSDate.dateWithTimeIntervalSinceNow(s); while (until.timeIntervalSinceNow > 0) $.NSRunLoop.currentRunLoop.runModeBeforeDate($.NSDefaultRunLoopMode, $.NSDate.dateWithTimeIntervalSinceNow(0.05)); };
   spin(1.5);
+  wv.evaluateJavaScriptCompletionHandler('typeof loadAllArt === "function" && loadAllArt()', () => {}); spin(2);   // screenshots may show any chapter
   // Run the caller's setup, step the game by hand (offscreen views don't get animation frames), draw, export the canvas.
   const code = '(function(){ ' + js + '; draw(); return (window.__shot || document.getElementById("c")).toDataURL("image/png"); })()';
   let data = null, err = '';

@@ -8,16 +8,33 @@ cv.width = W * Q; cv.height = H * Q;
 // ---- generated art (Meshy). IMG[name] is set once the file has loaded ----
 const NCH = 27;   // number of chapters (keep in step with CHAPTERS below)
 const IMG = {};
-const ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike',
+// Shared sprites stay loaded. Each chapter's backdrop, foreground, boss and fly-by sprites are loaded when the
+// chapter starts (plus the next chapter's) and released afterwards, which keeps image memory low on 4 GB phones.
+const CORE_ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike', 'happy_0', 'happy_1', 'happy_9',
   ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm', 'butterfly', 'balloon'].map(k => 'foe_' + k),
-  ...['ring', 'heart', 'star', 'rapid', 'triple', 'magnet', 'bomb'].map(k => 'pick_' + k),
-  ...Array.from({ length: NCH }, (_, i) => 'boss_' + i), 'happy_0', 'happy_1', 'happy_9',
-  ...['whale', 'comet', 'fairy', 'koi', 'dragon', 'airship', 'phoenix', 'train'].map(k => 'fx_' + k)];
-if (typeof Image !== 'undefined') {
-  for (const n of ART) { const im = new Image(); im.onload = () => { IMG[n] = im; }; im.src = 'assets/img/' + n + '.png'; }
-  for (let i = 0; i < NCH; i++) { const im = new Image(); im.onload = () => { IMG['bg_' + i] = im; }; im.src = 'assets/img/bg_' + i + '.jpg';
-    const fg = new Image(); fg.onload = () => { IMG['fg_' + i] = fg; }; fg.src = 'assets/img/fg_' + i + '.png'; }
+  ...['ring', 'heart', 'star', 'rapid', 'triple', 'magnet', 'bomb'].map(k => 'pick_' + k)];
+const loadedArt = {};
+function loadArt(n) {
+  if (loadedArt[n] || typeof Image === 'undefined') return;
+  const im = new Image(); loadedArt[n] = im; im.onload = () => { if (loadedArt[n] === im) IMG[n] = im; };
+  im.src = 'assets/img/' + n + (n.startsWith('bg_') ? '.jpg' : '.png');
 }
+function dropArt(n) { const im = loadedArt[n]; if (!im) return; delete loadedArt[n]; delete IMG[n]; im.onload = null; im.src = ''; }
+function chapterArt(c) {
+  if (c < 0 || c >= NCH) return [];
+  const list = ['bg_' + c, 'fg_' + c, 'boss_' + c];
+  if (typeof STAGES !== 'undefined' && STAGES[c]) for (const e of STAGES[c].ev) if (e[1] === 'flyby') list.push(e[2]);
+  return list;
+}
+let artCh = -1;
+function useChapterArt(c) {
+  if (c === artCh) return; artCh = c;
+  const keep = new Set([...chapterArt(c), ...chapterArt(c + 1), 'bg_0', 'fg_0', 'bg_' + (NCH - 1)]);   // title + ending backdrops always
+  for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
+  for (const n of keep) loadArt(n);
+}
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); }   // tools/screenshots only
+CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
 function spr(n, x, y, h, flipX, flipY) {
   const im = IMG[n]; if (!im) return false;
@@ -164,7 +181,7 @@ function netSnap() {
     sh: shots.map(q => [rd(q.x), rd(q.y), q.m ? 1 : 0, rd(q.vy || 0)]), bo: bolts.map(b => [rd(b.x), rd(b.y), rd(b.vx), rd(b.vy)]), ev: net.ev.splice(0) }));
 }
 function applySnap(m) {
-  state = m.st; ch = m.ch; t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
+  state = m.st; ch = m.ch; useChapterArt(ch); t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
   trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
   if (m.rs) [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars] = m.rs;
   uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, uni.tilt, uni.dash] = m.u.slice(2); uni.fp = t / 5 * 1.3; [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
@@ -226,6 +243,7 @@ function pollPads() {
 // Even chapters sweep left, odd chapters sweep right; the next stop's name shows at full cover.
 function go(fn, label) { if (!trans) trans = { t: 0, fn, label }; }
 function start(c, fresh) {
+  useChapterArt(c);   // start loading while the rainbow curtain plays
   go(() => {
     if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
     ch = c; t = 0; pops = []; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;

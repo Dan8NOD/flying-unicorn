@@ -16,4 +16,4 @@ Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / pad B
 - Every sprite and sound also has a code-drawn / synthesised fallback, so the game still works if an asset is missing.
 - `previews/` screenshots. `tools/` test and art tools (see `NEXT-STEPS.md`).
 
-Tests: `osascript -l JavaScript tools/test.js` (any Mac) or `node tools/test.js`.
+Tests: `osascript -l JavaScript tools/test.js` (any Mac) or `node tools/test.js`. Before committing: `tools/check.sh` (the toll booth; also runs as a pre-commit hook). Several AI agents share this repo: see `LANES.md`.

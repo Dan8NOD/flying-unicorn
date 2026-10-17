@@ -1,11 +1,11 @@
-// Page-side helper for tools/shot.js: renders a ~40 s WAV of the title theme, a few chapter songs and a boss fight.
-// Usage: osascript -l JavaScript tools/shot.js sampler.wav "$(cat tools/sampler.js)" 90
+// Page-side helper for tools/shot.js: renders one song (window.SAMPLE) to a WAV.
+// Usage: osascript -l JavaScript tools/shot.js out.wav "window.SAMPLE=['title',false,9]; $(cat tools/sampler.js)" 60  (song key, boss?, seconds)
 (async function () { try {
-  const secs = 42, sr = 44100; ac = new OfflineAudioContext(2, sr * secs, sr); buildGraph();
+  const S = window.SAMPLE || ['title', false, 9], secs = S[2] + 1, sr = 44100; ac = new OfflineAudioContext(2, sr * secs, sr); buildGraph();
   let at = .1;
   const playSong = (key, boss, dur) => { const sg = makeSong(key, 5, boss), spb = 60 / sg.bpm / 4; let tt = at;
     for (let st = 0; tt < at + dur; st = (st + 1) % sg.len) { for (const e of sg.at[st]) playNote(e[1], e[2], e[3], tt, spb, sg.lead); tt += spb; } at += dur + .4; };
-  playSong('title', false, 9); playSong(0, false, 8); playSong(8, false, 8); playSong(2, false, 7); playSong(4, true, 8);
+  playSong(S[0], S[1], S[2]);
   document.title = 'rendering'; const buf = await ac.startRendering(); document.title = 'encoding';
   const L = buf.getChannelData(0), R = buf.getChannelData(1), n = L.length, b = new DataView(new ArrayBuffer(44 + n * 4));
   const w = (o, s) => { for (let i = 0; i < s.length; i++) b.setUint8(o + i, s.charCodeAt(i)); };

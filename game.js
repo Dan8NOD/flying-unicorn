@@ -125,6 +125,61 @@ function settingsTap(x, y) {   // rows of the settings panel; returns true if th
   }
   return false;
 }
+// ---- isometric world map: one floating island per chapter along a rainbow path; drag to scroll, tap to fly there ----
+let mapX = 0, mapDrag = null;
+const isoPos = i => ({ x: 150 + i * 178, y: 285 + Math.sin(i * 1.1) * 90 + (i % 2 ? 22 : -22) });
+const MAP_W = () => isoPos(NCH - 1).x + 150;
+function centerMap() { mapX = Math.max(0, Math.min(MAP_W() - W, isoPos(startCh).x - W / 2)); }
+function openMap() { state = 'map'; centerMap(); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); audio(); sfx('click'); }
+function mapPlay(i) { if (i > reached) return; startCh = i; if (sel > 1) sel = 0; chooseMode(); }
+function mapTap(x, y) {
+  if (y > H - 64 && Math.abs(x - W / 2) < 80) { state = 'title'; sfx('click'); return; }
+  for (let i = 0; i < NCH; i++) {
+    const p = isoPos(i);
+    if (Math.hypot(x - (p.x - mapX), y - p.y) < 72) {
+      if (i > reached) { pop(p.x - mapX, p.y - 60, 'Locked', '#fff'); sfx('hurt'); }
+      else if (i === startCh) mapPlay(i); else { startCh = i; sfx('click'); }
+      return;
+    }
+  }
+}
+if (typeof cv.addEventListener === 'function') {
+  cv.addEventListener('pointermove', e => { if (state !== 'map' || !mapDrag) return; const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width;
+    if (Math.abs(x - mapDrag.x) > 8) mapDrag.moved = true; mapX = Math.max(0, Math.min(MAP_W() - W, mapDrag.mx - (x - mapDrag.x))); });
+  cv.addEventListener('pointerup', e => { if (state !== 'map' || !mapDrag) return; const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+    const d = mapDrag; mapDrag = null; if (!d.moved) mapTap(x, y); });
+}
+function drawMap() {
+  g.fillStyle = 'rgba(255,240,250,.25)'; g.fillRect(0, 0, W, H);
+  g.save(); g.translate(-mapX, 0);
+  g.lineCap = 'round';
+  for (let i = 0; i < NCH - 1; i++) {   // rainbow path between islands
+    const a = isoPos(i), b = isoPos(i + 1), done = i < reached;
+    g.strokeStyle = done ? RAINBOW[i % 6] : 'rgba(255,255,255,.55)'; g.lineWidth = 7; if (g.setLineDash) g.setLineDash(done ? [] : [10, 12]);
+    g.beginPath(); g.moveTo(a.x, a.y + 30); g.bezierCurveTo(a.x + 80, a.y + 70, b.x - 80, b.y + 70, b.x, b.y + 30); g.stroke();
+  }
+  if (g.setLineDash) g.setLineDash([]);
+  for (let i = 0; i < NCH; i++) {
+    const p = isoPos(i); if (p.x - mapX < -160 || p.x - mapX > W + 160) continue;
+    const locked = i > reached, bob = Math.sin(t / 30 + i) * 5, on = i === startCh;
+    g.fillStyle = 'rgba(60,20,80,.18)'; g.beginPath(); g.ellipse(p.x, p.y + 78, 58, 12, 0, 0, 7); g.fill();   // shadow on the clouds below
+    if (on) { g.fillStyle = `rgba(255,243,140,${.35 + .15 * Math.sin(t / 8)})`; g.beginPath(); g.ellipse(p.x, p.y + bob, 92, 78, 0, 0, 7); g.fill(); }
+    g.globalAlpha = locked ? .45 : 1;
+    if (!spr('isle_' + i, p.x, p.y + bob, 150)) { g.fillStyle = CHAPTERS[i].sky[0]; g.beginPath(); g.ellipse(p.x, p.y + bob, 60, 34, 0, 0, 7); g.fill(); }
+    g.globalAlpha = 1;
+    const label = (i + 1) + '. ' + CHAPTERS[i].name; g.font = 'bold 14px "Trebuchet MS", sans-serif'; const lw = g.measureText(label).width + 24;
+    panel(p.x - lw / 2, p.y + 84, lw, 24, 12, locked ? 'rgba(90,70,110,.6)' : on ? 'rgba(232,39,154,.85)' : 'rgba(122,26,99,.6)');
+    g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(label, p.x, p.y + 101);
+    if (!locked && starsBest[i]) txt('★'.repeat(starsBest[i]), p.x, p.y + 126, 16, '#ffe45c');
+    if (locked) { g.fillStyle = '#fff'; rr(p.x - 9, p.y - 4 + bob, 18, 14, 3); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(p.x, p.y - 4 + bob, 6, Math.PI, 0); g.stroke(); }
+    if (on) { g.save(); g.translate(p.x + 10, p.y - 92 + Math.sin(t / 15) * 6); g.scale(.6, .6); drawUnicorn(0, 0); g.restore(); }
+  }
+  g.restore();
+  fancyText('World Map', W / 2, 58, 40);
+  g.font = 'bold 15px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Drag to explore · tap an island, tap again to fly there', W / 2, 86);
+  panel(W / 2 - 70, H - 56, 140, 38, 19, lg(0, H - 56, 0, H - 18, '#ff8fd0', '#e8279a'), '#fff'); txt('Back', W / 2, H - 30, 18, '#fff');
+  for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 18, q.col); } g.globalAlpha = 1;
+}
 function shopTap(x, y) {
   if (y > 452) { state = 'title'; sfx('click'); return; }   // back
   SKINS.forEach((k, i) => {
@@ -174,6 +229,13 @@ addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;   // typing in the lobby
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
+  if (state === 'map') {
+    if (e.key === 'ArrowLeft') { startCh = Math.max(0, startCh - 1); centerMap(); }
+    if (e.key === 'ArrowRight') { startCh = Math.min(reached, startCh + 1); centerMap(); }
+    if (e.key === 'Enter' || e.key === ' ') { mapPlay(startCh); return; }
+    if (e.key === 'Escape') state = 'title';
+    return;
+  }
   if (state === 'title' && !trans) {
     if (e.key === 'ArrowUp') { sel = (sel + MENU.length - 1) % MENU.length; audio(); sfx('click'); }
     if (e.key === 'ArrowDown') { sel = (sel + 1) % MENU.length; audio(); sfx('click'); }
@@ -214,12 +276,13 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'title' && !trans) {
     if (settingsOpen) { if (!settingsTap(x, y)) settingsOpen = false; return; }
     if (Math.hypot(x - (W - 40), y - 40) < 24) { settingsOpen = true; audio(); sfx('click'); return; }
-    if (y > 452 && y < 484 && reached > 0) { if (x < W / 2 - 60) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 60) startCh = Math.min(reached, startCh + 1); }
+    if (y > 452 && y < 484) { if (x < W / 2 - 150) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 150) startCh = Math.min(reached, startCh + 1); else { openMap(); return; } }
     if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
     if (x < 190 && y < 66) { state = 'shop'; audio(); sfx('click'); SKINS.forEach(k => k.id && ['up', 'down'].forEach(f => loadArt('skin_' + k.id + '_' + f))); return; }
-    if (y > 452 && y < 484 && reached > 0) return;
+    if (y > 452 && y < 484) return;
     MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 276 + i * 44 && y < 314 + i * 44) sel = i; }); }
   if (state === 'shop') { shopTap(x, y); return; }
+  if (state === 'map') { mapDrag = { x, mx: mapX, moved: false }; return; }
   if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
@@ -276,7 +339,7 @@ function guestTick() {   // between snapshots: keep things moving smoothly and s
   t++;
   const kx = (l, r) => (keys[r] ? 1 : 0) - (keys[l] ? 1 : 0);
   steerDir(p2, kx('ArrowLeft', 'ArrowRight') + kx('a', 'd') + padX[0], kx('ArrowUp', 'ArrowDown') + kx('w', 's') + padDir[0]);
-  if (state === 'play' && !paused) { movePlayer(p2); stageTick(false); }
+  if ((state === 'play' || state === 'bonus') && !paused) { movePlayer(p2); if (state === 'play') stageTick(false); }
   for (const o of things) { o.x += o.vx; if (o.vy) o.y += o.vy; }
   for (const q of shots) { q.x += q.m ? 10 : 12; q.y += q.vy || 0; if (t % 2 === 0 && !q.m) sparks.push({ x: q.x, y: q.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + q.x) % 360},90%,75%)` }); }
   for (const b of bolts) { b.x += b.vx; b.y += b.vy; }
@@ -407,6 +470,8 @@ function spawn() {
 
 // Bosses get angrier: phase 0 above half health, 1 below half, 2 below a quarter.
 // Each phase mixes in the next attack pattern, fires faster, and moves around more.
+const TAUNTS = ["Hmph! Too many rainbows around here!", "Snip snap! This sea is MY sea!", "Hoo dares wake me up?", "Brrr! Go away, warm sparkles!", "Don't touch! I'm prickly AND grumpy!", "Eight arms, zero smiles!", "Rocks don't do giggles.", "Thunder and grumbles! Bow to the Storm King!", "Keep out of my thorny forest!", "Sour power, activate!", "Ribbit... no wishes tonight!", "No petals! I'm trying to nap!", "Squawk! No rainbows allowed!", "The carnival is closed! Forever!", "My sunflower seeds! Mine!", "Rawr! Too hot to handle!", "Meow-ow! This galaxy is mine!", "These acorns are NOT for sharing!", "Arr! Walk the cloud plank!", "Coo! Shh! The city is sleeping!", "You're late! Very late! No tea for you!", "I'll freeze your sparkles!", "No playing with MY toys!", "Blub! Lanterns out!", "Ooh ooh! The treasure is mine!", "Sand in your mane! Ha!", "I am the Queen! Only I may sparkle!"];
+let bossIntro = 0;
 const bossPhase = () => boss.hp / boss.max > .5 ? 0 : boss.hp / boss.max > .25 ? 1 : 2;
 function bossFire() {
   const ph = bossPhase(), sp = (4.5 + ch * .5) * (easy ? .8 : 1) * (1 + ph * .12), tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
@@ -420,6 +485,7 @@ function bossFire() {
 
 // ---- free flying: players steer toward a target point (finger/mouse) or in a direction (keys/pad) ----
 const MINX = 50, MAXX = W * .72;
+const maxX = () => state === 'bonus' ? W - 50 : MAXX;   // bonus rounds use the whole screen
 function steerDir(p, dx, dy) { if (dx) p.tx = p.x + dx * 60; if (dy) p.ty = p.y + dy * 60; }
 function dash(p) {   // quick sparkly burst in the flying direction; can't be hurt while dashing
   if (p.dashCd > 0 || state !== 'play' || paused) return;
@@ -431,22 +497,18 @@ function movePlayer(p) {
   if (p.dash > 0) { p.dash--; p.vx = p.dvx; p.vy = p.dvy; if (p.dash === 0) { p.tx = p.x + p.vx * 2; p.ty = p.y + p.vy * 2; }
     sparks.push({ x: p.x - 20, y: p.y + (Math.random() - .5) * 30, vx: -3, vy: 0, l: 20, col: RAINBOW[t % 6] }); }
   else {
-    p.tx = Math.max(MINX, Math.min(MAXX, p.tx)); p.ty = Math.max(30, Math.min(H - 30, p.ty));
+    p.tx = Math.max(MINX, Math.min(maxX(), p.tx)); p.ty = Math.max(30, Math.min(H - 30, p.ty));
     p.vx += (Math.max(-sp, Math.min(sp, p.tx - p.x)) - p.vx) * .35;
     p.vy += (Math.max(-sp, Math.min(sp, p.ty - p.y)) - p.vy) * .35;
   }
   if (p.dashCd > 0) p.dashCd--;
-  p.x = Math.max(MINX, Math.min(MAXX, p.x + p.vx - (p.dash > 0 ? 0 : windX * .8)));   // wind pushes you back
+  p.x = Math.max(MINX, Math.min(maxX(), p.x + p.vx - (state === 'bonus' || p.dash > 0 ? 0 : windX * .8)));   // wind pushes you back
   p.y = Math.max(30, Math.min(H - 30, p.y + p.vy));
   p.tilt += (Math.max(-.45, Math.min(.45, p.vy * .05 - p.vx * .012)) - p.tilt) * .2;   // bank into the move
   p.fp = (p.fp || 0) + .2 + Math.max(0, -p.vy) * .06 + Math.abs(p.vx) * .02;           // wings beat faster when climbing
   if (p.vy < -3.5 && t - (p.lastFlap || 0) > 16) { p.lastFlap = t; sfx('flap'); }
 }
-function update() {
-  t++;
-  for (const p of players) for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet']) if (p[k] > 0) p[k]--;
-  if (shake > 0) shake--;
-  if (warn > 0) warn--;
+function stepPlayers() {   // read keys / pads / remote steering and move every player
   const two = mode === 'local';   // keyboard: arrows = player 1, WASD = player 2 (in 1-player games both steer player 1)
   const kx = (l, r) => (keys[r] ? 1 : 0) - (keys[l] ? 1 : 0);
   steerDir(uni, kx('ArrowLeft', 'ArrowRight') + (two ? 0 : kx('a', 'd')), kx('ArrowUp', 'ArrowDown') + (two ? 0 : kx('w', 's')));
@@ -454,6 +516,13 @@ function update() {
   players.forEach((p, i) => { if (!(mode === 'host' && i === 1)) steerDir(p, padX[i], padDir[i]); });
   if (mode === 'host' && net.remoteTy != null) { p2.ty = net.remoteTy; if (net.remoteTx != null) p2.tx = net.remoteTx; }
   for (const p of players) movePlayer(p);
+}
+function update() {
+  t++;
+  for (const p of players) for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet']) if (p[k] > 0) p[k]--;
+  if (shake > 0) shake--;
+  if (warn > 0) warn--;
+  stepPlayers();
   mer.x += (Math.max(40, uni.x - 90) - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
 
   // auto-fire: the unicorn throws pony-dust stars from her horn, a playable mermaid blows bubbles
@@ -471,7 +540,7 @@ function update() {
   else if (!boss && !clear && t > segTime() * 60) {
     const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1) * (easy ? .7 : 1));
     boss = { x: W + 100, y: H / 2, hp: bhp, max: bhp };
-    things = []; warn = 120; sfx('warn'); sfx('boss'); voice('vo_u_boss');
+    things = []; warn = 120; bossIntro = 200; sfx('warn'); sfx('boss'); setTimeout(() => voice('vo_boss_' + ch), 700);
   }
   if (!boss && !clear && t % (run ? Math.max(14, CHAPTERS[ch].rate - runSeg) : CHAPTERS[ch].rate) === 0) spawn();
   stageTick(true);   // weather, wind and surprises (stages.js)
@@ -519,7 +588,7 @@ function update() {
       if (boss.hp <= 0) {
         score += 200 + lives * 50; shake = 40; clear = 1; pop(boss.x, boss.y - 40, '+' + (200 + lives * 50), '#ffe45c');
         for (let i = 0; i < 6; i++) setTimeout(() => boom(boss ? boss.x + (Math.random() - .5) * 120 : 0, boss ? boss.y + (Math.random() - .5) * 60 : 0, '#ff00cc', 20), i * 150);
-        sfx('win'); voice('vo_u_win'); buzz([40, 40, 90]); saveShop();
+        sfx('win'); voice('vo_bossdown_' + (Math.random() * 4 | 0)); buzz([40, 40, 90]); saveShop();
         saveBest(); bolts = [];
       }
     }
@@ -547,7 +616,61 @@ function showResults() {
   if (stat.stars > (starsBest[ch] || 0)) { starsBest[ch] = stat.stars; saveOpt('pinkUnicornStars', JSON.stringify(starsBest)); }
   state = 'results'; t = 0;
 }
-function nextChapter() { ch + 1 >= CHAPTERS.length ? startEnding() : start(ch + 1); }
+// ---- isometric bonus round after every third chapter: fly over the chapter's island diorama and grab the gems ----
+let bonusDone = -1, bonusEnd = 0;
+function startBonus() {
+  bonusDone = ch; loadArt('isle_' + ch);
+  go(() => {
+    state = 'bonus'; t = 0; bonusEnd = 0; shots = []; bolts = []; boss = null; clear = 0; stageReset();
+    things = [];
+    for (let i = 0; i < 14; i++) {   // gems spread over the island's top in an isometric diamond
+      const a = i / 14 * 6.283 + (i % 2) * .4, r = .35 + (i * 37 % 10) / 15;
+      things.push({ kind: 'gem', x: W / 2 + Math.cos(a) * 250 * r, y: 300 + Math.sin(a) * 110 * r - (i % 3) * 30, y0: 0, ph: i, vx: 0, r: 18, col: RAINBOW[i % 6] });
+    }
+    for (const p of players) { p.x = p.tx = 140 + p.i * 60; p.y = p.ty = 300; p.vx = p.vy = 0; }
+    sfx('start');
+  }, 'Bonus · Sky Island');
+}
+function bonusUpdate() {
+  t++; stepPlayers();
+  for (const o of things) {
+    if (o.kind !== 'gem' || o.dead) continue;
+    const pp = players.find(p => Math.hypot(o.x - p.x, o.y - p.y) < 40);
+    if (pp) { o.dead = true; score += 50; wallet++; sfx('ring', 10 - things.filter(q => !q.dead).length % 10); boom(o.x, o.y, o.col, 16); pop(o.x, o.y - 20, '+50', '#ffe45c'); }
+  }
+  things = things.filter(o => !o.dead);
+  if (!bonusEnd && (t >= 20 * 60 || !things.length)) {
+    bonusEnd = t; if (!things.length) { score += 500; pop(W / 2, 200, 'Perfect! +500', '#ffe45c'); sfx('win'); voice('vo_ev_wow'); } saveShop();
+  }
+  if (bonusEnd && t - bonusEnd > 100) nextChapter();
+}
+function drawBonus() {
+  g.fillStyle = 'rgba(255,240,250,.18)'; g.fillRect(0, 0, W, H);
+  const bob = Math.sin(t / 40) * 6;
+  g.fillStyle = 'rgba(40,20,60,.2)'; g.beginPath(); g.ellipse(W / 2, 470, 270, 34, 0, 0, 7); g.fill();
+  if (!spr('isle_' + ch, W / 2, 300 + bob, 400)) { g.fillStyle = CHAPTERS[ch].sky[0]; g.beginPath(); g.ellipse(W / 2, 320, 280, 130, 0, 0, 7); g.fill(); }
+  // painter's order: things further up the screen are further away, so draw them first and smaller
+  const list = [...things.map(o => ({ y: o.y, d: () => {
+    const s = .75 + o.y / H * .5, gy = o.y + Math.sin(t / 10 + o.ph) * 5;
+    g.fillStyle = 'rgba(40,20,60,.18)'; g.beginPath(); g.ellipse(o.x, o.y + 26 * s, 14 * s, 4 * s, 0, 0, 7); g.fill();
+    g.save(); g.translate(o.x, gy); g.scale(s, s); g.rotate(Math.sin(t / 20 + o.ph) * .2);
+    g.fillStyle = lg(0, -16, 0, 16, '#ffffff', o.col || RAINBOW[(o.ph | 0) % 6]); g.beginPath(); g.moveTo(0, -18); g.lineTo(13, -4); g.lineTo(0, 18); g.lineTo(-13, -4); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 2; g.stroke(); g.restore();
+    if ((t + (o.ph | 0) * 7) % 40 < 8) sparkle(o.x + 8, gy - 12, 5, .9);
+  } })), ...players.map(p => ({ y: p.y, d: () => {
+    const s = .8 + p.y / H * .45; groundShadow(p.x, p.y, 40 * s);
+    g.save(); g.translate(p.x, p.y); g.rotate(p.tilt || 0); g.scale(s, s); p === uni ? drawUnicorn(0, 0, false, p.fp) : drawMermaid(0, 0); g.restore();
+  } }))];
+  list.sort((a, b) => a.y - b.y).forEach(o => o.d());
+  const left = Math.max(0, 20 - (bonusEnd || t) / 60);
+  panel(W / 2 - 150, 14, 300, 40, 20, 'rgba(122,26,99,.55)'); txt(`Sky Island bonus · ${Math.ceil(left)}s · ${things.length} gems`, W / 2, 40, 17, '#fff');
+  for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
+  for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 22, q.col); } g.globalAlpha = 1;
+}
+function nextChapter() {
+  if (!run && (ch + 1) % 3 === 0 && bonusDone !== ch && ch < NCH - 1 && state === 'results') { startBonus(); return; }
+  ch + 1 >= CHAPTERS.length ? startEnding() : start(ch + 1);
+}
 function startEnding() { go(() => { state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
 
 // ---- drawing ----
@@ -799,7 +922,25 @@ function castle() {
 }
 // Parallax scenery that differs per chapter
 const skyCache = [];
+// Soft shadow on the ground under something flying at height y: smaller and fainter the higher it is (cheap 3D depth).
+function groundShadow(x, y, w) {
+  if (ch === 16 || state === 'title') return;   // no ground in space
+  const gy = H - 24, k = Math.max(.25, 1 - (gy - y) / H * .9);
+  g.fillStyle = `rgba(40,20,60,${.22 * k})`; g.beginPath(); g.ellipse(x, gy, w * k, w * .2 * k, 0, 0, 7); g.fill();
+}
+// Mirrored copies are prebuilt once per image, so scrolling costs one or two plain draws per frame.
+function mirrorCanvas(im) {
+  if (im._mir !== undefined) return im._mir;
+  im._mir = null;
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
+  const c = document.createElement('canvas'); if (!c || !c.getContext) return null;
+  c.width = im.width * 2; c.height = im.height; const x = c.getContext('2d');
+  x.drawImage(im, 0, 0); x.translate(im.width * 2, 0); x.scale(-1, 1); x.drawImage(im, 0, 0);
+  return (im._mir = c);
+}
 function mirrorScroll(im, sp, y, h) {
+  const mc = mirrorCanvas(im);
+  if (mc) { const w2 = h * mc.width / mc.height, off = -((t * sp) % w2); for (let x = off; x < W; x += w2) g.drawImage(mc, x, y, w2 + .5, h); return; }
   const w = h * im.width / im.height, off = -((t * sp) % (w * 2));
   for (let x = off, k = 0; x < W; x += w, k++) {
     if (k % 2) { g.save(); g.translate(x + w, y); g.scale(-1, 1); g.drawImage(im, 0, 0, w + .5, h); g.restore(); }
@@ -1423,15 +1564,17 @@ function draw() {
   if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   if (state === 'ending') drawEnding();
   else {
-    drawBg(state === 'title' || state === 'shop' ? 0 : ch);
-    if (state === 'shop') drawShop();
+    drawBg(state === 'title' || state === 'shop' || state === 'map' ? 0 : ch);
+    if (state === 'bonus') drawBonus();
+    else if (state === 'shop') drawShop();
+    else if (state === 'map') drawMap();
     else if (state === 'title') {
       drawMermaid(W / 2 - 150, 228 + Math.sin(t / 18 + 1) * 8);
       g.save(); g.translate(W / 2 + 20, 215 + Math.sin(t / 20) * 10); g.scale(1.45, 1.45); drawUnicorn(0, 0); g.restore();
       logo(W / 2, 112);
       if (mode === 'guest') { panel(W / 2 - 260, 300, 520, 60, 22, 'rgba(255,255,255,.85)'); txt('Connected! Waiting for the host to start...', W / 2, 338, 22, '#d6199a'); }
       else MENU.forEach((s, i) => menuButton(s, 276 + i * 44, i === sel));
-      if (reached > 0 && mode !== 'guest') { panel(W / 2 - 200, 452, 400, 30, 15, 'rgba(122,26,99,.35)'); txt(`◀   Chapter ${startCh + 1} · ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 473, 16, '#fff'); }
+      if (mode !== 'guest') { panel(W / 2 - 200, 452, 400, 30, 15, 'rgba(122,26,99,.35)'); txt(`◀   Map · ${startCh + 1}. ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 473, 16, '#fff'); }
       panel(10, 488, 196, 30, 15, easy ? 'rgba(80,200,120,.55)' : 'rgba(122,26,99,.35)'); txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 108, 509, 15, '#fff');
       txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2 + 60, 500, 13);
       txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2 + 60, 521, 13);
@@ -1449,6 +1592,7 @@ function draw() {
       }
     } else {
       stageBack();
+      if (state === 'play') { for (const o of things) if (o.foe) groundShadow(o.x, o.y, FOE_H[o.kind] * .45); if (boss) groundShadow(boss.x, boss.y, 90); for (const p of players) groundShadow(p.x, p.y, 48); if (players.length === 1) groundShadow(mer.x, mer.y, 36); }
       for (const o of things) drawThing(o);
       if (boss) drawBoss(boss);
       for (const s of shots) {
@@ -1479,7 +1623,14 @@ function draw() {
       const c = CHAPTERS[ch];
       if (boss && !clear) { panel(W / 2 - 110, H - 40, 220, 28, 14, 'rgba(122,26,99,.6)'); txt(c.boss, W / 2, H - 20, 17, '#fff'); }
       if (clear) { const p = Math.min(1, clear / 20); g.save(); g.translate(W / 2, 220); g.scale(p * (1 + .05 * Math.sin(t / 4)), p * (1 + .05 * Math.sin(t / 4))); fancyText('Boss defeated!', 0, 0, 56); g.restore(); }
-      if (warn > 0 && warn % 30 < 20) { panel(W / 2 - 160, 112, 320, 56, 28, 'rgba(255,60,90,.85)'); txt('!  WARNING  !', W / 2, 152, 38, '#fff'); }
+      if (bossIntro > 0 && boss) {   // boss name card with a grumpy taunt
+        const a = Math.min(1, bossIntro / 20, (200 - bossIntro) / 12), y = 12 + (1 - a) * -60;
+        g.globalAlpha = a; panel(W / 2 - 230, y, 460, 92, 24, lg(0, y, 0, y + 92, 'rgba(255,240,250,.96)', 'rgba(255,200,230,.96)'), '#fff');
+        g.save(); g.beginPath(); g.arc(W / 2 - 180, y + 46, 38, 0, 7); g.fillStyle = CHAPTERS[ch].sky[0]; g.fill(); g.clip(); spr('boss_' + ch, W / 2 - 180, y + 52, 80); g.restore();
+        g.font = 'bold 22px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#c2197f'; g.fillText(CHAPTERS[ch].boss, W / 2 - 128, y + 38);
+        g.font = 'italic bold 16px "Trebuchet MS", sans-serif'; g.fillStyle = '#7a1a63'; g.fillText('“' + (TAUNTS[ch] || '') + '”', W / 2 - 128, y + 66); g.globalAlpha = 1;
+      }
+      if (warn > 0 && warn % 30 < 20 && bossIntro <= 0) { panel(W / 2 - 160, 112, 320, 56, 28, 'rgba(255,60,90,.85)'); txt('!  WARNING  !', W / 2, 152, 38, '#fff'); }
       if (paused) drawSettings('Paused');
       if (state === 'chapter') chapterCard();
       if (state === 'results') resultsCard();
@@ -1494,6 +1645,7 @@ function loop() {
   pollPads();
   music();
   if (mode === 'guest') { guestTick(); return; }
+  if (state === 'bonus') { if (!paused) bonusUpdate(); for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; } sparks = sparks.filter(p => p.l > 0); for (const q of pops) { q.y -= .9; q.l--; } pops = pops.filter(q => q.l > 0); if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; } if (mode === 'host' && net.open && ++net.ntk % 2 === 0) netSnap(); return; }
   if (state === 'play') { if (!paused) update(); }
   else {
     t++; if (state === 'ending') ending++;
@@ -1504,6 +1656,8 @@ function loop() {
   }
   if (state === 'chapter' && t > 360) state = 'play';
   if (state === 'results' && t > 480 && mode !== 'guest') nextChapter();
+  if (state === 'results' && t === 20) voice('vo_u_win');
+  if (bossIntro > 0 && state === 'play' && !paused) bossIntro--;
   if (state === 'results' && t >= 30 && t <= 90 && t % 30 === 0 && t / 30 <= stat.stars) sfx('ring', t / 3);
   for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; }
   sparks = sparks.filter(p => p.l > 0);

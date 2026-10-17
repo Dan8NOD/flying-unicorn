@@ -95,6 +95,13 @@ const tests = {
     shopTap(W / 2 + 344, 250); const refused = !owned.includes('golden') && wallet === 50;
     shopTap(W / 2 - 344, 250); const back = skin === '';
     return [bought, refused, back];`, 3],
+  'isometric bonus round after every third chapter': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    ch = 2; state = 'results'; t = 100; nextChapter(); step(80);
+    const inBonus = state === 'bonus' && things.filter(o => o.kind === 'gem').length === 14;
+    const g0 = things[0]; uni.x = uni.tx = g0.x; uni.y = uni.ty = g0.y; step(2); const got = things.length < 14;
+    t = 20 * 60; step(220); const after = state === 'chapter' || state === 'play';
+    return [inBonus, got, after && ch === 3];`, 3],
 };
 
 let failed = 0;

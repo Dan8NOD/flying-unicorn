@@ -20,10 +20,15 @@ const CHAPTERS = [
 const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b', '#18a999', '#5a5f7a'];
 
 let state = 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
-let things = [], shots = [], bolts = [], sparks = [], boss = null, flash = 0, shield = 0, clear = 0;
+let things = [], shots = [], bolts = [], sparks = [], boss = null, clear = 0;
+let mode = 'solo', sel = 0;   // solo | local (2 players, one screen) | host / guest (two devices)
 let trans = null, ending = 0, shake = 0, paused = false, warn = 0, mt = 0;
-const uni = { x: 150, y: H / 2, ty: H / 2 };
-const mer = { x: 80, y: H / 2, cd: 0 };
+const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, i: 0 };     // player 1: the unicorn
+const p2 = { x: 110, y: H / 2 + 80, ty: H / 2 + 80, flash: 0, shield: 0, i: 1 };   // player 2: the mermaid
+let players = [uni];
+const maxLives = () => players.length > 1 ? 7 : 5;
+const nearest = o => players.reduce((a, b) => Math.hypot(a.x - o.x, a.y - o.y) <= Math.hypot(b.x - o.x, b.y - o.y) ? a : b);
+const mer = { x: 80, y: H / 2, cd: 0 };   // computer-controlled mermaid in 1-player games
 const keys = {};
 try { best = +localStorage.getItem('pinkUnicornBest') || 0; } catch (e) {}
 
@@ -31,27 +36,68 @@ try { best = +localStorage.getItem('pinkUnicornBest') || 0; } catch (e) {}
 addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === 'm') muted = !muted;
+  if (state === 'title' && !trans) {
+    if (e.key === 'ArrowUp') sel = (sel + 2) % 3;
+    if (e.key === 'ArrowDown') sel = (sel + 1) % 3;
+    if (e.key === '1' || e.key === '2' || e.key === '3') { sel = +e.key - 1; press(); }
+  }
   if (e.key === 'p' || e.key === 'Escape') paused = !paused && state === 'play';
   if (e.key === ' ' || e.key === 'Enter') press();
 });
 addEventListener('keyup', e => keys[e.key] = false);
 function pointer(e) {
   const r = cv.getBoundingClientRect();
-  const p = e.touches ? e.touches[0] : e;
-  uni.ty = (p.clientY - r.top) * H / r.height;
+  for (const p of e.touches ? [...e.touches] : [e]) {   // in 2-player games the right half of the screen steers player 2
+    const x = (p.clientX - r.left) * W / r.width, y = (p.clientY - r.top) * H / r.height;
+    (players.length > 1 && x > W / 2 && mode === 'local' ? p2 : uni).ty = y;
+  }
 }
 addEventListener('blur', () => { if (state === 'play') paused = true; });
 cv.addEventListener('mousemove', pointer);
 cv.addEventListener('touchmove', e => { pointer(e); e.preventDefault(); }, { passive: false });
-cv.addEventListener('pointerdown', e => { pointer(e); press(); });
+const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online'];
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+  pointer(e);
+  if (state === 'title' && !trans) { MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
+  if (state === 'play') {   // on-screen pause / mute buttons for touch screens
+    if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { paused = !paused; return; }
+    if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { muted = !muted; return; }
+  }
+  press();
+});
 function press() {
   audio();
   if (trans) return;
   if (paused) { paused = false; return; }
-  if (state === 'title') start(0);
+  if (state === 'title') chooseMode();
   else if (state === 'over') toTitle();
   else if (state === 'chapter') state = 'play';
   else if (state === 'ending' && ending > 240) toTitle();
+}
+
+function chooseMode() {
+  if (sel === 2) { mode = 'solo'; sel = 0; lobbyMsg = 'Online play is coming next!'; lobbyT = 180; return; }
+  mode = sel === 0 ? 'solo' : 'local'; start(0);
+}
+let lobbyMsg = '', lobbyT = 0;
+
+// ---- gamepads: first pad steers player 1, second pad player 2; A = start/tap, Start = pause ----
+let padPrev = {}, padDir = [0, 0];
+function pollPads() {
+  padDir = [0, 0];
+  const list = typeof navigator !== 'undefined' && navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  list.slice(0, 2).forEach((gp, i) => {
+    const b = n => !!(gp.buttons[n] && gp.buttons[n].pressed);
+    let d = Math.abs(gp.axes[1] || 0) > .25 ? gp.axes[1] : 0;
+    if (b(12)) d = -1; if (b(13)) d = 1;
+    padDir[i] = d;
+    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0 };
+    if (state === 'title' && !trans) { if (cur.up && !prev.up) sel = (sel + 2) % 3; if (cur.down && !prev.down) sel = (sel + 1) % 3; }
+    if (cur.a && !prev.a) press();
+    if (cur.s && !prev.s) { if (state === 'play') paused = !paused; else press(); }
+    padPrev[gp.index] = cur;
+  });
 }
 
 // ---- sound (WebAudio blips, created lazily so iOS lets it play) ----
@@ -83,20 +129,22 @@ function music() {
 function go(fn, label) { if (!trans) trans = { t: 0, fn, label }; }
 function start(c) {
   go(() => {
-    ch = c; t = 0; things = []; shots = []; bolts = []; boss = null; clear = 0; shield = 0;
-    if (c === 0) { score = 0; lives = 3; }
+    ch = c; t = 0; things = []; shots = []; bolts = []; boss = null; clear = 0;
+    players = mode === 'solo' ? [uni] : [uni, p2];
+    for (const p of [uni, p2]) { p.flash = p.shield = 0; p.x = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); }
+    if (c === 0) { score = 0; lives = mode === 'solo' ? 3 : 5; }
     combo = 0; state = 'chapter'; ending = 0;
     jingle([523, 659, 784]);
   }, `Chapter ${c + 1} · ${CHAPTERS[c].name}`);
 }
 function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; }, 'Pink Unicorn'); }
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
-function hurt() {
-  if (flash > 0 || shield > 0) return;
-  lives--; combo = 0; flash = 90; shake = 12; beep(120, 0.4, 'sawtooth');
+function hurt(p = uni) {
+  if (p.flash > 0 || p.shield > 0) return;
+  lives--; combo = 0; p.flash = 90; shake = 12; beep(120, 0.4, 'sawtooth');
   if (lives <= 0) { state = 'over'; saveBest(); }
 }
-function boom(x, y, col, n = 12) { for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
+function boom(x, y, col, n = 12) { if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
 
 // Shootable enemies. Hit them with pony dust for points (and sometimes a ring or heart); touching them hurts.
@@ -119,11 +167,11 @@ function moveFoe(o) {
   else if (k === 'bird') o.y = o.y0 + Math.sin(t / 10 + o.ph) * 40;
   else if (k === 'jelly') o.y = o.y0 + Math.sin(t / 25 + o.ph) * 80;
   else if (k === 'fish') o.y = o.y0 + Math.sin(t / 18 + o.ph) * 20;
-  else if (k === 'owl') { if (o.x > 350) o.y += Math.max(-1.6, Math.min(1.6, uni.y - o.y)); }
+  else if (k === 'owl') { if (o.x > 350) o.y += Math.max(-1.6, Math.min(1.6, nearest(o).y - o.y)); }
   else if (k === 'ghost') o.y = o.y0 + Math.sin(t / 20 + o.ph) * 50;
   else if (k === 'bee') o.y = o.y0 + Math.sin(t / 6 + o.ph) * 50;
   else if (k === 'storm' && o.x < W - 60 && o.x > 200 && ++o.cd % 90 === 0) {
-    const a = Math.atan2(uni.y - o.y, uni.x - o.x); bolts.push({ x: o.x, y: o.y + 20, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5 });
+    const tg = nearest(o), a = Math.atan2(tg.y - o.y, tg.x - o.x); bolts.push({ x: o.x, y: o.y + 20, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5 });
   }
   o.y = Math.max(25, Math.min(H - 25, o.y));
 }
@@ -132,7 +180,7 @@ function spawn() {
   let kind = r < .45 ? 'ring' : r < .6 ? 'heart' : r < .65 ? 'star' : 'cloud';
   if (kind === 'cloud' && c.bats && Math.random() < .4) kind = 'bat';
   if (kind === 'cloud' && c.spikes && Math.random() < .5) kind = 'spike';
-  if (kind === 'heart' && lives >= 5) kind = 'ring';
+  if (kind === 'heart' && lives >= maxLives()) kind = 'ring';
   if (kind === 'cloud' && Math.random() < .55) {   // swap hazard for a shootable enemy
     const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : y;
     things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: f.vx - ch * .1, r: f.r, top, cd: 60, hit: 0 });
@@ -143,7 +191,7 @@ function spawn() {
 }
 
 function bossFire() {
-  const p = CHAPTERS[ch].pat, sp = 4.5 + ch * .5, a = Math.atan2(uni.y - boss.y, uni.x - boss.x);
+  const p = CHAPTERS[ch].pat, sp = 4.5 + ch * .5, tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
   const rate = Math.max(40, 80 - ch * 8);
   if (t % rate) return;
   if (p === 0) bolts.push({ x: boss.x - 40, y: boss.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
@@ -153,40 +201,45 @@ function bossFire() {
 
 function update() {
   t++;
-  if (flash > 0) flash--;
-  if (shield > 0) shield--;
+  for (const p of players) { if (p.flash > 0) p.flash--; if (p.shield > 0) p.shield--; }
   if (shake > 0) shake--;
   if (warn > 0) warn--;
   music();
   const sp = 7;
-  if (keys.ArrowUp || keys.w) uni.ty = uni.y - 40;
-  if (keys.ArrowDown || keys.s) uni.ty = uni.y + 40;
-  uni.ty = Math.max(30, Math.min(H - 30, uni.ty));
-  uni.y += Math.max(-sp, Math.min(sp, uni.ty - uni.y));
+  const two = mode === 'local';   // keyboard: arrows = player 1, W/S = player 2 (in 1-player games both steer player 1)
+  if (keys.ArrowUp || (!two && keys.w)) uni.ty = uni.y - 40;
+  if (keys.ArrowDown || (!two && keys.s)) uni.ty = uni.y + 40;
+  if (two && keys.w) p2.ty = p2.y - 40;
+  if (two && keys.s) p2.ty = p2.y + 40;
+  players.forEach((p, i) => { if (padDir[i]) p.ty = p.y + padDir[i] * 60; });
+  for (const p of players) { p.ty = Math.max(30, Math.min(H - 30, p.ty)); p.y += Math.max(-sp, Math.min(sp, p.ty - p.y)); }
   mer.x += (uni.x - 90 - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
 
-  // auto-fire pony-dust stars from the horn
+  // auto-fire: the unicorn throws pony-dust stars from her horn, a playable mermaid blows bubbles
   if (t % 14 === 0) { shots.push({ x: uni.x + 48, y: uni.y - 40, vx: 12 }); boom(uni.x + 48, uni.y - 40, '#fff', 4); beep(880, .05, 'triangle', .03); }
-  if (boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, m: 1 });
+  if (players.length > 1) { if (t % 16 === 8) shots.push({ x: p2.x + 20, y: p2.y, vx: 10, m: 1 }); }
+  else if (boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, m: 1 });
 
   if (!boss && !clear && t > CHAPTERS[ch].time * 60) {
-    boss = { x: W + 100, y: H / 2, hp: CHAPTERS[ch].hp, max: CHAPTERS[ch].hp };
+    const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1));
+    boss = { x: W + 100, y: H / 2, hp: bhp, max: bhp };
     things = []; warn = 120; beep(200, .6, 'sawtooth');
   }
   if (!boss && !clear && t % CHAPTERS[ch].rate === 0) spawn();
 
   for (const o of things) {
     o.x += o.vx;
-    if (o.foe) { moveFoe(o); if (o.hit > 0) o.hit--; if (hit(o, uni, o.r + 20)) hurt(); if (o.x < -60) o.dead = true; continue; }
+    if (o.foe) { moveFoe(o); if (o.hit > 0) o.hit--; for (const p of players) if (hit(o, p, o.r + 20)) hurt(p);
+      if (o.x < -60) o.dead = true; continue; }
     if (o.kind === 'bat') o.y = o.y0 + Math.sin(t / 15 + o.ph) * 70;
-    const d = o.kind === 'spike' ? Math.hypot(o.x - uni.x, (o.top ? o.y + 40 : o.y - 40) - uni.y) : Math.hypot(o.x - uni.x, o.y - uni.y);
-    if (d < o.r + 22) {
-      if (o.kind === 'spike') { hurt(); continue; }
+    const pp = players.find(p => (o.kind === 'spike' ? Math.hypot(o.x - p.x, (o.top ? o.y + 40 : o.y - 40) - p.y) : Math.hypot(o.x - p.x, o.y - p.y)) < o.r + 22);
+    if (pp) {
+      if (o.kind === 'spike') { hurt(pp); continue; }
       o.dead = true;
       if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); beep(660 + combo * 40, .1); boom(o.x, o.y, '#ffc400'); }
-      else if (o.kind === 'heart') { lives = Math.min(5, lives + 1); beep(990, .2, 'sine'); boom(o.x, o.y, '#ff4d8d'); }
-      else if (o.kind === 'star') { shield = 360; score += 50; jingle([784, 988, 1175]); boom(o.x, o.y, '#fff', 20); }
-      else hurt();
+      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); beep(990, .2, 'sine'); boom(o.x, o.y, '#ff4d8d'); }
+      else if (o.kind === 'star') { pp.shield = 360; score += 50; jingle([784, 988, 1175]); boom(o.x, o.y, '#fff', 20); }
+      else hurt(pp);
     }
     if (o.x < -60) { o.dead = true; if (o.kind === 'ring') combo = 0; }
   }
@@ -199,7 +252,7 @@ function update() {
       s.dead = true; o.hp--; o.hit = 6; beep(500, .05);
       if (o.hp <= 0) {
         o.dead = true; score += FOE[o.kind].pts; boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); beep(700, .12, 'triangle');
-        const heart = o.kind === 'pig' && lives < 5 && Math.random() < .4;
+        const heart = o.kind === 'pig' && lives < maxLives() && Math.random() < .4;
         if (heart || Math.random() < .35) things.push({ kind: heart ? 'heart' : 'ring', x: o.x, y: o.y, y0: o.y, ph: 0, vx: -3, r: 16 });
       }
       break;
@@ -227,7 +280,7 @@ function update() {
     boss.y = H / 2 + Math.sin(t / 40) * (H / 2 - 100);
     bossFire();
   }
-  for (const b of bolts) { b.x += b.vx; b.y += b.vy; if (hit(b, uni, 28)) { b.dead = true; hurt(); } if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; }
+  for (const b of bolts) { b.x += b.vx; b.y += b.vy; const bp = players.find(p => hit(b, p, 28)); if (bp) { b.dead = true; hurt(bp); } if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) b.dead = true; }
   bolts = bolts.filter(b => !b.dead);
 }
 
@@ -258,8 +311,9 @@ function drawUnicorn(x, y, glow) {
   g.fillStyle = '#222'; g.beginPath(); g.arc(34, -16, 2.5, 0, 7); g.fill();
   g.restore();
 }
-function drawMermaid(x, y) {
+function drawMermaid(x, y, glow) {
   g.save(); g.translate(x, y);
+  if (glow) { g.fillStyle = `rgba(255,255,255,${.25 + .1 * Math.sin(t / 4)})`; g.beginPath(); g.arc(0, 4, 46, 0, 7); g.fill(); }
   g.fillStyle = '#ffd9c2'; g.beginPath(); g.arc(0, -12, 9, 0, 7); g.fill();
   g.fillStyle = '#ff6fb5'; g.beginPath(); g.ellipse(-6, -10, 8, 13, .3, 0, 7); g.fill();       // pink hair
   g.fillStyle = '#18c4b4'; g.beginPath(); g.ellipse(0, 8, 8, 16, 0, 0, 7); g.fill();            // teal body/tail
@@ -298,6 +352,7 @@ function tree(x, base, h, trunk, leaf, blossom) {
   if (blossom) { g.fillStyle = blossom; for (let b = 0; b < 5; b++) { g.beginPath(); g.arc(x + Math.sin(b * 2.4 + x) * h * .2, base - h * .7 + Math.cos(b * 1.7) * h * .18, 3, 0, 7); g.fill(); } }
 }
 function fireflies(n, col) {
+  if (!fx) n >>= 2;
   for (let k = 0; k < n; k++) {
     const x = sx(k, .5 + k % 3 * .3, 60) + Math.sin(t / 40 + k) * 15, y = (k * 53) % (H - 80) + 20 + Math.sin(t / 30 + k * 2) * 20, a = .5 + .5 * Math.sin(t / 12 + k * 3);
     g.globalAlpha = a * .25; g.fillStyle = col; g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill();
@@ -367,10 +422,11 @@ function castle() {
   g.globalAlpha = 1;
 }
 // Parallax scenery that differs per chapter
+const skyCache = [];
 function drawBg(i) {
-  const c = CHAPTERS[i], gr = g.createLinearGradient(0, 0, 0, H);
-  gr.addColorStop(0, c.sky[0]); gr.addColorStop(1, c.sky[1]);
-  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const c = CHAPTERS[i];
+  if (!skyCache[i]) { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, c.sky[0]); gr.addColorStop(1, c.sky[1]); skyCache[i] = gr; }
+  g.fillStyle = skyCache[i]; g.fillRect(0, 0, W, H);
   if (i >= 8) { [forest, candyland, lake, castle][i - 8](); return; }
   if (i === 0) { hills('#f7b6e0', H - 70, 40, .3, 150); hills('#e48fcf', H - 30, 30, .6, 110); }
   if (i === 0) for (let k = 0; k < 6; k++) blob(scroll(k, .5 + k % 3 * .3), 60 + k * 70 % 400, 1.4, 'rgba(255,255,255,.55)');
@@ -524,9 +580,13 @@ function draw() {
     if (state === 'title') {
       drawUnicorn(W / 2, 250 + Math.sin(t / 20) * 10);
       txt('PINK UNICORN', W / 2, 130, 64, '#fff');
-      txt('Tap, click or press Space to start', W / 2, 400, 26);
-      txt('Move mouse / finger / arrow keys · M = mute', W / 2, 440, 18);
-      if (best) txt(`Best ${best}`, W / 2, 490, 22);
+      MENU.forEach((s, i) => {
+        g.fillStyle = i === sel ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.4)'; g.fillRect(W / 2 - 200, 290 + i * 52, 400, 42);
+        txt(s, W / 2, 320 + i * 52, 22, i === sel ? '#d6199a' : '#fff');
+      });
+      txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2, 482, 15);
+      txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2, 506, 15);
+      if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 272, 20, '#fff36b'); }
     } else {
       for (const o of things) drawThing(o);
       if (boss) drawBoss(boss);
@@ -535,13 +595,18 @@ function draw() {
         else { star(s.x, s.y, 13, t / 6 + s.x / 20, `hsl(${(t * 15 + s.x) % 360},95%,72%)`); star(s.x, s.y, 5, 0, '#fff'); }
       }
       for (const b of bolts) { g.fillStyle = '#ffee00'; g.beginPath(); g.arc(b.x, b.y, 9, 0, 7); g.fill(); }
-      drawMermaid(mer.x, mer.y);
-      if (!(flash > 0 && t % 8 < 4)) drawUnicorn(uni.x, uni.y, shield > 0);
+      if (players.length === 1) drawMermaid(mer.x, mer.y);
+      for (const p of players) {
+        if (p.flash > 0 && t % 8 < 4) continue;
+        p === uni ? drawUnicorn(p.x, p.y, p.shield > 0) : drawMermaid(p.x, p.y, p.shield > 0);
+        if (players.length > 1) txt('P' + (p.i + 1), p.x, p.y - 62, 16, p.i ? '#7ee8e0' : '#ffb3e1');
+      }
       const c = CHAPTERS[ch];
       txt(`Score ${score}`, 16, 34, 24, '#fff', 'left');
       txt('♥'.repeat(lives), W - 16, 34, 26, '#ff4d8d', 'right');
       if (combo > 1) txt(`Combo x${Math.min(combo, 10)}`, W / 2, 34, 22, '#ffe84d');
-      if (shield > 0) txt('★ ' + Math.ceil(shield / 60), 16, 64, 20, '#fff36b', 'left');
+      players.forEach((p, i) => { if (p.shield > 0) txt('★ ' + Math.ceil(p.shield / 60), 16, 64 + i * 26, 20, '#fff36b', 'left'); });
+      txt('II', W - 40, H - 27, 18, '#fff'); txt(muted ? 'x' : '♪', W - 94, H - 27, 20, '#fff');
       if (!boss) { g.fillStyle = '#ffffff99'; g.fillRect(0, H - 8, W * Math.min(1, t / (CHAPTERS[ch].time * 60)), 8); }
       if (boss && !clear) txt(c.boss, W / 2, H - 16, 20);
       if (clear) txt('Boss defeated!', W / 2, 230, 52);
@@ -557,12 +622,29 @@ function draw() {
 }
 
 function loop() {
+  pollPads();
   if (state === 'play') { if (!paused) update(); }
   else { t++; if (state === 'ending') ending++; }
   if (state === 'chapter' && t > 150) state = 'play';
   for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; }
   sparks = sparks.filter(p => p.l > 0);
   if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; }
-  draw(); requestAnimationFrame(loop);
+  if (sparks.length > (fx ? 300 : 100)) sparks.splice(0, sparks.length - (fx ? 300 : 100));
 }
-loop();
+
+// Fixed 60 Hz game clock so 90/120 Hz phones don't run fast and slow phones don't run slow.
+// If frames take too long on average, `fx` drops to 0 and the game draws fewer particles and background extras.
+const STEP = 1000 / 60;
+let last = 0, acc = 0, avg = 16.7, fx = 1;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(100, now - last || STEP); last = now;
+  acc += dt; avg = avg * .97 + dt * .03;
+  if (avg > 27 && fx) fx = 0; else if (avg < 18 && !fx) fx = 1;
+  let n = 0;
+  while (acc >= STEP - 1.5 && n < 3) { loop(); acc -= STEP; n++; }
+  if (acc > STEP * 2) acc = 0;
+  if (n) draw();
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') paused = true; });
+requestAnimationFrame(frame);

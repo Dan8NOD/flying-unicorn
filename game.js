@@ -34,6 +34,7 @@ try { best = +localStorage.getItem('pinkUnicornBest') || 0; } catch (e) {}
 
 // ---- input ----
 addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;   // typing in the lobby
   keys[e.key] = true;
   if (e.key === 'm') muted = !muted;
   if (state === 'title' && !trans) {
@@ -49,7 +50,7 @@ function pointer(e) {
   const r = cv.getBoundingClientRect();
   for (const p of e.touches ? [...e.touches] : [e]) {   // in 2-player games the right half of the screen steers player 2
     const x = (p.clientX - r.left) * W / r.width, y = (p.clientY - r.top) * H / r.height;
-    (players.length > 1 && x > W / 2 && mode === 'local' ? p2 : uni).ty = y;
+    (mode === 'guest' || (players.length > 1 && x > W / 2 && mode === 'local') ? p2 : uni).ty = y;
   }
 }
 addEventListener('blur', () => { if (state === 'play') paused = true; });
@@ -61,13 +62,14 @@ cv.addEventListener('pointerdown', e => {
   pointer(e);
   if (state === 'title' && !trans) { MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
-    if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { paused = !paused; return; }
+    if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { muted = !muted; return; }
   }
   press();
 });
 function press() {
   audio();
+  if (mode === 'guest') { net.sendR('{"p":1}'); return; }
   if (trans) return;
   if (paused) { paused = false; return; }
   if (state === 'title') chooseMode();
@@ -77,11 +79,59 @@ function press() {
 }
 
 function chooseMode() {
-  if (sel === 2) { mode = 'solo'; sel = 0; lobbyMsg = 'Online play is coming next!'; lobbyT = 180; return; }
+  if (sel === 2) { netMenu(); return; }
   mode = sel === 0 ? 'solo' : 'local'; start(0);
 }
 let lobbyMsg = '', lobbyT = 0;
 
+// ---- two-device play: the host runs the whole game; the guest draws what the host sends and sends back its steering ----
+// (transport and lobby screen live in net.js; this part only needs the `net` object)
+const net = { role: null, open: false, ev: [], remoteTy: null, ntk: 0, send() {}, sendR() {} };
+function netEv(e) { if (net.role === 'host' && net.open && net.ev.length < 60) net.ev.push(e); }   // sounds/bursts for the guest
+const rd = o => Math.round(o * 10) / 10;
+function netSnap() {
+  net.send(JSON.stringify({ st: state, ch, t, sc: score, l: lives, cb: combo, cl: clear, pa: paused ? 1 : 0, w: warn, sk: shake,
+    tr: trans ? [trans.t, trans.label || ''] : 0,
+    u: [uni.x, rd(uni.y), uni.flash, uni.shield], p: [p2.x, rd(p2.y), p2.flash, p2.shield],
+    b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
+    th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0]),
+    sh: shots.map(q => [rd(q.x), rd(q.y), q.m ? 1 : 0]), bo: bolts.map(b => [rd(b.x), rd(b.y), rd(b.vx), rd(b.vy)]), ev: net.ev.splice(0) }));
+}
+function applySnap(m) {
+  state = m.st; ch = m.ch; t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
+  trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
+  uni.x = m.u[0]; uni.y = m.u[1]; uni.flash = m.u[2]; uni.shield = m.u[3]; p2.flash = m.p[2]; p2.shield = m.p[3];   // guest steers its own mermaid locally
+  boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
+  things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7] }));
+  shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2] }));
+  bolts = m.bo.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3] }));
+  for (const e of m.ev) { if (e[0] === 's') beep(e[1], e[2], e[3], e[4]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
+}
+function guestTick() {   // between snapshots: keep things moving smoothly and steer the mermaid
+  t++;
+  if (keys.ArrowUp || keys.w) p2.ty = p2.y - 40;
+  if (keys.ArrowDown || keys.s) p2.ty = p2.y + 40;
+  if (padDir[0]) p2.ty = p2.y + padDir[0] * 60;
+  p2.ty = Math.max(30, Math.min(H - 30, p2.ty)); p2.y += Math.max(-7, Math.min(7, p2.ty - p2.y));
+  for (const o of things) o.x += o.vx;
+  for (const q of shots) { q.x += q.m ? 10 : 12; if (t % 2 === 0 && !q.m) sparks.push({ x: q.x, y: q.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + q.x) % 360},90%,75%)` }); }
+  for (const b of bolts) { b.x += b.vx; b.y += b.vy; }
+  if (shake > 0) shake--;
+  for (const q of sparks) { q.x += q.vx; q.y += q.vy; q.l--; }
+  sparks = sparks.filter(q => q.l > 0);
+  if (trans && ++trans.t >= 70) trans = null;
+  if (++net.ntk % 2 === 0) net.send(JSON.stringify({ y: p2.ty }));
+}
+function netLost() {
+  const was = mode; net.open = false; net.role = null;
+  if (was === 'guest') { mode = 'solo'; state = 'title'; trans = null; paused = false; }
+  else if (was === 'host') { mode = 'solo'; players = [uni]; }
+  if (was === 'host' || was === 'guest') { lobbyMsg = 'Your friend disconnected'; lobbyT = 240; }
+}
+function netMenu() {
+  if (net.open && net.role === 'host') { mode = 'host'; start(0); return; }
+  if (typeof showLobby === 'function') showLobby(); else { lobbyMsg = 'Online play is not available here'; lobbyT = 180; }
+}
 // ---- gamepads: first pad steers player 1, second pad player 2; A = start/tap, Start = pause ----
 let padPrev = {}, padDir = [0, 0];
 function pollPads() {
@@ -104,6 +154,7 @@ function pollPads() {
 let ac;
 function audio() { if (!ac) try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} if (ac && ac.state === 'suspended') ac.resume(); }
 function beep(f, d = 0.1, type = 'square', v = 0.05) {
+  netEv(['s', f, d, type, v]);
   if (muted || !ac) return;
   const o = ac.createOscillator(), a = ac.createGain();
   o.type = type; o.frequency.value = f; a.gain.value = v;
@@ -144,7 +195,7 @@ function hurt(p = uni) {
   lives--; combo = 0; p.flash = 90; shake = 12; beep(120, 0.4, 'sawtooth');
   if (lives <= 0) { state = 'over'; saveBest(); }
 }
-function boom(x, y, col, n = 12) { if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
+function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
 
 // Shootable enemies. Hit them with pony dust for points (and sometimes a ring or heart); touching them hurts.
@@ -211,7 +262,8 @@ function update() {
   if (keys.ArrowDown || (!two && keys.s)) uni.ty = uni.y + 40;
   if (two && keys.w) p2.ty = p2.y - 40;
   if (two && keys.s) p2.ty = p2.y + 40;
-  players.forEach((p, i) => { if (padDir[i]) p.ty = p.y + padDir[i] * 60; });
+  players.forEach((p, i) => { if (padDir[i] && !(mode === 'host' && i === 1)) p.ty = p.y + padDir[i] * 60; });
+  if (mode === 'host' && net.remoteTy != null) p2.ty = net.remoteTy;
   for (const p of players) { p.ty = Math.max(30, Math.min(H - 30, p.ty)); p.y += Math.max(-sp, Math.min(sp, p.ty - p.y)); }
   mer.x += (uni.x - 90 - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
 
@@ -580,7 +632,8 @@ function draw() {
     if (state === 'title') {
       drawUnicorn(W / 2, 250 + Math.sin(t / 20) * 10);
       txt('PINK UNICORN', W / 2, 130, 64, '#fff');
-      MENU.forEach((s, i) => {
+      if (mode === 'guest') txt('Connected! Waiting for the host to start...', W / 2, 340, 24);
+      else MENU.forEach((s, i) => {
         g.fillStyle = i === sel ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.4)'; g.fillRect(W / 2 - 200, 290 + i * 52, 400, 42);
         txt(s, W / 2, 320 + i * 52, 22, i === sel ? '#d6199a' : '#fff');
       });
@@ -623,6 +676,7 @@ function draw() {
 
 function loop() {
   pollPads();
+  if (mode === 'guest') { guestTick(); return; }
   if (state === 'play') { if (!paused) update(); }
   else { t++; if (state === 'ending') ending++; }
   if (state === 'chapter' && t > 150) state = 'play';
@@ -630,6 +684,7 @@ function loop() {
   sparks = sparks.filter(p => p.l > 0);
   if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; }
   if (sparks.length > (fx ? 300 : 100)) sparks.splice(0, sparks.length - (fx ? 300 : 100));
+  if (mode === 'host' && net.open && ++net.ntk % 2 === 0) netSnap();
 }
 
 // Fixed 60 Hz game clock so 90/120 Hz phones don't run fast and slow phones don't run slow.

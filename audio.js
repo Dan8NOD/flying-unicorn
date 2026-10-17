@@ -8,6 +8,7 @@ function audio() {
     buildGraph();
   }
   if (ac.state === 'suspended') ac.resume();
+  loadFiles();
 }
 function buildGraph() {
   {
@@ -50,6 +51,7 @@ let shotN = 0;
 function sfx(name, arg = 0) {
   if (typeof netEv === 'function') netEv(['x', name, arg]);   // the guest device plays the same sounds
   if (muted || !ac) return;
+  if (playBuf(name, arg)) return;
   const n = ac.currentTime + .005;
   switch (name) {
     case 'shot': bell(hz(84 + PENTA[shotN++ % 5]), n, .035, .16); break;                                  // pony-dust twinkle
@@ -140,6 +142,7 @@ let song = null, songKey = '', songStep = 0, songTime = 0;
 function music() {
   if (!ac) return;
   const key = state === 'title' ? 'title' : state === 'ending' ? 'ending' : state === 'over' ? '' : (boss && !clear ? 'b' : '') + ch;
+  if (streamMusic(key)) { songKey = ''; song = null; return; }   // a generated track is playing
   if (key !== songKey) {
     songKey = key; songStep = 0; songTime = ac.currentTime + .08;
     song = key === '' ? null : makeSong(key[0] === 'b' ? ch : key === 'title' || key === 'ending' ? key : ch, (key.length * 7 + (ch | 0) * 13 + 3), key[0] === 'b');
@@ -151,4 +154,51 @@ function music() {
     for (const e of song.at[songStep]) playNote(e[1], e[2], e[3], songTime, spb, song.lead);
     songStep = (songStep + 1) % song.len; songTime += spb;
   }
+}
+
+// ---- generated audio files (ElevenLabs) in assets/audio; everything above stays as the fallback ----
+// Music streams through two <audio> elements that crossfade (low memory on 4 GB phones).
+// Effects are decoded once into buffers (needs http/https; on file:// the synth versions play).
+// Voices play through one <audio> element and duck the music while someone talks.
+const FILE_SFX = ['shot', 'bubble', 'ring', 'heart', 'power', 'shield', 'hurt', 'pop', 'poof', 'bossHit', 'warn', 'boss', 'win', 'bomb', 'flap', 'dash', 'start', 'click', 'over'];
+const SFX_VOL = { shot: .22, bubble: .25, ring: .5, pop: .35, flap: .3, click: .4, poof: .55, dash: .6 };
+const sbuf = {}; let sfxLoading = false, mEl = null, mCur = 0, mFile = '', mFail = {}, voiceEl = null, voiceUntil = 0, musicVol = .55;
+function loadFiles() {
+  if (typeof Audio === 'undefined') return;
+  if (!mEl) {   // create (and unlock, inside this tap) the music and voice players
+    mEl = [new Audio(), new Audio()]; voiceEl = new Audio();
+    for (const el of [...mEl, voiceEl]) { el.preload = 'auto'; el.src = 'assets/audio/sfx_click.mp3'; el.volume = 0; const p = el.play(); if (p) p.then(() => el.pause()).catch(() => {}); }
+    mEl.forEach(el => { el.loop = true; });
+  }
+  if (sfxLoading || !ac || typeof fetch === 'undefined' || !/^https?:/.test(location.protocol)) return;
+  sfxLoading = true;
+  for (const n of FILE_SFX) fetch('assets/audio/sfx_' + n + '.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject()).then(b => ac.decodeAudioData(b)).then(buf => { sbuf[n] = buf; }).catch(() => {});
+}
+function playBuf(name, arg) {
+  const buf = sbuf[name]; if (!buf) return false;
+  const src = ac.createBufferSource(), gn = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = name === 'ring' ? 1 + Math.min(arg, 10) * .035 : name === 'shot' || name === 'pop' || name === 'flap' ? .92 + Math.random() * .16 : 1;
+  gn.gain.value = SFX_VOL[name] || .7; src.connect(gn); gn.connect(sfxBus); src.start(); return true;
+}
+function voice(name) {
+  if (typeof netEv === 'function') netEv(['v', name]);
+  if (muted || !voiceEl) return;
+  try { voiceEl.pause(); voiceEl.src = 'assets/audio/' + name + '.mp3'; voiceEl.volume = 1; voiceEl.currentTime = 0; const p = voiceEl.play(); if (p) p.catch(() => {}); voiceUntil = Date.now() + 2600; voiceEl.onended = () => { voiceUntil = 0; }; } catch (e) {}
+}
+function musicFileFor(key) { return key === '' ? '' : key === 'title' ? 'music_title' : key === 'ending' ? 'music_ending' : key[0] === 'b' ? 'music_boss' : 'music_ch' + key; }
+function streamMusic(key) {   // returns true while a music file is handling playback
+  if (!mEl) return false;
+  const file = musicFileFor(key);
+  if (file !== mFile) {
+    mFile = file;
+    if (file && !mFail[file]) { mCur ^= 1; const el = mEl[mCur]; el.src = 'assets/audio/' + file + '.mp3'; el.volume = 0; el.onerror = () => { mFail[file] = 1; }; const p = el.play(); if (p) p.catch(() => {}); }
+  }
+  const target = muted || !file ? 0 : musicVol * (Date.now() < voiceUntil ? .35 : 1);
+  mEl.forEach((el, i) => {   // crossfade: the current track fades in, the old one fades out
+    const want = i === mCur && file && !mFail[file] ? target : 0;
+    el.volume = Math.max(0, Math.min(1, el.volume + Math.max(-.03, Math.min(.03, want - el.volume))));
+    if (el.volume === 0 && i !== mCur && !el.paused) el.pause();
+  });
+  if (muted && !mEl[mCur].paused) mEl[mCur].pause(); else if (!muted && file && !mFail[file] && mEl[mCur].paused && ac && ac.state === 'running') { const p = mEl[mCur].play(); if (p) p.catch(() => {}); }
+  return !!file && !mFail[file];
 }

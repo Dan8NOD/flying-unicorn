@@ -7,6 +7,8 @@ function run(argv) {
   const cwd = $.NSFileManager.defaultManager.currentDirectoryPath.js;
   const app = $.NSApplication.sharedApplication;
   const cfg = $.WKWebViewConfiguration.alloc.init;
+  cfg.preferences.setValueForKey($(true), 'allowFileAccessFromFileURLs');   // lets local images be read back from the canvas
+  cfg.setValueForKey($(true), 'allowUniversalAccessFromFileURLs');
   const wv = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, 960, 540), cfg);
   const win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(-3000, 0, 960, 540), 0, $.NSBackingStoreBuffered, false);
   win.contentView = wv; win.orderFrontRegardless;

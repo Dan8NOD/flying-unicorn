@@ -1,6 +1,30 @@
-// Pink Unicorn - a tiny canvas shooter. No assets, no build step: everything is drawn in code.
+// Pink Unicorn - a canvas shooter. No build step. Generated art in assets/ is used when present;
+// every sprite also has a code-drawn fallback, so the game still runs without the assets folder.
 const cv = document.getElementById('c'), g = cv.getContext('2d');
-const W = cv.width, H = cv.height;
+const W = 960, H = 540;   // game coordinates; the canvas itself is rendered at up to 2x for sharp phone screens
+let Q = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+cv.width = W * Q; cv.height = H * Q;
+
+// ---- generated art (Meshy). IMG[name] is set once the file has loaded ----
+const IMG = {};
+const ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike',
+  ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm'].map(k => 'foe_' + k),
+  ...['ring', 'heart', 'star', 'rapid', 'triple', 'magnet', 'bomb'].map(k => 'pick_' + k),
+  ...Array.from({ length: 12 }, (_, i) => 'boss_' + i)];
+if (typeof Image !== 'undefined') {
+  for (const n of ART) { const im = new Image(); im.onload = () => { IMG[n] = im; }; im.src = 'assets/img/' + n + '.png'; }
+  for (let i = 0; i < 12; i++) { const im = new Image(); im.onload = () => { IMG['bg_' + i] = im; }; im.src = 'assets/img/bg_' + i + '.jpg';
+    const fg = new Image(); fg.onload = () => { IMG['fg_' + i] = fg; }; fg.src = 'assets/img/fg_' + i + '.png'; }
+}
+// Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
+function spr(n, x, y, h, flipX, flipY) {
+  const im = IMG[n]; if (!im) return false;
+  const w = h * im.width / im.height;
+  if (flipX || flipY) { g.save(); g.translate(x, y); g.scale(flipX ? -1 : 1, flipY ? -1 : 1); g.drawImage(im, -w / 2, -h / 2, w, h); g.restore(); }
+  else g.drawImage(im, x - w / 2, y - h / 2, w, h);
+  return true;
+}
+function flashSpr(n, x, y, h, a) { g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = a; spr(n, x, y, h); g.restore(); }   // white-ish hit flash
 
 // Each chapter: sky gradient, run-up time (s) and spawn gap (frames), boss, boss pattern, and which hazards appear.
 const CHAPTERS = [
@@ -22,7 +46,7 @@ const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b',
 let state = 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
 let things = [], shots = [], bolts = [], sparks = [], boss = null, clear = 0;
 let mode = 'solo', sel = 0, reached = 0, startCh = 0, easy = false;   // solo | local (2 players, one screen) | host / guest (two devices)
-let pops = [];   // floating "+20" score pop-ups
+let pops = [], kills = 0;   // floating "+20" score pop-ups
 function pop(x, y, str, col) { if (pops.length < 30) pops.push({ x, y, str, col, l: 50 }); }
 let trans = null, ending = 0, shake = 0, paused = false, warn = 0, mt = 0;
 const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 0, tx: 150, vx: 0, vy: 0, tilt: 0, fp: 0, dash: 0, dashCd: 0 };     // player 1: the unicorn
@@ -127,7 +151,7 @@ function applySnap(m) {
   things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7] }));
   shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2], vy: a[3] }));
   bolts = m.bo.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3] }));
-  for (const e of m.ev) { if (e[0] === 'x') sfx(e[1], e[2]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
+  for (const e of m.ev) { if (e[0] === 'x') sfx(e[1], e[2]); else if (e[0] === 'v') voice(e[1]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
 }
 function guestTick() {   // between snapshots: keep things moving smoothly and steer the mermaid
   t++;
@@ -195,8 +219,8 @@ function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; }, 'Pink Uni
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
 function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0 || p.dash > 0) return;
-  lives--; combo = 0; p.flash = 90; shake = 12; sfx('hurt');
-  if (lives <= 0) { state = 'over'; saveBest(); sfx('over'); }
+  lives--; combo = 0; p.flash = 90; shake = 12; sfx('hurt'); voice(lives % 2 ? 'vo_u_hurt' : 'vo_m_look');
+  if (lives <= 0) { state = 'over'; saveBest(); sfx('over'); voice('vo_u_over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
@@ -217,7 +241,7 @@ const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'gh
   ['bug', 'ghost'], ['storm', 'bird'], ['owl', 'bee', 'pig'], ['pig', 'bee', 'bird'], ['bird', 'owl', 'ghost'], ['pig', 'bird', 'storm']];
 const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
 function applyPower(p, k) {
-  if (k !== 'bomb') { p[k] = 480; sfx('power'); score += 25; return; }
+  if (k !== 'bomb') { p[k] = 480; sfx('power'); voice('vo_u_power'); score += 25; return; }
   for (const o of things) if (o.foe || o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'spike') { o.dead = true; score += o.foe ? FOE[o.kind].pts : 10; boom(o.x, o.y, '#ffb347', 10); }
   bolts = []; shake = 20; if (boss && !clear) boss.hp = Math.max(1, boss.hp - 6);
   sfx('bomb');
@@ -301,7 +325,7 @@ function update() {
   for (const p of players) {
     const star = p === uni, gap = star ? (p.rapid > 0 ? 7 : 14) : (p.rapid > 0 ? 8 : 16);
     if (t % gap === (star ? 0 : 8 % gap)) {
-      const x = star ? p.x + 46 : p.x + 30, y = star ? p.y - 74 : p.y - 25;
+      const x = star ? p.x + (IMG.uni_up ? 55 : 46) : p.x + 30, y = star ? p.y - (IMG.uni_up ? 64 : 74) : p.y - 25;
       for (const vy of p.triple > 0 ? [-2.2, 0, 2.2] : [0]) shots.push({ x, y, vx: star ? 12 : 10, vy, m: star ? 0 : 1 });
       if (star) { boom(x, y, '#fff', 4); sfx('shot'); } else sfx('bubble');
     }
@@ -311,7 +335,7 @@ function update() {
   if (!boss && !clear && t > CHAPTERS[ch].time * 60) {
     const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1) * (easy ? .7 : 1));
     boss = { x: W + 100, y: H / 2, hp: bhp, max: bhp };
-    things = []; warn = 120; sfx('warn'); sfx('boss');
+    things = []; warn = 120; sfx('warn'); sfx('boss'); voice('vo_u_boss');
   }
   if (!boss && !clear && t % CHAPTERS[ch].rate === 0) spawn();
 
@@ -326,8 +350,8 @@ function update() {
     if (pp) {
       if (o.kind === 'spike') { hurt(pp); continue; }
       o.dead = true;
-      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); boom(o.x, o.y, '#ffc400'); pop(o.x, o.y - 10, '+' + 10 * Math.min(combo, 10), '#ffe45c'); }
-      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
+      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); if (combo === 5 || combo === 10) voice('vo_u_combo'); boom(o.x, o.y, '#ffc400'); pop(o.x, o.y - 10, '+' + 10 * Math.min(combo, 10), '#ffe45c'); }
+      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); voice('vo_u_heart'); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
@@ -342,7 +366,7 @@ function update() {
       if (!o.foe || o.dead || !hit(s, o, o.r + 8)) continue;
       s.dead = true; o.hp--; o.hit = 6; sfx('pop');
       if (o.hp <= 0) {
-        o.dead = true; score += FOE[o.kind].pts; pop(o.x, o.y - 20, '+' + FOE[o.kind].pts, '#fff'); boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
+        o.dead = true; score += FOE[o.kind].pts; if (++kills % 12 === 0) voice('vo_m_nice'); pop(o.x, o.y - 20, '+' + FOE[o.kind].pts, '#fff'); boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
         const heart = o.kind === 'pig' && lives < maxLives() && Math.random() < .4;
         if (heart || Math.random() < .35) things.push({ kind: heart ? 'heart' : 'ring', x: o.x, y: o.y, y0: o.y, ph: 0, vx: -3, r: 16 });
       }
@@ -355,7 +379,7 @@ function update() {
       if (boss.hp <= 0) {
         score += 200 + lives * 50; shake = 40; clear = 1; pop(boss.x, boss.y - 40, '+' + (200 + lives * 50), '#ffe45c');
         for (let i = 0; i < 6; i++) setTimeout(() => boom(boss ? boss.x + (Math.random() - .5) * 120 : 0, boss ? boss.y + (Math.random() - .5) * 60 : 0, '#ff00cc', 20), i * 150);
-        sfx('win');
+        sfx('win'); voice('vo_u_win');
         saveBest(); bolts = [];
       }
     }
@@ -399,6 +423,10 @@ function drawUnicorn(x, y, glow, phase) {
   g.save(); g.translate(x, y + Math.sin(t / 10) * 2);
   if (glow) glowRing(66);
   const OL = '#b5468f', fl = Math.sin(phase == null ? t / 5 : phase);
+  if (IMG.uni_up && IMG.uni_down) {   // generated sprite: two wing frames + a little squash on each beat
+    g.scale(1, 1 + fl * .025); spr(fl > 0 ? 'uni_up' : 'uni_down', 0, -6, 112);
+    sparkle(48, -57, 5 + 2 * Math.sin(t / 5), .9); g.restore(); return;
+  }
   g.lineJoin = g.lineCap = 'round';
   // flowing rainbow tail
   RAINBOW.forEach((c, i) => {
@@ -464,6 +492,7 @@ function drawUnicorn(x, y, glow, phase) {
 function drawMermaid(x, y, glow) {
   g.save(); g.translate(x, y + Math.sin(t / 9 + 1) * 2);
   if (glow) glowRing(50);
+  if (IMG.mermaid) { g.rotate(Math.sin(t / 14) * .08); spr('mermaid', 0, 0, 96); g.restore(); return; }
   g.scale(1.2, 1.2); g.lineJoin = g.lineCap = 'round';
   const sw = Math.sin(t / 7);
   // long flowing hair behind
@@ -503,6 +532,12 @@ function drawBoss(b) {
   g.save(); g.translate(b.x, b.y);
   if (clear) g.rotate(clear / 12);
   const cc = CHAPTERS[ch], hull = cc.hull || HULLS[ch], hp = Math.max(0, b.hp) / b.max;
+  if (IMG['boss_' + ch]) {
+    g.save(); g.rotate(Math.sin(t / 20) * .05); spr('boss_' + ch, 0, -8, 180); if (b.hit > 0) flashSpr('boss_' + ch, 0, -8, 180, .45); g.restore();
+    g.lineWidth = 7; g.strokeStyle = 'rgba(60,20,70,.35)'; g.beginPath(); g.arc(0, 0, 104, 0, 7); g.stroke();
+    g.strokeStyle = `hsl(${hp * 120},85%,58%)`; g.lineCap = 'round'; g.beginPath(); g.arc(0, 0, 104, -Math.PI / 2, -Math.PI / 2 + 6.283 * hp); g.stroke();
+    g.restore(); return;
+  }
   g.lineJoin = g.lineCap = 'round';
   g.fillStyle = 'rgba(255,240,170,.12)'; g.beginPath(); g.moveTo(-40, 24); g.lineTo(40, 24); g.lineTo(70, 140); g.lineTo(-70, 140); g.fill();   // tractor beam
   // dome + grumpy cloud pilot
@@ -615,10 +650,34 @@ function castle() {
 }
 // Parallax scenery that differs per chapter
 const skyCache = [];
+function mirrorScroll(im, sp, y, h) {
+  const w = h * im.width / im.height, off = -((t * sp) % (w * 2));
+  for (let x = off, k = 0; x < W; x += w, k++) {
+    if (k % 2) { g.save(); g.translate(x + w, y); g.scale(-1, 1); g.drawImage(im, 0, 0, w + .5, h); g.restore(); }
+    else g.drawImage(im, x, y, w + .5, h);
+  }
+}
+function bgFx(i) {   // light particles over the painted backgrounds
+  if (!fx) return;
+  if (i === 2 || i === 3 || i === 10) twinkles(30, .05, H * .5);
+  if (i === 3) { g.fillStyle = '#fff'; g.globalAlpha = .75; for (let k = 0; k < 40; k++) { g.beginPath(); g.arc(sx(k, 1.2, 24) + Math.sin(t / 30 + k) * 10, (k * 61 + t * (1 + k % 3 * .4)) % H, 1.5 + k % 3, 0, 7); g.fill(); } g.globalAlpha = 1; }
+  if (i === 1 || i === 5) for (let k = 0; k < 14; k++) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(sx(k, .6, 70) + Math.sin(t / 20 + k) * 6, ((k * 83 - t * (1 + k % 3)) % H + H) % H, 3 + k % 4 * 2, 0, 7); g.stroke(); }
+  if (i === 6 || i === 8 || i === 10) fireflies(22, i === 6 ? '#b8fff2' : '#fff7a0');
+  if (i === 7) { g.strokeStyle = 'rgba(180,190,230,.35)'; g.lineWidth = 1.5; g.beginPath(); for (let k = 0; k < 60; k++) { const x = (k * 53 + t * 9) % (W + 100) - 50, y = (k * 97 + t * 14) % (H + 40) - 20; g.moveTo(x, y); g.lineTo(x - 6, y + 16); } g.stroke(); if (t % 240 < 8) { g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(0, 0, W, H); } }
+  if (i === 9) { const cols = ['#ff5fa8', '#ffb347', '#7ee8e0', '#b48cff']; for (let k = 0; k < 30; k++) { g.fillStyle = cols[k % 4]; g.fillRect(sx(k, .5, 32), (k * 47 + t * (1 + k % 3)) % H, 7, 3); } }
+  if (i === 11 || i === 0) for (let k = 0; k < 16; k++) { g.globalAlpha = .7; g.fillStyle = k % 2 ? '#ff8fc2' : '#fff'; g.beginPath(); g.arc(sx(k, .6, 60) + Math.sin(t / 50 + k) * 12, H - ((k * 61 + t * (.8 + k % 3 * .4)) % H), 2.5, 0, 7); g.fill(); g.globalAlpha = 1; }
+  if (i === 4) for (let k = 0; k < 18; k++) { g.globalAlpha = .5; g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(sx(k, 1.5, 50), H - 30 - (k * 37) % 200 + Math.sin(t / 20 + k) * 6, 2, 0, 7); g.fill(); g.globalAlpha = 1; }
+}
 function drawBg(i) {
   const c = CHAPTERS[i];
   if (!skyCache[i]) { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, c.sky[0]); gr.addColorStop(1, c.sky[1]); skyCache[i] = gr; }
   g.fillStyle = skyCache[i]; g.fillRect(0, 0, W, H);
+  if (IMG['bg_' + i]) {   // painted background, mirrored so it scrolls forever without a seam, plus a faster foreground layer
+    mirrorScroll(IMG['bg_' + i], .35, 0, H);
+    g.globalAlpha = .14; g.fillStyle = skyCache[i]; g.fillRect(0, 0, W, H); g.globalAlpha = 1;   // soft haze so the characters stand out
+    if (IMG['fg_' + i]) { const im = IMG['fg_' + i], fh = Math.min(150, W * im.height / im.width); mirrorScroll(im, 1.6, H - fh, fh); }
+    bgFx(i); return;
+  }
   [candyClouds, mermaidBay, starryNight, auroraPeaks, rainbowCanyon, coralReef, crystalCaves, stormFortress, forest, candyland, lake, castle][i]();
 }
 // ---- scenery for chapters 1-8 (each a stack of parallax layers, slowest first) ----
@@ -807,9 +866,16 @@ function eye(x, y, r, brow) {   // cartoon eye with a shine; brow > 0 tilts an a
   g.fillStyle = '#fff'; g.beginPath(); g.arc(x - r * .05, y - r * .3, r * .28, 0, 7); g.fill();
   if (brow) { g.strokeStyle = '#2b2440'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(x - r * 1.2, y - r * 1.5 - brow); g.lineTo(x + r * .9, y - r * 1.05); g.stroke(); }
 }
+const FOE_H = { pig: 76, bird: 48, jelly: 68, fish: 68, owl: 64, ghost: 60, bug: 48, bee: 44, storm: 76 };
 function drawFoe(o) {
   g.save(); g.translate(o.x, o.y);
   const h = o.hit > 0, fl = Math.sin(t / 3 + o.ph), k = o.kind, OL = 'rgba(70,30,80,.55)';
+  if (IMG['foe_' + k]) {   // generated sprite with a little wobble and squash
+    const fh = FOE_H[k], sq = 1 + Math.sin(t / 4 + o.ph) * .04;
+    g.rotate(Math.sin(t / 10 + o.ph) * .08); g.scale(1 / sq, sq);
+    spr('foe_' + k, 0, 0, fh, false, k === 'bug' && o.top); if (h) flashSpr('foe_' + k, 0, 0, fh, .55);
+    g.restore(); return;
+  }
   const F = (a, b, y0, y1) => h ? '#ffffff' : lg(0, y0, 0, y1, a, b);
   g.lineJoin = g.lineCap = 'round';
   const outline = () => { g.strokeStyle = OL; g.lineWidth = 2; g.stroke(); };
@@ -896,8 +962,23 @@ function powIcon(k) {   // white icon on a power-up bubble, centred on 0,0
   else if (k === 'magnet') { g.lineWidth = 5; g.beginPath(); g.arc(0, -1, 7, Math.PI, 0, true); g.stroke(); g.fillStyle = '#ffe1e1'; g.fillRect(-9.5, -3, 5, 5); g.fillRect(4.5, -3, 5, 5); }
   else { g.beginPath(); g.arc(-1, 2, 8, 0, 7); g.fill(); g.lineWidth = 2; g.beginPath(); g.moveTo(4, -5); g.quadraticCurveTo(8, -11, 11, -9); g.stroke(); sparkle(11, -10, 4, 1); }
 }
+function drawThingSprite(o) {
+  const k = o.kind, bob = Math.sin(t / 9 + o.x / 40) * 3;
+  if (k === 'cloud') return spr('haz_cloud', o.x, o.y + bob, 72);
+  if (k === 'bat') { if (!IMG.haz_bat) return false; g.save(); g.translate(o.x, o.y); g.scale(1, 1 + Math.sin(t / 3 + o.x / 50) * .15); spr('haz_bat', 0, 0, 54); g.restore(); return true; }
+  if (k === 'spike') return spr('haz_spike', o.x, o.top ? 40 : H - 40, 84, false, o.top);
+  if (k === 'ring') { if (!IMG.pick_ring) return false; g.save(); g.translate(o.x, o.y); g.scale(Math.abs(Math.cos(t / 14 + o.x / 90)) * .7 + .3, 1); spr('pick_ring', 0, 0, 34); g.restore(); if ((t + (o.x | 0)) % 50 < 12) sparkle(o.x + 9, o.y - 10, 5, .9); return true; }
+  if (k === 'heart' || k === 'star' || POW.includes(k)) {
+    if (!IMG['pick_' + k]) return false;
+    const p = 1 + Math.sin(t / 7) * .07; g.save(); g.translate(o.x, o.y + bob); g.scale(p, p);
+    if (k === 'star') { g.fillStyle = `rgba(255,243,140,${.25 + .15 * Math.sin(t / 5)})`; g.beginPath(); g.arc(0, 0, 26, 0, 7); g.fill(); }
+    spr('pick_' + k, 0, 0, k === 'heart' ? 38 : 42); g.restore(); return true;
+  }
+  return false;
+}
 function drawThing(o) {
   if (o.foe) return drawFoe(o);
+  if (drawThingSprite(o)) return;
   if (o.kind === 'cloud' && ch === 8) { g.fillStyle = '#2a5a2a'; g.beginPath(); g.arc(o.x, o.y, 22, 0, 7); g.fill(); g.strokeStyle = '#1a3a1a'; g.lineWidth = 4; for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(o.x + Math.cos(a * .785) * 18, o.y + Math.sin(a * .785) * 18); g.lineTo(o.x + Math.cos(a * .785) * 32, o.y + Math.sin(a * .785) * 32); g.stroke(); } }
   else if (o.kind === 'cloud' && ch === 9) { g.fillStyle = '#9a4fd1'; g.beginPath(); g.arc(o.x, o.y, 24, 0, 7); g.fill(); g.fillStyle = '#d9a8ff'; g.beginPath(); g.arc(o.x - 8, o.y - 8, 5, 0, 7); g.arc(o.x + 9, o.y + 6, 4, 0, 7); g.fill(); g.strokeStyle = '#2a0a3a'; g.lineWidth = 3; g.beginPath(); g.arc(o.x, o.y + 12, 8, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
   else if (o.kind === 'cloud') {   // grumpy rain cloud
@@ -1000,7 +1081,7 @@ function chapterCard() {
   g.save(); g.translate(mx, 370 + Math.sin(t / 15 + 1) * 6); g.scale(1.5, 1.5); drawMermaid(0, 0); g.restore();
   const [a, b] = TALK[ch] || ['', ''];
   bubble(330, 222, a, Math.min(1, (t - 25) / 12), true);
-  bubble(640, 262, b, Math.min(1, (t - 85) / 12), false);
+  bubble(640, 262, b, Math.min(1, (t - 125) / 12), false);
   if (t > 100 && t % 50 < 36) { panel(W / 2 - 90, H - 62, 180, 40, 20, lg(0, H - 62, 0, H - 22, '#ff8fd0', '#e8279a'), '#fff'); txt('Tap to fly!', W / 2, H - 34, 20, '#fff'); }
 }
 function happySaucer(x, y, hull, s) {   // a cheered-up boss waving goodbye
@@ -1021,6 +1102,12 @@ function drawEnding() {
   const gr = g.createLinearGradient(0, 0, 0, H);
   gr.addColorStop(0, `rgb(${40 + 215 * k | 0},${20 + 170 * k | 0},${100 + 130 * k | 0})`); gr.addColorStop(1, `rgb(255,${130 + 90 * k | 0},${170 + 40 * k | 0})`);
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  if (IMG.bg_11) {   // painted castle at dawn: starts dark, brightens as the sun rises
+    g.drawImage(IMG.bg_11, 0, 0, W, H);
+    g.fillStyle = `rgba(40,20,90,${.6 * (1 - k)})`; g.fillRect(0, 0, W, H);
+    if (k < 1) twinkles(40, .05, H * .5);
+    endingActors(e); return;
+  }
   if (k < 1) twinkles(40, .05, H * .6);
   sunGlow(W / 2, H - 60 - k * 180, 60, `rgba(255,240,180,${.4 + .4 * k})`);
   g.fillStyle = '#fff2a8'; g.beginPath(); g.arc(W / 2, H - 60 - k * 180, 60, 0, 7); g.fill();
@@ -1034,6 +1121,9 @@ function drawEnding() {
     g.restore();
   }
   hills('#e88ac4', H - 40, 26, .5, 140); hills('#d670b4', H - 12, 18, .9, 110);
+  endingActors(e);
+}
+function endingActors(e) {
   // cheered-up saucers float away waving
   if (e > 60 && e < 560) for (let i = 0; i < 6; i++) { const x = W + 120 - (e - 60 - i * 40) * 2.6, y = 120 + (i * 53) % 180 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55); }
   // the friends
@@ -1122,6 +1212,7 @@ function hud() {
   }
 }
 function draw() {
+  g.setTransform(Q, 0, 0, Q, 0, 0);
   g.save();
   if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   if (state === 'ending') drawEnding();
@@ -1179,8 +1270,14 @@ function loop() {
   music();
   if (mode === 'guest') { guestTick(); return; }
   if (state === 'play') { if (!paused) update(); }
-  else { t++; if (state === 'ending') ending++; }
-  if (state === 'chapter' && t > 330) state = 'play';
+  else {
+    t++; if (state === 'ending') ending++;
+    if (state === 'chapter' && t === 25) voice('vo_ch' + ch + '_u');
+    if (state === 'chapter' && t === 125) voice('vo_ch' + ch + '_m');
+    if (state === 'ending' && ending === 40) voice('vo_n_end1');
+    if (state === 'ending' && ending === 330) voice('vo_n_end2');
+  }
+  if (state === 'chapter' && t > 360) state = 'play';
   for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; }
   sparks = sparks.filter(p => p.l > 0);
   for (const q of pops) { q.y -= .9; q.l--; }
@@ -1198,7 +1295,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(100, now - last || STEP); last = now;
   acc += dt; avg = avg * .97 + dt * .03;
-  if (avg > 27 && fx) fx = 0; else if (avg < 18 && !fx) fx = 1;
+  if (avg > 27 && fx) { fx = 0; if (Q > 1) { Q = 1; cv.width = W; cv.height = H; } } else if (avg < 18 && !fx) fx = 1;   // slow phone: fewer effects, 1x resolution
   let n = 0;
   while (acc >= STEP - 1.5 && n < 3) { loop(); acc -= STEP; n++; }
   if (acc > STEP * 2) acc = 0;

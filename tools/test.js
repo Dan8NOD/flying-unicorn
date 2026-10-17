@@ -64,6 +64,14 @@ const tests = {
       out.push(notes.length > 50 && notes.every(e => e[1] === 'kick' || e[1] === 'hat' || e[1] === 'snare' || (isFinite(e[2]) && e[2] > 20 && e[2] < 110)));
     }
     return [out.every(x => x), out.length === (CHAPTERS.length + 2) * 2];`, 2],
+  'free flying: move in all directions, tilt, dash': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    things = []; const x0 = uni.x, y0 = uni.y;
+    keys.ArrowRight = true; keys.ArrowUp = true; step(30); keys.ArrowRight = false; keys.ArrowUp = false;
+    const movedRight = uni.x > x0 + 50, movedUp = uni.y < y0 - 50, tilted = uni.tilt < -.05;
+    keys.ArrowLeft = true; step(40); keys.ArrowLeft = false; const movedLeft = uni.x < x0 + 20;
+    uni.vx = 5; uni.vy = 0; dash(uni); const dashing = uni.dash > 0; lives = 3; hurt(uni); const safe = lives === 3;
+    return [movedRight, movedUp, tilted, movedLeft, dashing, safe];`, 6],
 };
 
 let failed = 0;

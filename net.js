@@ -15,7 +15,7 @@ function waitIce(pc) {
 }
 function netReset() {
   try { if (pcOffer) pcOffer.close(); } catch (e) {}
-  pcOffer = null; net.open = false; net.role = null; net.remoteTy = null;
+  pcOffer = null; net.open = false; net.role = null; net.remoteTy = null; net.remoteTx = null;
   net.send = net.sendR = () => {};
 }
 function setupChannel(dc, pc) {
@@ -26,6 +26,8 @@ function setupChannel(dc, pc) {
     let m; try { m = JSON.parse(e.data); } catch (err) { return; }
     if (net.role === 'guest') { if (m.st) applySnap(m); return; }
     if (m.y != null) net.remoteTy = Math.max(30, Math.min(H - 30, +m.y || 0));
+    if (m.x != null) net.remoteTx = +m.x || 0;
+    if (m.p === 3) dash(p2);
     if (m.p === 1) press();
     if (m.p === 2 && state === 'play') paused = !paused;
   };

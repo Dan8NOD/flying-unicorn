@@ -25,8 +25,8 @@ let mode = 'solo', sel = 0, reached = 0, startCh = 0, easy = false;   // solo | 
 let pops = [];   // floating "+20" score pop-ups
 function pop(x, y, str, col) { if (pops.length < 30) pops.push({ x, y, str, col, l: 50 }); }
 let trans = null, ending = 0, shake = 0, paused = false, warn = 0, mt = 0;
-const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 0 };     // player 1: the unicorn
-const p2 = { x: 110, y: H / 2 + 80, ty: H / 2 + 80, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 1 };   // player 2: the mermaid
+const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 0, tx: 150, vx: 0, vy: 0, tilt: 0, fp: 0, dash: 0, dashCd: 0 };     // player 1: the unicorn
+const p2 = { x: 110, y: H / 2 + 80, ty: H / 2 + 80, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 1, tx: 110, vx: 0, vy: 0, tilt: 0, fp: 0, dash: 0, dashCd: 0 };   // player 2: the mermaid
 let players = [uni];
 const maxLives = () => players.length > 1 ? 7 : 5;
 const nearest = o => players.reduce((a, b) => Math.hypot(a.x - o.x, a.y - o.y) <= Math.hypot(b.x - o.x, b.y - o.y) ? a : b);
@@ -51,6 +51,11 @@ addEventListener('keydown', e => {
     if (e.key === '1' || e.key === '2' || e.key === '3') { sel = +e.key - 1; press(); }
   }
   if (e.key === 'p' || e.key === 'Escape') paused = !paused && state === 'play';
+  if (state === 'play' && !paused && (e.key === ' ' || e.key === 'Shift' || e.key === 'x' || e.key === 'q')) {   // dash (local 2P: Q dashes player 2)
+    const who = mode === 'local' && e.key === 'q' ? p2 : mode === 'guest' ? null : uni;
+    if (who) dash(who); else net.sendR('{"p":3}');
+    return;
+  }
   if (e.key === ' ' || e.key === 'Enter') press();
 });
 addEventListener('keyup', e => keys[e.key] = false);
@@ -58,7 +63,8 @@ function pointer(e) {
   const r = cv.getBoundingClientRect();
   for (const p of e.touches ? [...e.touches] : [e]) {   // in 2-player games the right half of the screen steers player 2
     const x = (p.clientX - r.left) * W / r.width, y = (p.clientY - r.top) * H / r.height;
-    (mode === 'guest' || (players.length > 1 && x > W / 2 && mode === 'local') ? p2 : uni).ty = y;
+    const who = mode === 'guest' || (players.length > 1 && x > W / 2 && mode === 'local') ? p2 : uni;
+    who.ty = y; who.tx = mode === 'local' && players.length > 1 ? (who === p2 ? x - W / 2 : x) * 1.4 : x;
   }
 }
 addEventListener('blur', () => { if (state === 'play') paused = true; });
@@ -68,6 +74,11 @@ const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online'];
 cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   pointer(e);
+  if (state === 'play' && !paused) {   // double-tap to dash
+    const now = Date.now(), who = mode === 'guest' || (players.length > 1 && x > W / 2 && mode === 'local') ? p2 : uni;
+    if (now - (who.lastTap || 0) < 280) { if (mode === 'guest') net.sendR('{"p":3}'); else dash(who); }
+    who.lastTap = now;
+  }
   if (state === 'title' && !trans) {
     if (y > 440 && y < 475 && reached > 0) { if (x < W / 2 - 60) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 60) startCh = Math.min(reached, startCh + 1); }
     if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
@@ -103,7 +114,7 @@ const rd = o => Math.round(o * 10) / 10;
 function netSnap() {
   net.send(JSON.stringify({ st: state, ch, t, sc: score, l: lives, cb: combo, cl: clear, pa: paused ? 1 : 0, w: warn, sk: shake,
     tr: trans ? [trans.t, trans.label || ''] : 0,
-    u: [uni.x, rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
+    u: [rd(uni.x), rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, rd(uni.tilt * 100) / 100, uni.dash], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
     b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
     th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0]),
     sh: shots.map(q => [rd(q.x), rd(q.y), q.m ? 1 : 0, rd(q.vy || 0)]), bo: bolts.map(b => [rd(b.x), rd(b.y), rd(b.vx), rd(b.vy)]), ev: net.ev.splice(0) }));
@@ -111,7 +122,7 @@ function netSnap() {
 function applySnap(m) {
   state = m.st; ch = m.ch; t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
   trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
-  uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet] = m.u.slice(2); [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
+  uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, uni.tilt, uni.dash] = m.u.slice(2); uni.fp = t / 5 * 1.3; [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
   boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
   things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7] }));
   shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2], vy: a[3] }));
@@ -120,10 +131,9 @@ function applySnap(m) {
 }
 function guestTick() {   // between snapshots: keep things moving smoothly and steer the mermaid
   t++;
-  if (keys.ArrowUp || keys.w) p2.ty = p2.y - 40;
-  if (keys.ArrowDown || keys.s) p2.ty = p2.y + 40;
-  if (padDir[0]) p2.ty = p2.y + padDir[0] * 60;
-  p2.ty = Math.max(30, Math.min(H - 30, p2.ty)); p2.y += Math.max(-7, Math.min(7, p2.ty - p2.y));
+  const kx = (l, r) => (keys[r] ? 1 : 0) - (keys[l] ? 1 : 0);
+  steerDir(p2, kx('ArrowLeft', 'ArrowRight') + kx('a', 'd') + padX[0], kx('ArrowUp', 'ArrowDown') + kx('w', 's') + padDir[0]);
+  if (state === 'play' && !paused) movePlayer(p2);
   for (const o of things) o.x += o.vx;
   for (const q of shots) { q.x += q.m ? 10 : 12; q.y += q.vy || 0; if (t % 2 === 0 && !q.m) sparks.push({ x: q.x, y: q.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + q.x) % 360},90%,75%)` }); }
   for (const b of bolts) { b.x += b.vx; b.y += b.vy; }
@@ -131,7 +141,7 @@ function guestTick() {   // between snapshots: keep things moving smoothly and s
   for (const q of sparks) { q.x += q.vx; q.y += q.vy; q.l--; }
   sparks = sparks.filter(q => q.l > 0);
   if (trans && ++trans.t >= 70) trans = null;
-  if (++net.ntk % 2 === 0) net.send(JSON.stringify({ y: p2.ty }));
+  if (++net.ntk % 2 === 0) net.send(JSON.stringify({ x: rd(p2.tx), y: rd(p2.ty) }));
 }
 function netLost() {
   const was = mode; net.open = false; net.role = null;
@@ -144,18 +154,21 @@ function netMenu() {
   if (typeof showLobby === 'function') showLobby(); else { lobbyMsg = 'Online play is not available here'; lobbyT = 180; }
 }
 // ---- gamepads: first pad steers player 1, second pad player 2; A = start/tap, Start = pause ----
-let padPrev = {}, padDir = [0, 0];
+let padPrev = {}, padDir = [0, 0], padX = [0, 0];
 function pollPads() {
-  padDir = [0, 0];
+  padDir = [0, 0]; padX = [0, 0];
   const list = typeof navigator !== 'undefined' && navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   list.slice(0, 2).forEach((gp, i) => {
     const b = n => !!(gp.buttons[n] && gp.buttons[n].pressed);
     let d = Math.abs(gp.axes[1] || 0) > .25 ? gp.axes[1] : 0;
     if (b(12)) d = -1; if (b(13)) d = 1;
     padDir[i] = d;
-    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0 };
+    let dx = Math.abs(gp.axes[0] || 0) > .25 ? gp.axes[0] : 0; if (b(14)) dx = -1; if (b(15)) dx = 1;
+    padX[i] = dx;
+    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0, dash: b(1) || b(2) };
     if (state === 'title' && !trans) { if (cur.up && !prev.up) sel = (sel + 2) % 3; if (cur.down && !prev.down) sel = (sel + 1) % 3; }
     if (cur.a && !prev.a) press();
+    if (cur.dash && !prev.dash && state === 'play') { const p = mode === 'guest' ? null : players[i]; if (p) dash(p); else net.sendR('{"p":3}'); }
     if (cur.s && !prev.s) { if (state === 'play') paused = !paused; else press(); }
     padPrev[gp.index] = cur;
   });
@@ -172,7 +185,7 @@ function start(c, fresh) {
     if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
     ch = c; t = 0; pops = []; things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
-    for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); }
+    for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.tx = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); p.vx = p.vy = p.tilt = p.dash = p.dashCd = 0; }
     if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
     combo = 0; state = 'chapter'; ending = 0;
     sfx('start');
@@ -181,7 +194,7 @@ function start(c, fresh) {
 function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; }, 'Pink Unicorn'); }
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
 function hurt(p = uni) {
-  if (p.flash > 0 || p.shield > 0) return;
+  if (p.flash > 0 || p.shield > 0 || p.dash > 0) return;
   lives--; combo = 0; p.flash = 90; shake = 12; sfx('hurt');
   if (lives <= 0) { state = 'over'; saveBest(); sfx('over'); }
 }
@@ -247,21 +260,42 @@ function bossFire() {
   else for (let i = 0; i < 8; i++) { const b = i / 8 * 6.283 + t / 30; bolts.push({ x: boss.x, y: boss.y, vx: Math.cos(b) * sp * .8, vy: Math.sin(b) * sp * .8 }); }
 }
 
+// ---- free flying: players steer toward a target point (finger/mouse) or in a direction (keys/pad) ----
+const MINX = 50, MAXX = W * .72;
+function steerDir(p, dx, dy) { if (dx) p.tx = p.x + dx * 60; if (dy) p.ty = p.y + dy * 60; }
+function dash(p) {   // quick sparkly burst in the flying direction; can't be hurt while dashing
+  if (p.dashCd > 0 || state !== 'play' || paused) return;
+  let dx = p.vx, dy = p.vy; const m = Math.hypot(dx, dy); if (m < 1) { dx = 1; dy = 0; } else { dx /= m; dy /= m; }
+  p.dvx = dx * 17; p.dvy = dy * 17; p.dash = 10; p.dashCd = 45; sfx('dash'); boom(p.x, p.y, '#fff', 14);
+}
+function movePlayer(p) {
+  const sp = 7;
+  if (p.dash > 0) { p.dash--; p.vx = p.dvx; p.vy = p.dvy; if (p.dash === 0) { p.tx = p.x + p.vx * 2; p.ty = p.y + p.vy * 2; }
+    sparks.push({ x: p.x - 20, y: p.y + (Math.random() - .5) * 30, vx: -3, vy: 0, l: 20, col: RAINBOW[t % 6] }); }
+  else {
+    p.tx = Math.max(MINX, Math.min(MAXX, p.tx)); p.ty = Math.max(30, Math.min(H - 30, p.ty));
+    p.vx += (Math.max(-sp, Math.min(sp, p.tx - p.x)) - p.vx) * .35;
+    p.vy += (Math.max(-sp, Math.min(sp, p.ty - p.y)) - p.vy) * .35;
+  }
+  if (p.dashCd > 0) p.dashCd--;
+  p.x = Math.max(MINX, Math.min(MAXX, p.x + p.vx)); p.y = Math.max(30, Math.min(H - 30, p.y + p.vy));
+  p.tilt += (Math.max(-.45, Math.min(.45, p.vy * .05 - p.vx * .012)) - p.tilt) * .2;   // bank into the move
+  p.fp = (p.fp || 0) + .2 + Math.max(0, -p.vy) * .06 + Math.abs(p.vx) * .02;           // wings beat faster when climbing
+  if (p.vy < -3.5 && t - (p.lastFlap || 0) > 16) { p.lastFlap = t; sfx('flap'); }
+}
 function update() {
   t++;
   for (const p of players) for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet']) if (p[k] > 0) p[k]--;
   if (shake > 0) shake--;
   if (warn > 0) warn--;
-  const sp = 7;
-  const two = mode === 'local';   // keyboard: arrows = player 1, W/S = player 2 (in 1-player games both steer player 1)
-  if (keys.ArrowUp || (!two && keys.w)) uni.ty = uni.y - 40;
-  if (keys.ArrowDown || (!two && keys.s)) uni.ty = uni.y + 40;
-  if (two && keys.w) p2.ty = p2.y - 40;
-  if (two && keys.s) p2.ty = p2.y + 40;
-  players.forEach((p, i) => { if (padDir[i] && !(mode === 'host' && i === 1)) p.ty = p.y + padDir[i] * 60; });
-  if (mode === 'host' && net.remoteTy != null) p2.ty = net.remoteTy;
-  for (const p of players) { p.ty = Math.max(30, Math.min(H - 30, p.ty)); p.y += Math.max(-sp, Math.min(sp, p.ty - p.y)); }
-  mer.x += (uni.x - 90 - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
+  const two = mode === 'local';   // keyboard: arrows = player 1, WASD = player 2 (in 1-player games both steer player 1)
+  const kx = (l, r) => (keys[r] ? 1 : 0) - (keys[l] ? 1 : 0);
+  steerDir(uni, kx('ArrowLeft', 'ArrowRight') + (two ? 0 : kx('a', 'd')), kx('ArrowUp', 'ArrowDown') + (two ? 0 : kx('w', 's')));
+  if (two) steerDir(p2, kx('a', 'd'), kx('w', 's'));
+  players.forEach((p, i) => { if (!(mode === 'host' && i === 1)) steerDir(p, padX[i], padDir[i]); });
+  if (mode === 'host' && net.remoteTy != null) { p2.ty = net.remoteTy; if (net.remoteTx != null) p2.tx = net.remoteTx; }
+  for (const p of players) movePlayer(p);
+  mer.x += (Math.max(40, uni.x - 90) - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
 
   // auto-fire: the unicorn throws pony-dust stars from her horn, a playable mermaid blows bubbles
   for (const p of players) {
@@ -361,10 +395,10 @@ function rr(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y
 function glowRing(r) { g.fillStyle = `rgba(255,255,255,${.22 + .1 * Math.sin(t / 4)})`; g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill(); g.strokeStyle = `rgba(255,243,140,${.5 + .3 * Math.sin(t / 4)})`; g.lineWidth = 3; g.stroke(); }
 function sparkle(x, y, s, a) { g.globalAlpha = a; g.fillStyle = '#fff'; g.beginPath(); g.moveTo(x, y - s); g.quadraticCurveTo(x, y, x + s, y); g.quadraticCurveTo(x, y, x, y + s); g.quadraticCurveTo(x, y, x - s, y); g.quadraticCurveTo(x, y, x, y - s); g.fill(); g.globalAlpha = 1; }
 
-function drawUnicorn(x, y, glow) {
+function drawUnicorn(x, y, glow, phase) {
   g.save(); g.translate(x, y + Math.sin(t / 10) * 2);
   if (glow) glowRing(66);
-  const OL = '#b5468f', fl = Math.sin(t / 5);
+  const OL = '#b5468f', fl = Math.sin(phase == null ? t / 5 : phase);
   g.lineJoin = g.lineCap = 'round';
   // flowing rainbow tail
   RAINBOW.forEach((c, i) => {
@@ -1119,7 +1153,9 @@ function draw() {
       if (players.length === 1 && state !== 'chapter') drawMermaid(mer.x, mer.y);
       for (const p of state === 'chapter' ? [] : players) {
         if (p.flash > 0 && t % 8 < 4) continue;
-        g.save(); g.translate(p.x, p.y); g.scale(1.15, 1.15); p === uni ? drawUnicorn(0, 0, p.shield > 0) : drawMermaid(0, 0, p.shield > 0); g.restore();
+        const one = (ox, a) => { g.save(); g.globalAlpha = a; g.translate(p.x + ox * p.vx, p.y + ox * p.vy); g.rotate(p.tilt || 0); g.scale(1.15, 1.15); p === uni ? drawUnicorn(0, 0, p.shield > 0, p.fp) : drawMermaid(0, 0, p.shield > 0); g.restore(); g.globalAlpha = 1; };
+        if (p.dash > 0) { one(-4, .2); one(-2, .35); }   // dash after-images
+        one(0, 1);
         if (players.length > 1) { panel(p.x - 16, p.y - 92, 32, 20, 10, p.i ? 'rgba(20,160,160,.8)' : 'rgba(214,25,154,.8)'); txt('P' + (p.i + 1), p.x, p.y - 77, 14, '#fff'); }
       }
       for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;

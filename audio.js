@@ -67,6 +67,8 @@ function sfx(name, arg = 0) {
     case 'win': [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => bell(hz(72 + s), n + i * .09, .08, .9)); [48, 55, 60].forEach(m => tone(hz(m), n + .5, 1.4, .05, 'triangle', { a: .1, lp: 900 })); break;
     case 'bomb': noise(n, .8, .25, 'lowpass', 3000, 150); tone(130, n, .6, .25, 'sine', { slide: 38 }); break;
     case 'start': for (let i = 0; i < 9; i++) bell(hz(67 + PENTA[i]), n + i * .05, .045, .6); break;
+    case 'flap': noise(n, .16, .07, 'bandpass', 900, 350); tone(180, n, .1, .03, 'sine', { slide: 120 }); break;              // soft wing whoosh
+    case 'dash': noise(n, .3, .14, 'bandpass', 1200, 5000); [0, 4, 7].forEach((s, i) => bell(hz(84 + s), n + .05 + i * .03, .04, .3)); break;
     case 'click': bell(hz(96), n, .03, .1); break;
     case 'over': [7, 4, 0, -5].forEach((s, i) => bell(hz(72 + s), n + i * .22, .07, .9)); break;
   }

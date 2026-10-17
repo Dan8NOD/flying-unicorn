@@ -95,6 +95,31 @@ const keys = {};
 try { best = +localStorage.getItem('pinkUnicornBest') || 0; reached = Math.min(CHAPTERS.length - 1, +localStorage.getItem('pinkUnicornReached') || 0); easy = localStorage.getItem('pinkUnicornEasy') === '1'; muted = localStorage.getItem('pinkUnicornMute') === '1'; } catch (e) {}
 startCh = Math.min(startCh, reached);
 function saveOpt(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+// Sound settings (saved): music 0 = off, 1 = low, 2 = normal; effects and voices on/off.
+const opts = { music: 2, sfx: 1, voice: 1 };
+try { Object.assign(opts, JSON.parse(localStorage.getItem('pinkUnicornOpts') || '{}')); } catch (e) {}
+let settingsOpen = false;
+const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']]];
+function settingsTap(x, y) {   // rows of the settings panel; returns true if the tap changed a setting
+  for (let i = 0; i < SETTING_ROWS.length; i++) {
+    if (Math.abs(x - W / 2) < 210 && Math.abs(y - (232 + i * 56)) < 24) {
+      const [k, , vals] = SETTING_ROWS[i]; opts[k] = (opts[k] + 1) % vals.length; saveOpt('pinkUnicornOpts', JSON.stringify(opts)); audio(); sfx('click'); return true;
+    }
+  }
+  return false;
+}
+function drawSettings(title) {
+  g.fillStyle = 'rgba(42,15,61,.5)'; g.fillRect(0, 0, W, H);
+  panel(W / 2 - 250, 110, 500, 330, 30, lg(0, 110, 0, 440, 'rgba(255,242,250,.97)', 'rgba(255,205,236,.97)'), '#fff');
+  fancyText(title, W / 2, 172, 44);
+  SETTING_ROWS.forEach(([k, label, vals], i) => {
+    const y = 232 + i * 56, on = opts[k] > 0;
+    rr(W / 2 - 210, y - 22, 420, 44, 22); g.fillStyle = on ? lg(0, y - 22, 0, y + 22, '#ff8fd0', '#e8279a') : 'rgba(122,26,99,.25)'; g.fill();
+    g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.fillStyle = '#fff'; g.textAlign = 'left'; g.fillText(label, W / 2 - 186, y + 7);
+    g.textAlign = 'right'; g.fillText(vals[opts[k]], W / 2 + 186, y + 7);
+  });
+  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, 420);
+}
 function toggleMute() { muted = !muted; saveOpt('pinkUnicornMute', muted ? 1 : 0); }
 
 // ---- input ----
@@ -140,9 +165,12 @@ cv.addEventListener('pointerdown', e => {
     who.lastTap = now;
   }
   if (state === 'title' && !trans) {
+    if (settingsOpen) { if (!settingsTap(x, y)) settingsOpen = false; return; }
+    if (Math.hypot(x - (W - 40), y - 40) < 24) { settingsOpen = true; audio(); sfx('click'); return; }
     if (y > 440 && y < 475 && reached > 0) { if (x < W / 2 - 60) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 60) startCh = Math.min(reached, startCh + 1); }
     if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
     MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
+  if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { toggleMute(); return; }
@@ -1352,6 +1380,11 @@ function draw() {
       txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2 + 60, 500, 13);
       txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2 + 60, 521, 13);
       if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 274, 20, '#fff36b'); }
+      if (mode !== 'guest') {   // settings gear
+        g.fillStyle = 'rgba(122,26,99,.45)'; g.beginPath(); g.arc(W - 40, 40, 22, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.stroke();
+        g.save(); g.translate(W - 40, 40); g.fillStyle = '#fff'; for (let k = 0; k < 8; k++) { g.rotate(Math.PI / 4); g.fillRect(-3, -12, 6, 6); } g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill(); g.fillStyle = 'rgba(122,26,99,.9)'; g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill(); g.restore();
+      }
+      if (settingsOpen) drawSettings('Sound');
     } else {
       stageBack();
       for (const o of things) drawThing(o);
@@ -1385,7 +1418,7 @@ function draw() {
       if (boss && !clear) { panel(W / 2 - 110, H - 40, 220, 28, 14, 'rgba(122,26,99,.6)'); txt(c.boss, W / 2, H - 20, 17, '#fff'); }
       if (clear) { const p = Math.min(1, clear / 20); g.save(); g.translate(W / 2, 220); g.scale(p * (1 + .05 * Math.sin(t / 4)), p * (1 + .05 * Math.sin(t / 4))); fancyText('Boss defeated!', 0, 0, 56); g.restore(); }
       if (warn > 0 && warn % 30 < 20) { panel(W / 2 - 160, 112, 320, 56, 28, 'rgba(255,60,90,.85)'); txt('!  WARNING  !', W / 2, 152, 38, '#fff'); }
-      if (paused) card('Paused', ['tap or press P to resume']);
+      if (paused) drawSettings('Paused');
       if (state === 'chapter') chapterCard();
       if (state === 'results') resultsCard();
       if (state === 'over') card('Game Over', [`Score ${score}   ·   Best ${best}`, 'tap to try again']);

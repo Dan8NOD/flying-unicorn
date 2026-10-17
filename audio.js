@@ -50,7 +50,7 @@ const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
 let shotN = 0;
 function sfx(name, arg = 0) {
   if (typeof netEv === 'function') netEv(['x', name, arg]);   // the guest device plays the same sounds
-  if (muted || !ac) return;
+  if (muted || !ac || (typeof opts !== 'undefined' && !opts.sfx && name !== 'click')) return;
   if (playBuf(name, arg)) return;
   const n = ac.currentTime + .005;
   switch (name) {
@@ -158,7 +158,7 @@ function music() {
     songKey = key; songStep = 0; songTime = ac.currentTime + .08;
     song = key === '' ? null : makeSong(key[0] === 'b' ? ch : key === 'title' || key === 'ending' ? key : ch, (key.length * 7 + (ch | 0) * 13 + 3), key[0] === 'b');
   }
-  if (!song || muted) { if (song) songTime = ac.currentTime + .05; return; }
+  if (!song || muted || (typeof opts !== 'undefined' && !opts.music)) { if (song) songTime = ac.currentTime + .05; return; }
   const spb = 60 / song.bpm / 4;
   if (songTime < ac.currentTime - .5) songTime = ac.currentTime + .05;   // fell behind (tab was hidden): skip ahead
   while (songTime < ac.currentTime + .2) {
@@ -195,7 +195,7 @@ function playBuf(name, arg) {
 }
 function voice(name) {
   if (typeof netEv === 'function') netEv(['v', name]);
-  if (muted || !voiceEl) return;
+  if (muted || !voiceEl || (typeof opts !== 'undefined' && !opts.voice)) return;
   try { voiceEl.pause(); voiceEl.src = 'assets/audio/' + name + '.mp3'; voiceEl.volume = 1; voiceEl.currentTime = 0; const p = voiceEl.play(); if (p) p.catch(() => {}); voiceUntil = Date.now() + 2600; voiceEl.onended = () => { voiceUntil = 0; }; } catch (e) {}
 }
 function musicFileFor(key) { return key === '' ? '' : key === 'title' ? 'music_title' : key === 'ending' ? 'music_ending' : key[0] === 'b' ? 'music_boss' : 'music_ch' + key; }
@@ -206,7 +206,8 @@ function streamMusic(key) {   // returns true while a music file is handling pla
     mFile = file;
     if (file && !mFail[file]) { mCur ^= 1; const el = mEl[mCur]; el.src = 'assets/audio/' + file + '.mp3'; el.volume = 0; el.onerror = () => { mFail[file] = 1; }; const p = el.play(); if (p) p.catch(() => {}); }
   }
-  const target = muted || !file ? 0 : musicVol * (Date.now() < voiceUntil ? .35 : 1);
+  const mv = typeof opts !== 'undefined' ? [0, .3, musicVol][opts.music] : musicVol;
+  const target = muted || !file ? 0 : mv * (Date.now() < voiceUntil ? .35 : 1);
   mEl.forEach((el, i) => {   // crossfade: the current track fades in, the old one fades out
     const want = i === mCur && file && !mFail[file] ? target : 0;
     el.volume = Math.max(0, Math.min(1, el.volume + Math.max(-.03, Math.min(.03, want - el.volume))));
@@ -225,8 +226,9 @@ function ambienceTick() {
   if (wet > .05 && !muted && wxEl.paused) { if (!/wx_rain/.test(wxEl.src)) wxEl.src = 'assets/audio/wx_rain.mp3'; const p = wxEl.play(); if (p) p.catch(() => {}); }
   const duck = Date.now() < voiceUntil ? .6 : 1;
   const ramp = (el, want) => { el.volume = Math.max(0, Math.min(1, el.volume + Math.max(-.02, Math.min(.02, want - el.volume)))); if (el.volume === 0 && !el.paused && want === 0) el.pause(); };
-  ramp(ambEl, muted || !bed ? 0 : .32 * duck);
-  ramp(wxEl, muted ? 0 : .5 * wet * duck);
+  const fxOn = typeof opts === 'undefined' || opts.sfx;
+  ramp(ambEl, muted || !bed || !fxOn ? 0 : .32 * duck);
+  ramp(wxEl, muted || !fxOn ? 0 : .5 * wet * duck);
   if (!muted && bed && ambEl.paused && ac && ac.state === 'running') { const p = ambEl.play(); if (p) p.catch(() => {}); }
 }
 

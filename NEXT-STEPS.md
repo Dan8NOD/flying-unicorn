@@ -14,7 +14,7 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - Style that worked: Meshy `gpt-image-2`, "cute polished 3D animated-film style render ... side view", `--bg` for transparent sprites;
   wing frames made with `edit` (image-to-image) from the first unicorn so the design stays identical.
 - Voices: unicorn = Jessica, mermaid = Laura, narrator = George. Music: ElevenLabs `music_v1`, instrumental, 60-90 s loops.
-- About 650 Meshy credits and a small part of the ElevenLabs quota were used in total.
+- About 590 Meshy credits (10,419 left) and a small part of the ElevenLabs quota were used in total.
 - Screenshot / review tools: `tools/shot.js` (offscreen render), `tools/sheet.js` (all chapters), `tools/mixcheck.js`, `tools/sampler.js`.
 
 ## Still worth doing (needs ears and hands on real devices)

@@ -19,7 +19,7 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 
 ## Still worth doing (needs ears and hands on real devices)
 - Play through on a phone: balance volumes of music vs effects vs voices (`musicVol`, `SFX_VOL` in `audio.js`), and difficulty.
-- The painted backgrounds scroll by mirroring; if a seam looks odd in a chapter, regenerate that background as a wider panorama.
+- The painted backgrounds scroll by mirroring; if a seam looks odd in a chapter, regenerate that background as a wider panorama (Dream City shows its moon twice).
 - Optional: a voice on/off switch, more voice reactions, a happy variant for every boss.
 
 ## Engineering backlog (mechanical)

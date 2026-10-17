@@ -955,6 +955,74 @@ function drawEnding() {
   if (e > 420) { txt('THE END', W / 2, H - 120, 56, '#fff'); txt(`Final score ${score}   Best ${best}`, W / 2, H - 80, 24); txt(`All ${CHAPTERS.length} chapters cleared!`, W / 2, H - 52, 20, '#ffe84d'); }
   if (e > 240 && e % 120 < 80) txt('tap to play again', W / 2, H - 22, 20);
 }
+// ---- interface pieces ----
+function panel(x, y, w, h, r, fill, edge) { rr(x, y, w, h, r); g.fillStyle = fill; g.fill(); g.strokeStyle = edge || 'rgba(255,255,255,.75)'; g.lineWidth = 2.5; g.stroke(); }
+function fancyText(s, x, y, size) {   // candy-gradient text with a white rim and a purple outline
+  g.font = `900 ${size}px "Trebuchet MS", "Arial Rounded MT Bold", sans-serif`; g.textAlign = 'center'; g.lineJoin = 'round';
+  g.lineWidth = size * .28; g.strokeStyle = '#7a1a63'; g.strokeText(s, x, y + 3);
+  g.lineWidth = size * .16; g.strokeStyle = '#fff'; g.strokeText(s, x, y);
+  g.fillStyle = lg(0, y - size * .8, 0, y, '#ffb3e1', '#e8279a'); g.fillText(s, x, y);
+}
+function logo(x, y) {
+  const word = 'PINK UNICORN', size = 72; g.font = `900 ${size}px "Trebuchet MS", "Arial Rounded MT Bold", sans-serif`;
+  let cx = x - g.measureText(word).width / 2;
+  for (let i = 0; i < word.length; i++) {
+    const ch1 = word[i], w = g.measureText(ch1).width, by = y + Math.sin(t / 14 + i * .6) * 5;
+    if (ch1 !== ' ') {
+      g.textAlign = 'left'; g.lineJoin = 'round';
+      g.lineWidth = 20; g.strokeStyle = '#7a1a63'; g.strokeText(ch1, cx, by + 4);
+      g.lineWidth = 11; g.strokeStyle = '#fff'; g.strokeText(ch1, cx, by);
+      g.fillStyle = lg(0, by - 60, 0, by, i < 4 ? '#ffc6e8' : '#fff1a8', i < 4 ? '#ff3fa4' : RAINBOW[(i - 5) % 6]); g.fillText(ch1, cx, by);
+      g.fillStyle = 'rgba(255,255,255,.55)'; g.fillRect(cx + 6, by - 52, w * .25, 8);
+    }
+    cx += w;
+  }
+  sparkle(x + 270, y - 54, 9 + 3 * Math.sin(t / 6), .95); sparkle(x - 280, y - 10, 7 + 3 * Math.sin(t / 7 + 2), .9);
+}
+function menuButton(s, y, on) {
+  const x = W / 2 - 190, w = 380, h = 42;
+  if (on) { g.fillStyle = `rgba(255,255,255,${.35 + .15 * Math.sin(t / 8)})`; rr(x - 6, y - 5, w + 12, h + 10, 26); g.fill(); }
+  rr(x, y, w, h, 21); g.fillStyle = on ? lg(0, y, 0, y + h, '#ff8fd0', '#e8279a') : 'rgba(255,255,255,.72)'; g.fill();
+  g.strokeStyle = on ? '#fff' : 'rgba(214,25,154,.45)'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.35)'; rr(x + 10, y + 4, w - 20, 12, 6); g.fill();
+  g.font = 'bold 22px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = on ? '#fff' : '#c2197f'; g.fillText(s, W / 2, y + 29);
+  if (on) { star(x + 26, y + 21, 9, t / 20, '#fff36b'); star(x + w - 26, y + 21, 9, -t / 20, '#fff36b'); }
+}
+function card(title, lines, big) {
+  g.fillStyle = 'rgba(42,15,61,.45)'; g.fillRect(0, 0, W, H);
+  const h = 120 + lines.length * 34, y = H / 2 - h / 2 - 10;
+  panel(W / 2 - 260, y, 520, h, 30, lg(0, y, 0, y + h, 'rgba(255,240,250,.96)', 'rgba(255,200,235,.96)'), '#fff');
+  fancyText(title, W / 2, y + 66, big ? 52 : 46);
+  lines.forEach((s, i) => { g.font = `bold ${i === 0 && big ? 26 : 19}px "Trebuchet MS", sans-serif`; g.textAlign = 'center'; g.fillStyle = i === lines.length - 1 ? '#e8279a' : '#7a1a63'; g.fillText(s, W / 2, y + 108 + i * 34); });
+  sparkle(W / 2 - 230, y + 24, 8, .9); sparkle(W / 2 + 232, y + h - 26, 7, .9);
+}
+function hud() {
+  panel(10, 10, 170, 40, 20, 'rgba(122,26,99,.45)');
+  g.save(); g.translate(32, 30); g.strokeStyle = '#ffc94a'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.stroke(); g.restore();
+  g.font = 'bold 22px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.fillText(score, 50, 38);
+  for (let i = 0; i < lives; i++) { g.save(); g.translate(W - 26 - i * 34, 30); const p = i === lives - 1 ? 1 + .1 * Math.sin(t / 6) : 1; g.scale(p, p); heartPath(0, 0, 13); g.fillStyle = lg(0, -12, 0, 12, '#ff9ec8', '#ff2f7d'); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.stroke(); g.restore(); }
+  if (combo > 1) { const cx = W / 2; panel(cx - 64, 12, 128, 34, 17, lg(0, 12, 0, 46, '#fff3a0', '#ffb300'), '#fff'); txt(`Combo x${Math.min(combo, 10)}`, cx, 36, 18, '#fff'); }
+  players.forEach((p, i) => {   // active power-ups as small bubbles with a countdown ring
+    let x = 26;
+    for (const [k, v, col] of [['shield', p.shield, '#ffd84a'], ['rapid', p.rapid, '#ff7a1a'], ['triple', p.triple, '#8f5cff'], ['magnet', p.magnet, '#1fa8e0']]) {
+      if (v <= 0) continue;
+      const y = 72 + i * 40; g.save(); g.translate(x, y);
+      g.fillStyle = col; g.beginPath(); g.arc(0, 0, 15, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 15, -Math.PI / 2, -Math.PI / 2 + 6.283 * v / (k === 'shield' ? 360 : 480)); g.stroke();
+      g.scale(.62, .62); if (k === 'shield') star(0, 0, 13, 0, '#fff'); else powIcon(k); g.restore(); x += 38;
+    }
+  });
+  const btn = (x, draw) => { g.fillStyle = 'rgba(122,26,99,.4)'; g.beginPath(); g.arc(x, H - 34, 20, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2.5; g.stroke(); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; draw(); };
+  btn(W - 40, () => { g.fillRect(W - 47, H - 43, 5, 18); g.fillRect(W - 38, H - 43, 5, 18); });
+  btn(W - 94, () => { g.beginPath(); g.moveTo(W - 104, H - 39); g.lineTo(W - 99, H - 39); g.lineTo(W - 92, H - 45); g.lineTo(W - 92, H - 23); g.lineTo(W - 99, H - 29); g.lineTo(W - 104, H - 29); g.closePath(); g.fill();
+    g.lineWidth = 2.5; if (muted) { g.beginPath(); g.moveTo(W - 88, H - 39); g.lineTo(W - 80, H - 29); g.moveTo(W - 80, H - 39); g.lineTo(W - 88, H - 29); g.stroke(); } else { g.beginPath(); g.arc(W - 91, H - 34, 7, -.8, .8); g.stroke(); } });
+  if (!boss) {   // level progress: a rainbow bar with a tiny star racing to the boss
+    const p = Math.min(1, t / (CHAPTERS[ch].time * 60)), bx = W / 2 - 160, by = H - 18;
+    rr(bx, by, 320, 8, 4); g.fillStyle = 'rgba(122,26,99,.35)'; g.fill();
+    if (p > .02) { rr(bx, by, 320 * p, 8, 4); const q = g.createLinearGradient(bx, 0, bx + 320, 0); RAINBOW.forEach((c, i) => q.addColorStop(i / 5, c)); g.fillStyle = q; g.fill(); }
+    star(bx + 320 * p, by + 4, 9, t / 10, '#fff36b');
+  }
+}
 function draw() {
   g.save();
   if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
@@ -962,50 +1030,44 @@ function draw() {
   else {
     drawBg(state === 'title' ? 0 : ch);
     if (state === 'title') {
-      drawUnicorn(W / 2, 250 + Math.sin(t / 20) * 10);
-      txt('PINK UNICORN', W / 2, 130, 64, '#fff');
-      if (mode === 'guest') txt('Connected! Waiting for the host to start...', W / 2, 340, 24);
-      else MENU.forEach((s, i) => {
-        g.fillStyle = i === sel ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.4)'; g.fillRect(W / 2 - 200, 290 + i * 52, 400, 42);
-        txt(s, W / 2, 320 + i * 52, 22, i === sel ? '#d6199a' : '#fff');
-      });
-      if (reached > 0 && mode !== 'guest') txt(`◀   Chapter ${startCh + 1} · ${CHAPTERS[startCh].name}   ▶`, W / 2, 462, 18, '#fff');
-      txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 16, 506, 15, easy ? '#7dff7d' : '#fff', 'left');
-      txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2, 482, 15);
-      txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2, 506, 15);
-      if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 272, 20, '#fff36b'); }
+      drawMermaid(W / 2 - 150, 228 + Math.sin(t / 18 + 1) * 8);
+      g.save(); g.translate(W / 2 + 20, 215 + Math.sin(t / 20) * 10); g.scale(1.45, 1.45); drawUnicorn(0, 0); g.restore();
+      logo(W / 2, 112);
+      if (mode === 'guest') { panel(W / 2 - 260, 300, 520, 60, 22, 'rgba(255,255,255,.85)'); txt('Connected! Waiting for the host to start...', W / 2, 338, 22, '#d6199a'); }
+      else MENU.forEach((s, i) => menuButton(s, 290 + i * 52, i === sel));
+      if (reached > 0 && mode !== 'guest') { panel(W / 2 - 200, 444, 400, 32, 16, 'rgba(122,26,99,.35)'); txt(`◀   Chapter ${startCh + 1} · ${CHAPTERS[startCh].name}   ▶`, W / 2, 467, 17, '#fff'); }
+      panel(10, 488, 196, 30, 15, easy ? 'rgba(80,200,120,.55)' : 'rgba(122,26,99,.35)'); txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 108, 509, 15, '#fff');
+      txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2 + 60, 500, 13);
+      txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2 + 60, 521, 13);
+      if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 274, 20, '#fff36b'); }
     } else {
       for (const o of things) drawThing(o);
       if (boss) drawBoss(boss);
       for (const s of shots) {
-        if (s.m) { g.strokeStyle = '#7ee8e0'; g.lineWidth = 2; g.beginPath(); g.arc(s.x, s.y, 7, 0, 7); g.stroke(); g.fillStyle = '#fff'; g.fillRect(s.x - 3, s.y - 3, 3, 3); }
-        else { star(s.x, s.y, 13, t / 6 + s.x / 20, `hsl(${(t * 15 + s.x) % 360},95%,72%)`); star(s.x, s.y, 5, 0, '#fff'); }
+        if (s.m) { g.fillStyle = 'rgba(160,240,255,.25)'; g.beginPath(); g.arc(s.x, s.y, 8, 0, 7); g.fill(); g.strokeStyle = '#8ff0ff'; g.lineWidth = 2; g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(s.x - 3, s.y - 3, 2.2, 0, 7); g.fill(); }
+        else { g.globalAlpha = .35; star(s.x, s.y, 20, t / 6 + s.x / 20, `hsl(${(t * 15 + s.x) % 360},95%,80%)`); g.globalAlpha = 1; star(s.x, s.y, 13, t / 6 + s.x / 20, `hsl(${(t * 15 + s.x) % 360},95%,70%)`); star(s.x, s.y, 5, 0, '#fff'); }
       }
-      for (const b of bolts) { g.fillStyle = '#ffee00'; g.beginPath(); g.arc(b.x, b.y, 9, 0, 7); g.fill(); }
+      for (const b of bolts) {   // boss energy orbs
+        g.fillStyle = 'rgba(255,90,200,.3)'; g.beginPath(); g.arc(b.x, b.y, 14, 0, 7); g.fill();
+        g.fillStyle = lg(b.x, b.y - 9, b.x, b.y + 9, '#ffe0f6', '#ff3fb4'); g.beginPath(); g.arc(b.x, b.y, 9, 0, 7); g.fill();
+        g.fillStyle = '#fff'; g.beginPath(); g.arc(b.x - 3, b.y - 3, 2.5, 0, 7); g.fill();
+      }
       if (players.length === 1) drawMermaid(mer.x, mer.y);
       for (const p of players) {
         if (p.flash > 0 && t % 8 < 4) continue;
         p === uni ? drawUnicorn(p.x, p.y, p.shield > 0) : drawMermaid(p.x, p.y, p.shield > 0);
-        if (players.length > 1) txt('P' + (p.i + 1), p.x, p.y - 62, 16, p.i ? '#7ee8e0' : '#ffb3e1');
+        if (players.length > 1) { panel(p.x - 16, p.y - 92, 32, 20, 10, p.i ? 'rgba(20,160,160,.8)' : 'rgba(214,25,154,.8)'); txt('P' + (p.i + 1), p.x, p.y - 77, 14, '#fff'); }
       }
+      for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
+      hud();
       const c = CHAPTERS[ch];
-      txt(`Score ${score}`, 16, 34, 24, '#fff', 'left');
-      txt('♥'.repeat(lives), W - 16, 34, 26, '#ff4d8d', 'right');
-      if (combo > 1) txt(`Combo x${Math.min(combo, 10)}`, W / 2, 34, 22, '#ffe84d');
-      players.forEach((p, i) => {
-        const b = [['★', p.shield], ['»', p.rapid], ['✦', p.triple], ['M', p.magnet]].filter(a => a[1] > 0).map(a => a[0] + Math.ceil(a[1] / 60)).join('  ');
-        if (b) txt(b, 16, 64 + i * 26, 20, '#fff36b', 'left');
-      });
-      txt('II', W - 40, H - 27, 18, '#fff'); txt(muted ? 'x' : '♪', W - 94, H - 27, 20, '#fff');
-      if (!boss) { g.fillStyle = '#ffffff99'; g.fillRect(0, H - 8, W * Math.min(1, t / (CHAPTERS[ch].time * 60)), 8); }
-      if (boss && !clear) txt(c.boss, W / 2, H - 16, 20);
-      if (clear) txt('Boss defeated!', W / 2, 230, 52);
-      if (warn > 0 && warn % 30 < 20) txt('! WARNING !', W / 2, 150, 54, '#ff4d4d');
-      if (paused) { g.fillStyle = '#0008'; g.fillRect(0, 0, W, H); txt('Paused', W / 2, 260, 56); txt('tap or press P to resume', W / 2, 310, 22); }
-      if (state === 'chapter') { g.fillStyle = '#0006'; g.fillRect(0, 0, W, H); txt(`Chapter ${ch + 1}`, W / 2, 230, 56); txt(c.name, W / 2, 290, 34); txt(c.line, W / 2, 335, 20); txt('Tap to fly!', W / 2, 380, 24); }
-      if (state === 'over') { g.fillStyle = '#0008'; g.fillRect(0, 0, W, H); txt('Game Over', W / 2, 250, 60); txt(`Score ${score} · Best ${best} · tap to retry`, W / 2, 310, 26); }
+      if (boss && !clear) { panel(W / 2 - 110, H - 40, 220, 28, 14, 'rgba(122,26,99,.6)'); txt(c.boss, W / 2, H - 20, 17, '#fff'); }
+      if (clear) { const p = Math.min(1, clear / 20); g.save(); g.translate(W / 2, 220); g.scale(p * (1 + .05 * Math.sin(t / 4)), p * (1 + .05 * Math.sin(t / 4))); fancyText('Boss defeated!', 0, 0, 56); g.restore(); }
+      if (warn > 0 && warn % 30 < 20) { panel(W / 2 - 160, 112, 320, 56, 28, 'rgba(255,60,90,.85)'); txt('!  WARNING  !', W / 2, 152, 38, '#fff'); }
+      if (paused) card('Paused', ['tap or press P to resume']);
+      if (state === 'chapter') card(`Chapter ${ch + 1}`, [c.name, c.line, 'Tap to fly!'], true);
+      if (state === 'over') card('Game Over', [`Score ${score}   ·   Best ${best}`, 'tap to try again']);
     }
-    for (const p of sparks) { g.fillStyle = p.col; g.globalAlpha = Math.max(0, p.l / 30); g.fillRect(p.x, p.y, 5, 5); } g.globalAlpha = 1;
   }
   g.restore();
   if (trans) drawTrans();

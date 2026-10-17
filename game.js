@@ -265,7 +265,7 @@ function update() {
   for (const p of players) {
     const star = p === uni, gap = star ? (p.rapid > 0 ? 7 : 14) : (p.rapid > 0 ? 8 : 16);
     if (t % gap === (star ? 0 : 8 % gap)) {
-      const x = star ? p.x + 40 : p.x + 26, y = star ? p.y - 64 : p.y - 22;
+      const x = star ? p.x + 46 : p.x + 30, y = star ? p.y - 74 : p.y - 25;
       for (const vy of p.triple > 0 ? [-2.2, 0, 2.2] : [0]) shots.push({ x, y, vx: star ? 12 : 10, vy, m: star ? 0 : 1 });
       if (star) { boom(x, y, '#fff', 4); sfx('shot'); } else sfx('bubble');
     }
@@ -864,7 +864,14 @@ function drawThing(o) {
   if (o.foe) return drawFoe(o);
   if (o.kind === 'cloud' && ch === 8) { g.fillStyle = '#2a5a2a'; g.beginPath(); g.arc(o.x, o.y, 22, 0, 7); g.fill(); g.strokeStyle = '#1a3a1a'; g.lineWidth = 4; for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(o.x + Math.cos(a * .785) * 18, o.y + Math.sin(a * .785) * 18); g.lineTo(o.x + Math.cos(a * .785) * 32, o.y + Math.sin(a * .785) * 32); g.stroke(); } }
   else if (o.kind === 'cloud' && ch === 9) { g.fillStyle = '#9a4fd1'; g.beginPath(); g.arc(o.x, o.y, 24, 0, 7); g.fill(); g.fillStyle = '#d9a8ff'; g.beginPath(); g.arc(o.x - 8, o.y - 8, 5, 0, 7); g.arc(o.x + 9, o.y + 6, 4, 0, 7); g.fill(); g.strokeStyle = '#2a0a3a'; g.lineWidth = 3; g.beginPath(); g.arc(o.x, o.y + 12, 8, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
-  else if (o.kind === 'cloud') blob(o.x, o.y, 1, ch === 7 ? '#34344a' : ch === 10 ? '#1c2452' : ch === 11 ? '#b77ab0' : '#8a7a9c');
+  else if (o.kind === 'cloud') {   // grumpy rain cloud
+    const dark = [7, 10].includes(ch), top = dark ? '#6a6d8c' : ch === 11 ? '#d79ac8' : '#a9a3c4', bot = dark ? '#3a3c58' : ch === 11 ? '#a96a9e' : '#7d7699';
+    g.strokeStyle = 'rgba(120,170,255,.6)'; g.lineWidth = 2; for (let r = 0; r < 4; r++) { const ry = (t * 2 + r * 9) % 24; g.beginPath(); g.moveTo(o.x - 15 + r * 10, o.y + 18 + ry); g.lineTo(o.x - 17 + r * 10, o.y + 24 + ry); g.stroke(); }
+    blob(o.x, o.y + 3, 1.05, bot); blob(o.x, o.y - 1, 1, top);
+    g.fillStyle = 'rgba(255,255,255,.3)'; g.beginPath(); g.ellipse(o.x - 6, o.y - 16, 12, 5, 0, 0, 7); g.fill();
+    eye(o.x - 9, o.y + 2, 4, 2); eye(o.x + 9, o.y + 2, 4, 2);
+    g.strokeStyle = '#2b2440'; g.lineWidth = 2; g.beginPath(); g.arc(o.x, o.y + 15, 4, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
+  }
   else if (o.kind === 'ring') {   // spinning gold ring
     const sq = Math.abs(Math.cos(t / 14 + o.x / 90)) * .7 + .3;
     g.save(); g.translate(o.x, o.y); g.scale(sq, 1);
@@ -891,8 +898,22 @@ function drawThing(o) {
     powIcon(o.kind);
     g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.ellipse(-6, -9, 6, 3, -.5, 0, 7); g.fill(); g.restore();
   }
-  else if (o.kind === 'bat') { const f = Math.sin(t / 3) * 10; g.fillStyle = ch >= 8 ? '#8a3fb5' : '#2b1b3d'; g.beginPath(); g.ellipse(o.x, o.y, 9, 11, 0, 0, 7); g.moveTo(o.x - 4, o.y); g.lineTo(o.x - 28, o.y - 10 + f); g.lineTo(o.x - 8, o.y + 8); g.moveTo(o.x + 4, o.y); g.lineTo(o.x + 28, o.y - 10 + f); g.lineTo(o.x + 8, o.y + 8); g.fill(); g.fillStyle = '#f33'; g.fillRect(o.x - 5, o.y - 3, 3, 3); g.fillRect(o.x + 2, o.y - 3, 3, 3); }
-  else if (o.kind === 'spike') { g.fillStyle = CHAPTERS[ch].spike || '#9ff'; g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(o.x - 22, o.top ? 0 : H); g.lineTo(o.x, o.top ? o.y + 55 : o.y - 55); g.lineTo(o.x + 22, o.top ? 0 : H); g.closePath(); g.fill(); g.stroke(); }
+  else if (o.kind === 'bat') {   // little bat with flapping wings
+    const f = Math.sin(t / 3 + o.x / 50), col = ch >= 8 ? ['#c58cf0', '#7d3fb5'] : ['#7d6aa8', '#3d2a5e'];
+    g.save(); g.translate(o.x, o.y); g.scale(1.3, 1.3); g.fillStyle = col[1];
+    for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(sd * 6, -2); g.quadraticCurveTo(sd * 18, -18 - f * 10, sd * 30, -6 - f * 8); g.quadraticCurveTo(sd * 24, 0, sd * 26, 6 - f * 4); g.quadraticCurveTo(sd * 16, 0, sd * 6, 6); g.closePath(); g.fill(); }
+    g.fillStyle = lg(0, -12, 0, 12, col[0], col[1]); g.beginPath(); g.ellipse(0, 0, 10, 12, 0, 0, 7); g.fill();
+    g.beginPath(); g.moveTo(-8, -8); g.lineTo(-6, -17); g.lineTo(-2, -10); g.moveTo(8, -8); g.lineTo(6, -17); g.lineTo(2, -10); g.fill();
+    eye(-4, -2, 3, 1); eye(4, -2, 3, 1);
+    g.fillStyle = '#fff'; g.beginPath(); g.moveTo(-2, 5); g.lineTo(-1, 8); g.lineTo(0, 5); g.fill(); g.restore();
+  }
+  else if (o.kind === 'spike') {   // crystal spike growing from the floor or ceiling
+    const col = CHAPTERS[ch].spike || '#7ff0ff', base = o.top ? 0 : H, tip = o.top ? o.y + 55 : o.y - 55;
+    g.fillStyle = lg(0, base, 0, tip, col, '#ffffff'); g.beginPath(); g.moveTo(o.x - 22, base); g.lineTo(o.x, tip); g.lineTo(o.x + 22, base); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.moveTo(o.x, base); g.lineTo(o.x, tip); g.lineTo(o.x + 22, base); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(70,30,80,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(o.x - 22, base); g.lineTo(o.x, tip); g.lineTo(o.x + 22, base); g.stroke();
+    if ((t + o.x) % 60 < 15) sparkle(o.x, tip + (o.top ? -8 : 8), 5, .9);
+  }
 }
 // Transition: rainbow bands sweep across, cover the screen, then sweep out the other side.
 // Odd chapters mirror the sweep; at full cover the curtain names the next stop.
@@ -1096,7 +1117,7 @@ function draw() {
       if (players.length === 1 && state !== 'chapter') drawMermaid(mer.x, mer.y);
       for (const p of state === 'chapter' ? [] : players) {
         if (p.flash > 0 && t % 8 < 4) continue;
-        p === uni ? drawUnicorn(p.x, p.y, p.shield > 0) : drawMermaid(p.x, p.y, p.shield > 0);
+        g.save(); g.translate(p.x, p.y); g.scale(1.15, 1.15); p === uni ? drawUnicorn(0, 0, p.shield > 0) : drawMermaid(0, 0, p.shield > 0); g.restore();
         if (players.length > 1) { panel(p.x - 16, p.y - 92, 32, 20, 10, p.i ? 'rgba(20,160,160,.8)' : 'rgba(214,25,154,.8)'); txt('P' + (p.i + 1), p.x, p.y - 77, 14, '#fff'); }
       }
       for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;

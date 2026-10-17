@@ -33,7 +33,7 @@ function useChapterArt(c) {
   for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
   for (const n of keep) loadArt(n);
 }
-function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); }   // tools/screenshots only
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
 CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
 try { const sk0 = localStorage.getItem('pinkUnicornSkin'); if (sk0) ['up', 'down'].forEach(f => loadArt('skin_' + sk0 + '_' + f)); } catch (e) {}
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
@@ -127,7 +127,7 @@ function settingsTap(x, y) {   // rows of the settings panel; returns true if th
 }
 // ---- isometric world map: one floating island per chapter along a rainbow path; drag to scroll, tap to fly there ----
 let mapX = 0, mapDrag = null;
-const isoPos = i => ({ x: 150 + i * 178, y: 285 + Math.sin(i * 1.1) * 90 + (i % 2 ? 22 : -22) });
+const isoPos = i => ({ x: 150 + i * 178, y: 270 + Math.sin(i * 1.1) * 70 + (i % 2 ? 16 : -16) });
 const MAP_W = () => isoPos(NCH - 1).x + 150;
 function centerMap() { mapX = Math.max(0, Math.min(MAP_W() - W, isoPos(startCh).x - W / 2)); }
 function openMap() { state = 'map'; centerMap(); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); audio(); sfx('click'); }

@@ -83,6 +83,18 @@ const tests = {
       golden += things.some(o => o.golden) ? 1 : 0;
     }
     return [STAGES.length === NCH, fired > NCH, golden >= NCH - 2, isFinite(windX)];`, 4],
+  'rainbow run: endless stretches, boss every third': [`
+    sel = 3; press(); step(80);
+    const direct = state === 'play' && run;
+    lives = 9; t = 30 * 60; step(80); const seg2 = runSeg === 1 && state === 'play';
+    lives = 9; t = 30 * 60; step(80); lives = 9; t = 30 * 60; step(5); const bossCame = runSeg === 2 && !!boss;
+    return [direct, seg2, bossCame];`, 3],
+  'sparkle shop: buy, wear, and refuse when short': [`
+    wallet = 200; owned = ['']; skin = ''; state = 'shop';
+    shopTap(W / 2 - 172, 250); const bought = owned.includes('mint') && skin === 'mint' && wallet === 50;
+    shopTap(W / 2 + 344, 250); const refused = !owned.includes('golden') && wallet === 50;
+    shopTap(W / 2 - 344, 250); const back = skin === '';
+    return [bought, refused, back];`, 3],
 };
 
 let failed = 0;

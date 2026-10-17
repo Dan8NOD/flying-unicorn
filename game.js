@@ -33,8 +33,9 @@ function useChapterArt(c) {
   for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
   for (const n of keep) loadArt(n);
 }
-function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); }   // tools/screenshots only
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); }   // tools/screenshots only
 CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
+try { const sk0 = localStorage.getItem('pinkUnicornSkin'); if (sk0) ['up', 'down'].forEach(f => loadArt('skin_' + sk0 + '_' + f)); } catch (e) {}
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
 function spr(n, x, y, h, flipX, flipY) {
   const im = IMG[n]; if (!im) return false;
@@ -96,29 +97,75 @@ try { best = +localStorage.getItem('pinkUnicornBest') || 0; reached = Math.min(C
 startCh = Math.min(startCh, reached);
 function saveOpt(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 // Sound settings (saved): music 0 = off, 1 = low, 2 = normal; effects and voices on/off.
-const opts = { music: 2, sfx: 1, voice: 1 };
+const opts = { music: 2, sfx: 1, voice: 1, buzz: 1 };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('pinkUnicornOpts') || '{}')); } catch (e) {}
 let settingsOpen = false;
-const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']]];
+// Sparkle Shop: rings collected in any game are saved; spend them on unicorn looks.
+const SKINS = [{ id: '', name: 'Classic', price: 0 }, { id: 'mint', name: 'Mint', price: 150 }, { id: 'snow', name: 'Snow', price: 300 }, { id: 'galaxy', name: 'Galaxy', price: 600 }, { id: 'golden', name: 'Golden', price: 1000 }];
+let wallet = 0, owned = [''], skin = '', hostSkin = '', shopMsg = '', shopMsgT = 0;
+try { wallet = +localStorage.getItem('pinkUnicornWallet') || 0; owned = JSON.parse(localStorage.getItem('pinkUnicornOwned') || '[""]'); skin = localStorage.getItem('pinkUnicornSkin') || ''; } catch (e) {}
+function saveShop() { saveOpt('pinkUnicornWallet', wallet); saveOpt('pinkUnicornOwned', JSON.stringify(owned)); saveOpt('pinkUnicornSkin', skin); }
+// Rainbow Run: endless mode through random chapters that get harder; a boss every third stretch.
+let run = false, runSeg = 0, bestRun = 0;
+try { bestRun = +localStorage.getItem('pinkUnicornBestRun') || 0; } catch (e) {}
+const segTime = () => run ? 30 : CHAPTERS[ch].time;
+const runPick = n => Math.min(NCH - 1, Math.floor(n * .8) + (Math.random() * 4 | 0));
+function nextRun() {
+  if (trans) return;   // already on the way to the next stretch
+  runSeg++; const c = runPick(runSeg); useChapterArt(c);
+  go(() => { ch = c; t = 0; pops = []; stageReset(); things = []; shots = []; bolts = []; boss = null; clear = 0; state = 'play'; sfx('start'); }, `Rainbow Run · stretch ${runSeg + 1} · ${CHAPTERS[c].name}`);
+}
+function buzz(ms) { try { if (opts.buzz && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']], ['buzz', 'Vibration', ['Off', 'On']]];
 function settingsTap(x, y) {   // rows of the settings panel; returns true if the tap changed a setting
   for (let i = 0; i < SETTING_ROWS.length; i++) {
-    if (Math.abs(x - W / 2) < 210 && Math.abs(y - (232 + i * 56)) < 24) {
+    if (Math.abs(x - W / 2) < 210 && Math.abs(y - (214 + i * 52)) < 22) {
       const [k, , vals] = SETTING_ROWS[i]; opts[k] = (opts[k] + 1) % vals.length; saveOpt('pinkUnicornOpts', JSON.stringify(opts)); audio(); sfx('click'); return true;
     }
   }
   return false;
 }
+function shopTap(x, y) {
+  if (y > 452) { state = 'title'; sfx('click'); return; }   // back
+  SKINS.forEach((k, i) => {
+    const cx = W / 2 + (i - 2) * 172;
+    if (Math.abs(x - cx) > 80 || y < 130 || y > 420) return;
+    if (owned.includes(k.id)) { skin = k.id; sfx('click'); }
+    else if (wallet >= k.price) { wallet -= k.price; owned.push(k.id); skin = k.id; sfx('power'); voice('vo_u_power'); shopMsg = k.name + ' look unlocked!'; shopMsgT = 120; }
+    else { shopMsg = `You need ${k.price - wallet} more rings`; shopMsgT = 120; sfx('hurt'); }
+    saveShop();
+  });
+}
+function drawShop() {
+  g.fillStyle = 'rgba(42,15,61,.45)'; g.fillRect(0, 0, W, H);
+  fancyText('Sparkle Shop', W / 2, 70, 46);
+  panel(W / 2 - 90, 86, 180, 34, 17, 'rgba(122,26,99,.55)'); g.save(); g.translate(W / 2 - 62, 103); g.strokeStyle = '#ffc94a'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.stroke(); g.restore();
+  g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(wallet + ' rings', W / 2 + 12, 110);
+  SKINS.forEach((k, i) => {
+    const cx = W / 2 + (i - 2) * 172, on = skin === k.id, has = owned.includes(k.id);
+    panel(cx - 80, 136, 160, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
+    g.save(); g.translate(cx, 250 + Math.sin(t / 20 + i) * 5);
+    const fr = Math.sin(t / 5) > 0 ? 'up' : 'down';
+    if (!(k.id && spr('skin_' + k.id + '_' + fr, 0, 0, 104)) && !(!k.id && spr('uni_' + fr, 0, 0, 104))) { g.scale(.8, .8); drawUnicorn(0, 10); }
+    g.restore();
+    g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(k.name, cx, 350);
+    g.font = 'bold 16px "Trebuchet MS", sans-serif'; g.fillStyle = on ? '#e8279a' : has ? '#7a1a63' : wallet >= k.price ? '#2a9d5c' : '#a07090';
+    g.fillText(on ? 'Wearing' : has ? 'Tap to wear' : k.price + ' rings', cx, 384);
+  });
+  if (shopMsgT > 0) { shopMsgT--; panel(W / 2 - 170, 420, 340, 30, 15, 'rgba(255,179,0,.9)', '#fff'); txt(shopMsg, W / 2, 441, 16, '#fff'); }
+  else { panel(W / 2 - 70, 460, 140, 38, 19, lg(0, 460, 0, 498, '#ff8fd0', '#e8279a'), '#fff'); txt('Back', W / 2, 486, 18, '#fff'); }
+}
 function drawSettings(title) {
   g.fillStyle = 'rgba(42,15,61,.5)'; g.fillRect(0, 0, W, H);
-  panel(W / 2 - 250, 110, 500, 330, 30, lg(0, 110, 0, 440, 'rgba(255,242,250,.97)', 'rgba(255,205,236,.97)'), '#fff');
-  fancyText(title, W / 2, 172, 44);
+  panel(W / 2 - 250, 104, 500, 360, 30, lg(0, 104, 0, 464, 'rgba(255,242,250,.97)', 'rgba(255,205,236,.97)'), '#fff');
+  fancyText(title, W / 2, 162, 44);
   SETTING_ROWS.forEach(([k, label, vals], i) => {
-    const y = 232 + i * 56, on = opts[k] > 0;
-    rr(W / 2 - 210, y - 22, 420, 44, 22); g.fillStyle = on ? lg(0, y - 22, 0, y + 22, '#ff8fd0', '#e8279a') : 'rgba(122,26,99,.25)'; g.fill();
+    const y = 214 + i * 52, on = opts[k] > 0;
+    rr(W / 2 - 210, y - 20, 420, 40, 20); g.fillStyle = on ? lg(0, y - 22, 0, y + 22, '#ff8fd0', '#e8279a') : 'rgba(122,26,99,.25)'; g.fill();
     g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.fillStyle = '#fff'; g.textAlign = 'left'; g.fillText(label, W / 2 - 186, y + 7);
     g.textAlign = 'right'; g.fillText(vals[opts[k]], W / 2 + 186, y + 7);
   });
-  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, 420);
+  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, 444);
 }
 function toggleMute() { muted = !muted; saveOpt('pinkUnicornMute', muted ? 1 : 0); }
 
@@ -128,12 +175,12 @@ addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
   if (state === 'title' && !trans) {
-    if (e.key === 'ArrowUp') { sel = (sel + 2) % 3; audio(); sfx('click'); }
-    if (e.key === 'ArrowDown') { sel = (sel + 1) % 3; audio(); sfx('click'); }
+    if (e.key === 'ArrowUp') { sel = (sel + MENU.length - 1) % MENU.length; audio(); sfx('click'); }
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % MENU.length; audio(); sfx('click'); }
     if (e.key === 'ArrowLeft') startCh = Math.max(0, startCh - 1);
     if (e.key === 'ArrowRight') startCh = Math.min(reached, startCh + 1);
     if (e.key === 'e') { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); }
-    if (e.key === '1' || e.key === '2' || e.key === '3') { sel = +e.key - 1; press(); }
+    if (e.key >= '1' && e.key <= '4') { sel = +e.key - 1; press(); }
   }
   if (e.key === 'p' || e.key === 'Escape') paused = !paused && state === 'play';
   if (state === 'play' && !paused && (e.key === ' ' || e.key === 'Shift' || e.key === 'x' || e.key === 'q')) {   // dash (local 2P: Q dashes player 2)
@@ -155,7 +202,7 @@ function pointer(e) {
 addEventListener('blur', () => { if (state === 'play') paused = true; });
 cv.addEventListener('mousemove', pointer);
 cv.addEventListener('touchmove', e => { pointer(e); e.preventDefault(); }, { passive: false });
-const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online'];
+const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online', 'Rainbow Run · endless'];
 cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   pointer(e);
@@ -167,9 +214,12 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'title' && !trans) {
     if (settingsOpen) { if (!settingsTap(x, y)) settingsOpen = false; return; }
     if (Math.hypot(x - (W - 40), y - 40) < 24) { settingsOpen = true; audio(); sfx('click'); return; }
-    if (y > 440 && y < 475 && reached > 0) { if (x < W / 2 - 60) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 60) startCh = Math.min(reached, startCh + 1); }
+    if (y > 452 && y < 484 && reached > 0) { if (x < W / 2 - 60) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 60) startCh = Math.min(reached, startCh + 1); }
     if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
-    MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
+    if (x < 190 && y < 66) { state = 'shop'; audio(); sfx('click'); SKINS.forEach(k => k.id && ['up', 'down'].forEach(f => loadArt('skin_' + k.id + '_' + f))); return; }
+    if (y > 452 && y < 484 && reached > 0) return;
+    MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 276 + i * 44 && y < 314 + i * 44) sel = i; }); }
+  if (state === 'shop') { shopTap(x, y); return; }
   if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
@@ -190,6 +240,8 @@ function press() {
 }
 
 function chooseMode() {
+  run = false;
+  if (sel === 3) { mode = 'solo'; run = true; runSeg = 0; start(runPick(0), true); return; }
   if (sel === 2) { netMenu(); return; }
   mode = sel === 0 ? 'solo' : 'local'; start(startCh, true);
 }
@@ -202,7 +254,7 @@ function netEv(e) { if (net.role === 'host' && net.open && net.ev.length < 60) n
 const rd = o => Math.round(o * 10) / 10;
 function netSnap() {
   net.send(JSON.stringify({ st: state, ch, t, sc: score, l: lives, cb: combo, cl: clear, pa: paused ? 1 : 0, w: warn, sk: shake,
-    tr: trans ? [trans.t, trans.label || ''] : 0, rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
+    tr: trans ? [trans.t, trans.label || ''] : 0, sk: skin, rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
     u: [rd(uni.x), rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, rd(uni.tilt * 100) / 100, uni.dash], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
     b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
     th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0, o.golden ? 1 : 0, rd(o.vy || 0)]),
@@ -211,6 +263,7 @@ function netSnap() {
 function applySnap(m) {
   state = m.st; ch = m.ch; useChapterArt(ch); t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
   trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
+  hostSkin = m.sk || '';
   if (m.rs) [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars] = m.rs;
   uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, uni.tilt, uni.dash] = m.u.slice(2); uni.fp = t / 5 * 1.3; [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
   boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
@@ -256,7 +309,7 @@ function pollPads() {
     let dx = Math.abs(gp.axes[0] || 0) > .25 ? gp.axes[0] : 0; if (b(14)) dx = -1; if (b(15)) dx = 1;
     padX[i] = dx;
     const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0, dash: b(1) || b(2) };
-    if (state === 'title' && !trans) { if (cur.up && !prev.up) sel = (sel + 2) % 3; if (cur.down && !prev.down) sel = (sel + 1) % 3; }
+    if (state === 'title' && !trans) { if (cur.up && !prev.up) sel = (sel + MENU.length - 1) % MENU.length; if (cur.down && !prev.down) sel = (sel + 1) % MENU.length; }
     if (cur.a && !prev.a) press();
     if (cur.dash && !prev.dash && state === 'play') { const p = mode === 'guest' ? null : players[i]; if (p) dash(p); else net.sendR('{"p":3}'); }
     if (cur.s && !prev.s) { if (state === 'play') paused = !paused; else press(); }
@@ -278,16 +331,16 @@ function start(c, fresh) {
     players = mode === 'solo' ? [uni] : [uni, p2];
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.tx = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); p.vx = p.vy = p.tilt = p.dash = p.dashCd = 0; }
     if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
-    combo = 0; state = 'chapter'; ending = 0;
+    combo = 0; state = run ? 'play' : 'chapter'; ending = 0;
     sfx('start');
   }, `Chapter ${c + 1} · ${CHAPTERS[c].name}`);
 }
-function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; }, 'Pink Unicorn'); }
+function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; run = false; }, 'Pink Unicorn'); }
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
 function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0 || p.dash > 0) return;
-  lives--; stat.hits++; combo = 0; p.flash = 90; shake = 12; sfx('hurt'); voice(lives % 2 ? 'vo_u_hurt' : 'vo_m_look');
-  if (lives <= 0) { state = 'over'; saveBest(); sfx('over'); voice('vo_u_over'); }
+  lives--; stat.hits++; combo = 0; p.flash = 90; buzz(70); shake = 12; sfx('hurt'); voice(lives % 2 ? 'vo_u_hurt' : 'vo_m_look');
+  if (lives <= 0) { state = 'over'; saveBest(); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
@@ -371,7 +424,7 @@ function steerDir(p, dx, dy) { if (dx) p.tx = p.x + dx * 60; if (dy) p.ty = p.y 
 function dash(p) {   // quick sparkly burst in the flying direction; can't be hurt while dashing
   if (p.dashCd > 0 || state !== 'play' || paused) return;
   let dx = p.vx, dy = p.vy; const m = Math.hypot(dx, dy); if (m < 1) { dx = 1; dy = 0; } else { dx /= m; dy /= m; }
-  p.dvx = dx * 17; p.dvy = dy * 17; p.dash = 10; p.dashCd = 45; sfx('dash'); boom(p.x, p.y, '#fff', 14);
+  p.dvx = dx * 17; p.dvy = dy * 17; p.dash = 10; p.dashCd = 45; sfx('dash'); buzz(15); boom(p.x, p.y, '#fff', 14);
 }
 function movePlayer(p) {
   const sp = 7;
@@ -414,12 +467,13 @@ function update() {
   }
   if (players.length === 1 && boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, vy: 0, m: 1 });
 
-  if (!boss && !clear && t > CHAPTERS[ch].time * 60) {
+  if (!boss && !clear && t > segTime() * 60 && run && runSeg % 3 !== 2) nextRun();
+  else if (!boss && !clear && t > segTime() * 60) {
     const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1) * (easy ? .7 : 1));
     boss = { x: W + 100, y: H / 2, hp: bhp, max: bhp };
     things = []; warn = 120; sfx('warn'); sfx('boss'); voice('vo_u_boss');
   }
-  if (!boss && !clear && t % CHAPTERS[ch].rate === 0) spawn();
+  if (!boss && !clear && t % (run ? Math.max(14, CHAPTERS[ch].rate - runSeg) : CHAPTERS[ch].rate) === 0) spawn();
   stageTick(true);   // weather, wind and surprises (stages.js)
 
   for (const o of things) {
@@ -441,7 +495,7 @@ function update() {
       else hurt(pp);
     }
     if (o.x < -60) { o.dead = true; if (o.kind === 'ring') combo = 0; }
-    if (o.dead && o.kind === 'ring' && pp) stat.rings++;
+    if (o.dead && o.kind === 'ring' && pp) { stat.rings++; if (mode !== 'guest') { wallet++; if (wallet % 10 === 0) saveShop(); } }
   }
   things = things.filter(o => !o.dead);
 
@@ -465,7 +519,7 @@ function update() {
       if (boss.hp <= 0) {
         score += 200 + lives * 50; shake = 40; clear = 1; pop(boss.x, boss.y - 40, '+' + (200 + lives * 50), '#ffe45c');
         for (let i = 0; i < 6; i++) setTimeout(() => boom(boss ? boss.x + (Math.random() - .5) * 120 : 0, boss ? boss.y + (Math.random() - .5) * 60 : 0, '#ff00cc', 20), i * 150);
-        sfx('win'); voice('vo_u_win');
+        sfx('win'); voice('vo_u_win'); buzz([40, 40, 90]); saveShop();
         saveBest(); bolts = [];
       }
     }
@@ -475,7 +529,7 @@ function update() {
 
   if (boss && clear) { // boss spins away, then the curtain takes us to the next chapter
     boss.y += 2; boss.x += Math.sin(clear / 3) * 3; clear++;
-    if (clear === 100) { boss = null; showResults(); }
+    if (clear === 100) { boss = null; if (run) nextRun(); else showResults(); }
   } else if (boss) {
     if (boss.hit > 0) boss.hit--;
     const ph = bossPhase();
@@ -518,7 +572,8 @@ function drawUnicorn(x, y, glow, phase) {
   if (glow) glowRing(66);
   const OL = '#b5468f', fl = Math.sin(phase == null ? t / 5 : phase);
   if (IMG.uni_up && IMG.uni_down) {   // generated sprite: two wing frames + a little squash on each beat
-    g.scale(1, 1 + fl * .025); spr(fl > 0 ? 'uni_up' : 'uni_down', 0, -6, 112);
+    const sk = mode === 'guest' ? hostSkin : skin, fr = fl > 0 ? 'up' : 'down';
+    g.scale(1, 1 + fl * .025); if (!(sk && spr('skin_' + sk + '_' + fr, 0, -6, 112))) spr(fl > 0 ? 'uni_up' : 'uni_down', 0, -6, 112);
     sparkle(48, -57, 5 + 2 * Math.sin(t / 5), .9); g.restore(); return;
   }
   g.lineJoin = g.lineCap = 'round';
@@ -1319,12 +1374,12 @@ function logo(x, y) {
   sparkle(x + 270, y - 54, 9 + 3 * Math.sin(t / 6), .95); sparkle(x - 280, y - 10, 7 + 3 * Math.sin(t / 7 + 2), .9);
 }
 function menuButton(s, y, on) {
-  const x = W / 2 - 190, w = 380, h = 42;
+  const x = W / 2 - 190, w = 380, h = 38;
   if (on) { g.fillStyle = `rgba(255,255,255,${.35 + .15 * Math.sin(t / 8)})`; rr(x - 6, y - 5, w + 12, h + 10, 26); g.fill(); }
   rr(x, y, w, h, 21); g.fillStyle = on ? lg(0, y, 0, y + h, '#ff8fd0', '#e8279a') : 'rgba(255,255,255,.72)'; g.fill();
   g.strokeStyle = on ? '#fff' : 'rgba(214,25,154,.45)'; g.lineWidth = 3; g.stroke();
   g.fillStyle = 'rgba(255,255,255,.35)'; rr(x + 10, y + 4, w - 20, 12, 6); g.fill();
-  g.font = 'bold 22px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = on ? '#fff' : '#c2197f'; g.fillText(s, W / 2, y + 29);
+  g.font = 'bold 22px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = on ? '#fff' : '#c2197f'; g.fillText(s, W / 2, y + 27);
   if (on) { star(x + 26, y + 21, 9, t / 20, '#fff36b'); star(x + w - 26, y + 21, 9, -t / 20, '#fff36b'); }
 }
 function card(title, lines, big) {
@@ -1356,7 +1411,7 @@ function hud() {
   btn(W - 94, () => { g.beginPath(); g.moveTo(W - 104, H - 39); g.lineTo(W - 99, H - 39); g.lineTo(W - 92, H - 45); g.lineTo(W - 92, H - 23); g.lineTo(W - 99, H - 29); g.lineTo(W - 104, H - 29); g.closePath(); g.fill();
     g.lineWidth = 2.5; if (muted) { g.beginPath(); g.moveTo(W - 88, H - 39); g.lineTo(W - 80, H - 29); g.moveTo(W - 80, H - 39); g.lineTo(W - 88, H - 29); g.stroke(); } else { g.beginPath(); g.arc(W - 91, H - 34, 7, -.8, .8); g.stroke(); } });
   if (!boss) {   // level progress: a rainbow bar with a tiny star racing to the boss
-    const p = Math.min(1, t / (CHAPTERS[ch].time * 60)), bx = W / 2 - 160, by = H - 18;
+    const p = Math.min(1, t / (segTime() * 60)), bx = W / 2 - 160, by = H - 18;
     rr(bx, by, 320, 8, 4); g.fillStyle = 'rgba(122,26,99,.35)'; g.fill();
     if (p > .02) { rr(bx, by, 320 * p, 8, 4); const q = g.createLinearGradient(bx, 0, bx + 320, 0); RAINBOW.forEach((c, i) => q.addColorStop(i / 5, c)); g.fillStyle = q; g.fill(); }
     star(bx + 320 * p, by + 4, 9, t / 10, '#fff36b');
@@ -1368,14 +1423,15 @@ function draw() {
   if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   if (state === 'ending') drawEnding();
   else {
-    drawBg(state === 'title' ? 0 : ch);
-    if (state === 'title') {
+    drawBg(state === 'title' || state === 'shop' ? 0 : ch);
+    if (state === 'shop') drawShop();
+    else if (state === 'title') {
       drawMermaid(W / 2 - 150, 228 + Math.sin(t / 18 + 1) * 8);
       g.save(); g.translate(W / 2 + 20, 215 + Math.sin(t / 20) * 10); g.scale(1.45, 1.45); drawUnicorn(0, 0); g.restore();
       logo(W / 2, 112);
       if (mode === 'guest') { panel(W / 2 - 260, 300, 520, 60, 22, 'rgba(255,255,255,.85)'); txt('Connected! Waiting for the host to start...', W / 2, 338, 22, '#d6199a'); }
-      else MENU.forEach((s, i) => menuButton(s, 290 + i * 52, i === sel));
-      if (reached > 0 && mode !== 'guest') { panel(W / 2 - 200, 444, 400, 32, 16, 'rgba(122,26,99,.35)'); txt(`◀   Chapter ${startCh + 1} · ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 467, 17, '#fff'); }
+      else MENU.forEach((s, i) => menuButton(s, 276 + i * 44, i === sel));
+      if (reached > 0 && mode !== 'guest') { panel(W / 2 - 200, 452, 400, 30, 15, 'rgba(122,26,99,.35)'); txt(`◀   Chapter ${startCh + 1} · ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 473, 16, '#fff'); }
       panel(10, 488, 196, 30, 15, easy ? 'rgba(80,200,120,.55)' : 'rgba(122,26,99,.35)'); txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 108, 509, 15, '#fff');
       txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2 + 60, 500, 13);
       txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2 + 60, 521, 13);
@@ -1385,6 +1441,12 @@ function draw() {
         g.save(); g.translate(W - 40, 40); g.fillStyle = '#fff'; for (let k = 0; k < 8; k++) { g.rotate(Math.PI / 4); g.fillRect(-3, -12, 6, 6); } g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill(); g.fillStyle = 'rgba(122,26,99,.9)'; g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill(); g.restore();
       }
       if (settingsOpen) drawSettings('Sound');
+      else {   // shop bag button
+        panel(16, 18, 168, 44, 22, lg(0, 18, 0, 62, '#ff8fd0', '#e8279a'), '#fff');
+        g.font = 'bold 19px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.fillText('Shop', 34, 47);
+        g.strokeStyle = '#ffd84a'; g.lineWidth = 4; g.beginPath(); g.arc(102, 40, 8, 0, 7); g.stroke(); g.fillText(wallet, 116, 47);
+        if (bestRun) { g.textAlign = 'right'; g.fillText('Best run ' + bestRun, W - 72, 46); }
+      }
     } else {
       stageBack();
       for (const o of things) drawThing(o);
@@ -1421,7 +1483,7 @@ function draw() {
       if (paused) drawSettings('Paused');
       if (state === 'chapter') chapterCard();
       if (state === 'results') resultsCard();
-      if (state === 'over') card('Game Over', [`Score ${score}   ·   Best ${best}`, 'tap to try again']);
+      if (state === 'over') card(run ? 'Run Over' : 'Game Over', run ? [`Score ${score}   ·   Stretches ${runSeg + 1}`, `Best Rainbow Run ${bestRun}`, 'tap to try again'] : [`Score ${score}   ·   Best ${best}`, 'tap to try again']);
     }
   }
   g.restore();

@@ -8,18 +8,19 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - Two devices: needs a real network test. Host picks "2 Devices", taps "I'm hosting", sends the code; guest taps "I'm joining", pastes it, sends back the reply code. Same Wi-Fi first, then different networks (STUN only, no TURN: strict NATs may fail; a TURN server would be the fix).
 - Low-end Android (4 GB): watch frame rate. `fx` in `game.js` drops to 0 automatically below ~37 fps and halves particles/fireflies.
 
-## Art and sound (done in the Opus pass; see `previews/`)
-- Characters, bosses, enemies, hazards and pickups redrawn with shading, outlines and cute faces.
-- All 12 chapters have layered parallax scenery; the interface (logo, menu, HUD, cards) is designed.
-- `audio.js`: reverb, bell-like effects, and a generated song per chapter plus boss, title and ending themes.
-- Story chats on every chapter card and a longer ending with credits.
-- Tools: `tools/shot.js` renders screenshots offscreen (macOS), `tools/sheet.js` makes a contact sheet,
-  `tools/mixcheck.js` reports audio levels, `tools/sampler.js` renders a music WAV.
+## Generated assets (Meshy + ElevenLabs)
+- Made with `tools/gen.py` / `tools/batch.py` and processed with `tools/process.py` (crop, resize, JPEG/PNG) into `assets/`.
+- Keys live in `~/.config/pink-unicorn/keys.env` (never in the repo). Raw downloads: `~/.cache/pink-unicorn-raw` (move to the external drive; safe to delete).
+- Style that worked: Meshy `gpt-image-2`, "cute polished 3D animated-film style render ... side view", `--bg` for transparent sprites;
+  wing frames made with `edit` (image-to-image) from the first unicorn so the design stays identical.
+- Voices: unicorn = Jessica, mermaid = Laura, narrator = George. Music: ElevenLabs `music_v1`, instrumental, 60-90 s loops.
+- About 650 Meshy credits and a small part of the ElevenLabs quota were used in total.
+- Screenshot / review tools: `tools/shot.js` (offscreen render), `tools/sheet.js` (all chapters), `tools/mixcheck.js`, `tools/sampler.js`.
 
 ## Still worth doing (needs ears and hands on real devices)
-- Listen on a phone: tune song tempos, melody instruments and effect volumes in `audio.js` (`SONGS`, `sfx`).
-- Watch a full playthrough for difficulty and readability (are hazards clear against busy backgrounds?).
-- Optional: real voice lines (ElevenLabs) for the chapter chats, saved as small compressed files.
+- Play through on a phone: balance volumes of music vs effects vs voices (`musicVol`, `SFX_VOL` in `audio.js`), and difficulty.
+- The painted backgrounds scroll by mirroring; if a seam looks odd in a chapter, regenerate that background as a wider panorama.
+- Optional: a voice on/off switch, more voice reactions, a happy variant for every boss.
 
 ## Engineering backlog (mechanical)
 - (done) Power-ups, chapter picker with saved progress, easy mode. Mute is saved too. Still open: tune power-up spawn rate and easy-mode numbers by playing.
@@ -33,4 +34,4 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 4. Target 4 GB devices as the minimum; they are fine: the game uses very little memory.
 
 ## Safety
-- No API keys are in this repo and none should be. Meshy and ElevenLabs keys were pasted into chat sessions twice: rotate them.
+- No API keys are in this repo and none should be. The Meshy and ElevenLabs keys were pasted into chat sessions several times: rotate them, then update `~/.config/pink-unicorn/keys.env`.

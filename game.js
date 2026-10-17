@@ -21,16 +21,18 @@ const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b',
 
 let state = 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
 let things = [], shots = [], bolts = [], sparks = [], boss = null, clear = 0;
-let mode = 'solo', sel = 0;   // solo | local (2 players, one screen) | host / guest (two devices)
+let mode = 'solo', sel = 0, reached = 0, startCh = 0, easy = false;   // solo | local (2 players, one screen) | host / guest (two devices)
 let trans = null, ending = 0, shake = 0, paused = false, warn = 0, mt = 0;
-const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, i: 0 };     // player 1: the unicorn
-const p2 = { x: 110, y: H / 2 + 80, ty: H / 2 + 80, flash: 0, shield: 0, i: 1 };   // player 2: the mermaid
+const uni = { x: 150, y: H / 2, ty: H / 2, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 0 };     // player 1: the unicorn
+const p2 = { x: 110, y: H / 2 + 80, ty: H / 2 + 80, flash: 0, shield: 0, rapid: 0, triple: 0, magnet: 0, i: 1 };   // player 2: the mermaid
 let players = [uni];
 const maxLives = () => players.length > 1 ? 7 : 5;
 const nearest = o => players.reduce((a, b) => Math.hypot(a.x - o.x, a.y - o.y) <= Math.hypot(b.x - o.x, b.y - o.y) ? a : b);
 const mer = { x: 80, y: H / 2, cd: 0 };   // computer-controlled mermaid in 1-player games
 const keys = {};
-try { best = +localStorage.getItem('pinkUnicornBest') || 0; } catch (e) {}
+try { best = +localStorage.getItem('pinkUnicornBest') || 0; reached = Math.min(CHAPTERS.length - 1, +localStorage.getItem('pinkUnicornReached') || 0); easy = localStorage.getItem('pinkUnicornEasy') === '1'; } catch (e) {}
+startCh = Math.min(startCh, reached);
+function saveOpt(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 // ---- input ----
 addEventListener('keydown', e => {
@@ -40,6 +42,9 @@ addEventListener('keydown', e => {
   if (state === 'title' && !trans) {
     if (e.key === 'ArrowUp') sel = (sel + 2) % 3;
     if (e.key === 'ArrowDown') sel = (sel + 1) % 3;
+    if (e.key === 'ArrowLeft') startCh = Math.max(0, startCh - 1);
+    if (e.key === 'ArrowRight') startCh = Math.min(reached, startCh + 1);
+    if (e.key === 'e') { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); }
     if (e.key === '1' || e.key === '2' || e.key === '3') { sel = +e.key - 1; press(); }
   }
   if (e.key === 'p' || e.key === 'Escape') paused = !paused && state === 'play';
@@ -60,7 +65,10 @@ const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online'];
 cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   pointer(e);
-  if (state === 'title' && !trans) { MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
+  if (state === 'title' && !trans) {
+    if (y > 440 && y < 475 && reached > 0) { if (x < W / 2 - 60) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 60) startCh = Math.min(reached, startCh + 1); }
+    if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
+    MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 290 + i * 52 && y < 332 + i * 52) sel = i; }); }
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { muted = !muted; return; }
@@ -80,7 +88,7 @@ function press() {
 
 function chooseMode() {
   if (sel === 2) { netMenu(); return; }
-  mode = sel === 0 ? 'solo' : 'local'; start(0);
+  mode = sel === 0 ? 'solo' : 'local'; start(startCh, true);
 }
 let lobbyMsg = '', lobbyT = 0;
 
@@ -92,18 +100,18 @@ const rd = o => Math.round(o * 10) / 10;
 function netSnap() {
   net.send(JSON.stringify({ st: state, ch, t, sc: score, l: lives, cb: combo, cl: clear, pa: paused ? 1 : 0, w: warn, sk: shake,
     tr: trans ? [trans.t, trans.label || ''] : 0,
-    u: [uni.x, rd(uni.y), uni.flash, uni.shield], p: [p2.x, rd(p2.y), p2.flash, p2.shield],
+    u: [uni.x, rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
     b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
     th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0]),
-    sh: shots.map(q => [rd(q.x), rd(q.y), q.m ? 1 : 0]), bo: bolts.map(b => [rd(b.x), rd(b.y), rd(b.vx), rd(b.vy)]), ev: net.ev.splice(0) }));
+    sh: shots.map(q => [rd(q.x), rd(q.y), q.m ? 1 : 0, rd(q.vy || 0)]), bo: bolts.map(b => [rd(b.x), rd(b.y), rd(b.vx), rd(b.vy)]), ev: net.ev.splice(0) }));
 }
 function applySnap(m) {
   state = m.st; ch = m.ch; t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
   trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
-  uni.x = m.u[0]; uni.y = m.u[1]; uni.flash = m.u[2]; uni.shield = m.u[3]; p2.flash = m.p[2]; p2.shield = m.p[3];   // guest steers its own mermaid locally
+  uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet] = m.u.slice(2); [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
   boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
   things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7] }));
-  shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2] }));
+  shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2], vy: a[3] }));
   bolts = m.bo.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3] }));
   for (const e of m.ev) { if (e[0] === 's') beep(e[1], e[2], e[3], e[4]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
 }
@@ -114,7 +122,7 @@ function guestTick() {   // between snapshots: keep things moving smoothly and s
   if (padDir[0]) p2.ty = p2.y + padDir[0] * 60;
   p2.ty = Math.max(30, Math.min(H - 30, p2.ty)); p2.y += Math.max(-7, Math.min(7, p2.ty - p2.y));
   for (const o of things) o.x += o.vx;
-  for (const q of shots) { q.x += q.m ? 10 : 12; if (t % 2 === 0 && !q.m) sparks.push({ x: q.x, y: q.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + q.x) % 360},90%,75%)` }); }
+  for (const q of shots) { q.x += q.m ? 10 : 12; q.y += q.vy || 0; if (t % 2 === 0 && !q.m) sparks.push({ x: q.x, y: q.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + q.x) % 360},90%,75%)` }); }
   for (const b of bolts) { b.x += b.vx; b.y += b.vy; }
   if (shake > 0) shake--;
   for (const q of sparks) { q.x += q.vx; q.y += q.vy; q.l--; }
@@ -129,7 +137,7 @@ function netLost() {
   if (was === 'host' || was === 'guest') { lobbyMsg = 'Your friend disconnected'; lobbyT = 240; }
 }
 function netMenu() {
-  if (net.open && net.role === 'host') { mode = 'host'; start(0); return; }
+  if (net.open && net.role === 'host') { mode = 'host'; start(startCh, true); return; }
   if (typeof showLobby === 'function') showLobby(); else { lobbyMsg = 'Online play is not available here'; lobbyT = 180; }
 }
 // ---- gamepads: first pad steers player 1, second pad player 2; A = start/tap, Start = pause ----
@@ -178,12 +186,13 @@ function music() {
 // A rainbow curtain sweeps across; fn runs when the screen is fully covered.
 // Even chapters sweep left, odd chapters sweep right; the next stop's name shows at full cover.
 function go(fn, label) { if (!trans) trans = { t: 0, fn, label }; }
-function start(c) {
+function start(c, fresh) {
   go(() => {
+    if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
     ch = c; t = 0; things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
-    for (const p of [uni, p2]) { p.flash = p.shield = 0; p.x = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); }
-    if (c === 0) { score = 0; lives = mode === 'solo' ? 3 : 5; }
+    for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); }
+    if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
     combo = 0; state = 'chapter'; ending = 0;
     jingle([523, 659, 784]);
   }, `Chapter ${c + 1} · ${CHAPTERS[c].name}`);
@@ -212,6 +221,13 @@ const FOE = {
 };
 const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'ghost'], ['bird', 'bee', 'pig'], ['fish', 'jelly'],
   ['bug', 'ghost'], ['storm', 'bird'], ['owl', 'bee', 'pig'], ['pig', 'bee', 'bird'], ['bird', 'owl', 'ghost'], ['pig', 'bird', 'storm']];
+const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
+function applyPower(p, k) {
+  if (k !== 'bomb') { p[k] = 480; jingle([660, 880]); score += 25; return; }
+  for (const o of things) if (o.foe || o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'spike') { o.dead = true; score += o.foe ? FOE[o.kind].pts : 10; boom(o.x, o.y, '#ffb347', 10); }
+  bolts = []; shake = 20; if (boss && !clear) boss.hp = Math.max(1, boss.hp - 6);
+  beep(90, .5, 'sawtooth', .08); jingle([392, 330, 262]);
+}
 function moveFoe(o) {
   const k = o.kind;
   if (k === 'pig') o.y = o.y0 + Math.sin(t / 30 + o.ph) * 30;
@@ -227,14 +243,14 @@ function moveFoe(o) {
   o.y = Math.max(25, Math.min(H - 25, o.y));
 }
 function spawn() {
-  const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + ch * .6 + Math.random() * 2);
-  let kind = r < .45 ? 'ring' : r < .6 ? 'heart' : r < .65 ? 'star' : 'cloud';
+  const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + ch * .6 + Math.random() * 2) * (easy ? .85 : 1);
+  let kind = r < .45 ? 'ring' : r < .6 ? 'heart' : r < .65 ? 'star' : r < .7 ? POW[Math.random() * 4 | 0] : 'cloud';
   if (kind === 'cloud' && c.bats && Math.random() < .4) kind = 'bat';
   if (kind === 'cloud' && c.spikes && Math.random() < .5) kind = 'spike';
   if (kind === 'heart' && lives >= maxLives()) kind = 'ring';
   if (kind === 'cloud' && Math.random() < .55) {   // swap hazard for a shootable enemy
     const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : y;
-    things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: f.vx - ch * .1, r: f.r, top, cd: 60, hit: 0 });
+    things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: (f.vx - ch * .1) * (easy ? .85 : 1), r: f.r, top, cd: 60, hit: 0 });
     return;
   }
   if (kind === 'spike') { const top = Math.random() < .5; things.push({ kind, x: W + 30, y: top ? 20 : H - 20, top, vx, r: 34 }); return; }
@@ -242,7 +258,7 @@ function spawn() {
 }
 
 function bossFire() {
-  const p = CHAPTERS[ch].pat, sp = 4.5 + ch * .5, tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
+  const p = CHAPTERS[ch].pat, sp = (4.5 + ch * .5) * (easy ? .8 : 1), tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
   const rate = Math.max(40, 80 - ch * 8);
   if (t % rate) return;
   if (p === 0) bolts.push({ x: boss.x - 40, y: boss.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
@@ -252,7 +268,7 @@ function bossFire() {
 
 function update() {
   t++;
-  for (const p of players) { if (p.flash > 0) p.flash--; if (p.shield > 0) p.shield--; }
+  for (const p of players) for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet']) if (p[k] > 0) p[k]--;
   if (shake > 0) shake--;
   if (warn > 0) warn--;
   music();
@@ -268,12 +284,18 @@ function update() {
   mer.x += (uni.x - 90 - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
 
   // auto-fire: the unicorn throws pony-dust stars from her horn, a playable mermaid blows bubbles
-  if (t % 14 === 0) { shots.push({ x: uni.x + 48, y: uni.y - 40, vx: 12 }); boom(uni.x + 48, uni.y - 40, '#fff', 4); beep(880, .05, 'triangle', .03); }
-  if (players.length > 1) { if (t % 16 === 8) shots.push({ x: p2.x + 20, y: p2.y, vx: 10, m: 1 }); }
-  else if (boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, m: 1 });
+  for (const p of players) {
+    const star = p === uni, gap = star ? (p.rapid > 0 ? 7 : 14) : (p.rapid > 0 ? 8 : 16);
+    if (t % gap === (star ? 0 : 8 % gap)) {
+      const x = star ? p.x + 48 : p.x + 20, y = star ? p.y - 40 : p.y;
+      for (const vy of p.triple > 0 ? [-2.2, 0, 2.2] : [0]) shots.push({ x, y, vx: star ? 12 : 10, vy, m: star ? 0 : 1 });
+      if (star) { boom(x, y, '#fff', 4); beep(880, .05, 'triangle', .03); }
+    }
+  }
+  if (players.length === 1 && boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, vy: 0, m: 1 });
 
   if (!boss && !clear && t > CHAPTERS[ch].time * 60) {
-    const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1));
+    const bhp = Math.round(CHAPTERS[ch].hp * (players.length > 1 ? 1.6 : 1) * (easy ? .7 : 1));
     boss = { x: W + 100, y: H / 2, hp: bhp, max: bhp };
     things = []; warn = 120; beep(200, .6, 'sawtooth');
   }
@@ -284,12 +306,15 @@ function update() {
     if (o.foe) { moveFoe(o); if (o.hit > 0) o.hit--; for (const p of players) if (hit(o, p, o.r + 20)) hurt(p);
       if (o.x < -60) o.dead = true; continue; }
     if (o.kind === 'bat') o.y = o.y0 + Math.sin(t / 15 + o.ph) * 70;
+    const mg = players.find(p => p.magnet > 0 && Math.hypot(o.x - p.x, o.y - p.y) < 260);
+    if (mg && (o.kind === 'ring' || o.kind === 'heart' || o.kind === 'star')) { o.x += (mg.x - o.x) * .1; o.y += (mg.y - o.y) * .1; }
     const pp = players.find(p => (o.kind === 'spike' ? Math.hypot(o.x - p.x, (o.top ? o.y + 40 : o.y - 40) - p.y) : Math.hypot(o.x - p.x, o.y - p.y)) < o.r + 22);
     if (pp) {
       if (o.kind === 'spike') { hurt(pp); continue; }
       o.dead = true;
       if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); beep(660 + combo * 40, .1); boom(o.x, o.y, '#ffc400'); }
       else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); beep(990, .2, 'sine'); boom(o.x, o.y, '#ff4d8d'); }
+      else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; jingle([784, 988, 1175]); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
     }
@@ -298,7 +323,7 @@ function update() {
   things = things.filter(o => !o.dead);
 
   for (const s of shots) {
-    s.x += s.vx;
+    s.x += s.vx; s.y += s.vy || 0;
     for (const o of things) {
       if (!o.foe || o.dead || !hit(s, o, o.r + 8)) continue;
       s.dead = true; o.hp--; o.hit = 6; beep(500, .05);
@@ -320,7 +345,7 @@ function update() {
         saveBest(); bolts = [];
       }
     }
-    if (s.x > W + 20) s.dead = true;
+    if (s.x > W + 20 || s.y < -20 || s.y > H + 20) s.dead = true;
   }
   shots = shots.filter(s => !s.dead);
 
@@ -582,6 +607,10 @@ function drawThing(o) {
   else if (o.kind === 'ring') { g.strokeStyle = '#ffc400'; g.lineWidth = 5; g.beginPath(); g.arc(o.x, o.y, 13, 0, 7); g.stroke(); }
   else if (o.kind === 'heart') txt('♥', o.x, o.y + 10, 34, '#ff4d8d');
   else if (o.kind === 'star') txt('★', o.x, o.y + 12, 38, '#fff36b');
+  else if (POW.includes(o.kind)) {
+    const d = { rapid: ['#ff9a3c', '»'], triple: ['#b48cff', '✦'], magnet: ['#4dd2ff', 'M'], bomb: ['#ff4d4d', '!'] }[o.kind];
+    g.fillStyle = d[0]; g.beginPath(); g.arc(o.x, o.y, 16 + Math.sin(t / 8) * 2, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke(); txt(d[1], o.x, o.y + 7, 20);
+  }
   else if (o.kind === 'bat') { const f = Math.sin(t / 3) * 10; g.fillStyle = ch >= 8 ? '#8a3fb5' : '#2b1b3d'; g.beginPath(); g.ellipse(o.x, o.y, 9, 11, 0, 0, 7); g.moveTo(o.x - 4, o.y); g.lineTo(o.x - 28, o.y - 10 + f); g.lineTo(o.x - 8, o.y + 8); g.moveTo(o.x + 4, o.y); g.lineTo(o.x + 28, o.y - 10 + f); g.lineTo(o.x + 8, o.y + 8); g.fill(); g.fillStyle = '#f33'; g.fillRect(o.x - 5, o.y - 3, 3, 3); g.fillRect(o.x + 2, o.y - 3, 3, 3); }
   else if (o.kind === 'spike') { g.fillStyle = CHAPTERS[ch].spike || '#9ff'; g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(o.x - 22, o.top ? 0 : H); g.lineTo(o.x, o.top ? o.y + 55 : o.y - 55); g.lineTo(o.x + 22, o.top ? 0 : H); g.closePath(); g.fill(); g.stroke(); }
 }
@@ -637,6 +666,8 @@ function draw() {
         g.fillStyle = i === sel ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.4)'; g.fillRect(W / 2 - 200, 290 + i * 52, 400, 42);
         txt(s, W / 2, 320 + i * 52, 22, i === sel ? '#d6199a' : '#fff');
       });
+      if (reached > 0 && mode !== 'guest') txt(`◀   Chapter ${startCh + 1} · ${CHAPTERS[startCh].name}   ▶`, W / 2, 462, 18, '#fff');
+      txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 16, 506, 15, easy ? '#7dff7d' : '#fff', 'left');
       txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2, 482, 15);
       txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2, 506, 15);
       if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 272, 20, '#fff36b'); }
@@ -658,7 +689,10 @@ function draw() {
       txt(`Score ${score}`, 16, 34, 24, '#fff', 'left');
       txt('♥'.repeat(lives), W - 16, 34, 26, '#ff4d8d', 'right');
       if (combo > 1) txt(`Combo x${Math.min(combo, 10)}`, W / 2, 34, 22, '#ffe84d');
-      players.forEach((p, i) => { if (p.shield > 0) txt('★ ' + Math.ceil(p.shield / 60), 16, 64 + i * 26, 20, '#fff36b', 'left'); });
+      players.forEach((p, i) => {
+        const b = [['★', p.shield], ['»', p.rapid], ['✦', p.triple], ['M', p.magnet]].filter(a => a[1] > 0).map(a => a[0] + Math.ceil(a[1] / 60)).join('  ');
+        if (b) txt(b, 16, 64 + i * 26, 20, '#fff36b', 'left');
+      });
       txt('II', W - 40, H - 27, 18, '#fff'); txt(muted ? 'x' : '♪', W - 94, H - 27, 20, '#fff');
       if (!boss) { g.fillStyle = '#ffffff99'; g.fillRect(0, H - 8, W * Math.min(1, t / (CHAPTERS[ch].time * 60)), 8); }
       if (boss && !clear) txt(c.boss, W / 2, H - 16, 20);

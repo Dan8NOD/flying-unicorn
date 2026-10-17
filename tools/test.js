@@ -7,10 +7,10 @@ function readFile(p) {
   if (isNode) return require('fs').readFileSync(p, 'utf8');
   ObjC.import('Foundation'); return $.NSString.stringWithContentsOfFileEncodingError(p, 4, null).js;
 }
-const src = readFile('audio.js') + '\n' + readFile('game.js');
+const src = readFile('audio.js') + '\n' + readFile('game.js') + '\n' + readFile('stages.js');
 
 function makeGame(testBody) {
-  const ctx = new Proxy({}, { get: (o, p) => p === 'createLinearGradient' ? () => ({ addColorStop() {} }) : (o[p] !== undefined ? o[p] : () => {}), set: (o, p, v) => { o[p] = v; return true; } });
+  const ctx = new Proxy({}, { get: (o, p) => p === 'createLinearGradient' || p === 'createRadialGradient' ? () => ({ addColorStop() {} }) : (o[p] !== undefined ? o[p] : () => {}), set: (o, p, v) => { o[p] = v; return true; } });
   const cv = { width: 960, height: 540, getContext: () => ctx, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 960, height: 540 }) };
   const store = {};
   const fn = new Function('document', 'addEventListener', 'requestAnimationFrame', 'window', 'localStorage', 'setTimeout',
@@ -74,6 +74,15 @@ const tests = {
     return [movedRight, movedUp, tilted, movedLeft, dashing, safe];`, 6],
   'chapter lists stay in step': [`
     return [CHAPTERS.length === NCH, FOES.length === NCH, TALK.length === NCH, CHAPTERS.every((_, i) => SONGS[i]), FOES.every(l => l.every(k => FOE[k]))];`, 5],
+  'every chapter: weather, wind and surprises run': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    let fired = 0, golden = 0, flyOk = true;
+    for (let c = 0; c < NCH; c++) {
+      ch = c; stageReset(); boss = null; clear = 0; things = []; lives = 5;
+      for (t = 0; t < 52 * 60; t++) { stageTick(true); if (banner && banner.until === t + 150) fired++; if (t % 30 === 0) { stageBack(); stageFront(); for (const o of things) drawThing(o); } }
+      golden += things.some(o => o.golden) ? 1 : 0;
+    }
+    return [STAGES.length === NCH, fired > NCH, golden >= NCH - 2, isFinite(windX)];`, 4],
 };
 
 let failed = 0;

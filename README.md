@@ -8,10 +8,10 @@ Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / pad B
 
 **Modes:** 1 Player; 2 Players on one screen (arrows + WASD, touch halves, or two gamepads); 2 Devices online (host / join by swapping a code, `net.js`).
 
-**Features:** boss phases, 1-3 star ratings per chapter (saved), chapter picker, power-ups (rapid fire, triple shot, ring magnet, bomb), story chats with voices, animated ending with credits. Installable on Android (manifest + service worker).
+**Features:** weather that changes during each level (rain and lightning storms, blizzards, petal and leaf storms, sandstorms, fog, embers, meteor showers, fireworks) with wind that pushes you around; surprises in every chapter (fly-bys of a whale, comet, lantern dragon, phoenix, fairy, koi, airship and toy train, rainbow ring bridges, star showers, golden bonus enemies, gusts, a volcano eruption); ambient soundscapes; boss phases, 1-3 star ratings per chapter (saved), chapter picker, power-ups (rapid fire, triple shot, ring magnet, bomb), story chats with voices, animated ending with credits. Installable on Android (manifest + service worker).
 
 ## Files
-- `game.js` game logic and drawing; `audio.js` sound engine; `net.js` two-device play; `index.html`, `sw.js`, `manifest.json`.
+- `game.js` game logic and drawing; `stages.js` per-chapter weather and surprises; `audio.js` sound engine; `net.js` two-device play; `index.html`, `sw.js`, `manifest.json`.
 - `assets/img` generated art (Meshy): sprites, painted backgrounds and foregrounds. `assets/audio` generated audio (ElevenLabs): music, effects, voices.
 - Every sprite and sound also has a code-drawn / synthesised fallback, so the game still works if an asset is missing.
 - `previews/` screenshots. `tools/` test and art tools (see `NEXT-STEPS.md`).

@@ -152,6 +152,7 @@ let song = null, songKey = '', songStep = 0, songTime = 0;
 function music() {
   if (!ac) return;
   const key = state === 'title' ? 'title' : state === 'ending' ? 'ending' : state === 'over' ? '' : (boss && !clear ? 'b' : '') + ch;
+  ambienceTick();
   if (streamMusic(key)) { songKey = ''; song = null; return; }   // a generated track is playing
   if (key !== songKey) {
     songKey = key; songStep = 0; songTime = ac.currentTime + .08;
@@ -170,15 +171,17 @@ function music() {
 // Music streams through two <audio> elements that crossfade (low memory on 4 GB phones).
 // Effects are decoded once into buffers (needs http/https; on file:// the synth versions play).
 // Voices play through one <audio> element and duck the music while someone talks.
-const FILE_SFX = ['shot', 'bubble', 'ring', 'heart', 'power', 'shield', 'hurt', 'pop', 'poof', 'bossHit', 'warn', 'boss', 'win', 'bomb', 'flap', 'dash', 'start', 'click', 'over'];
+const FILE_SFX = ['shot', 'bubble', 'ring', 'heart', 'power', 'shield', 'hurt', 'pop', 'poof', 'bossHit', 'warn', 'boss', 'win', 'bomb', 'flap', 'dash', 'start', 'click', 'over',
+  'thunder', 'whale', 'comet', 'phoenix', 'fairy', 'train', 'splash', 'dragon', 'airship', 'gust', 'rainbow', 'golden', 'eruption', 'firework', 'surprise'];
 const SFX_VOL = { shot: .22, bubble: .25, ring: .5, pop: .35, flap: .3, click: .4, poof: .55, dash: .6 };
+let ambEl = null, wxEl = null, ambFile = '';
 const sbuf = {}; let sfxLoading = false, mEl = null, mCur = 0, mFile = '', mFail = {}, voiceEl = null, voiceUntil = 0, musicVol = .55;
 function loadFiles() {
   if (typeof Audio === 'undefined') return;
   if (!mEl) {   // create (and unlock, inside this tap) the music and voice players
-    mEl = [new Audio(), new Audio()]; voiceEl = new Audio();
-    for (const el of [...mEl, voiceEl]) { el.preload = 'auto'; el.src = 'assets/audio/sfx_click.mp3'; el.volume = 0; const p = el.play(); if (p) p.then(() => el.pause()).catch(() => {}); }
-    mEl.forEach(el => { el.loop = true; });
+    mEl = [new Audio(), new Audio()]; voiceEl = new Audio(); ambEl = new Audio(); wxEl = new Audio();
+    for (const el of [...mEl, voiceEl, ambEl, wxEl]) { el.preload = 'auto'; el.src = 'assets/audio/sfx_click.mp3'; el.volume = 0; const p = el.play(); if (p) p.then(() => el.pause()).catch(() => {}); }
+    [...mEl, ambEl, wxEl].forEach(el => { el.loop = true; });
   }
   if (sfxLoading || !ac || typeof fetch === 'undefined' || !/^https?:/.test(location.protocol)) return;
   sfxLoading = true;
@@ -212,3 +215,18 @@ function streamMusic(key) {   // returns true while a music file is handling pla
   if (muted && !mEl[mCur].paused) mEl[mCur].pause(); else if (!muted && file && !mFail[file] && mEl[mCur].paused && ac && ac.state === 'running') { const p = mEl[mCur].play(); if (p) p.catch(() => {}); }
   return !!file && !mFail[file];
 }
+
+// Ambience: one looping soundscape per chapter (STAGES[ch].amb, stages.js) plus a rain layer while it rains.
+function ambienceTick() {
+  if (!ambEl || typeof STAGES === 'undefined') return;
+  const S = STAGES[ch], bed = S && (state === 'play' || state === 'chapter' || state === 'results') ? S.amb : '';
+  if (bed !== ambFile) { ambFile = bed; if (bed) { ambEl.src = 'assets/audio/' + bed + '.mp3'; ambEl.volume = 0; const p = ambEl.play(); if (p) p.catch(() => {}); } }
+  const wet = state === 'play' && (wxType === 'rain' || wxType === 'storm') ? Math.min(1, wxI) : 0;
+  if (wet > .05 && !muted && wxEl.paused) { if (!/wx_rain/.test(wxEl.src)) wxEl.src = 'assets/audio/wx_rain.mp3'; const p = wxEl.play(); if (p) p.catch(() => {}); }
+  const duck = Date.now() < voiceUntil ? .6 : 1;
+  const ramp = (el, want) => { el.volume = Math.max(0, Math.min(1, el.volume + Math.max(-.02, Math.min(.02, want - el.volume)))); if (el.volume === 0 && !el.paused && want === 0) el.pause(); };
+  ramp(ambEl, muted || !bed ? 0 : .32 * duck);
+  ramp(wxEl, muted ? 0 : .5 * wet * duck);
+  if (!muted && bed && ambEl.paused && ac && ac.state === 'running') { const p = ambEl.play(); if (p) p.catch(() => {}); }
+}
+

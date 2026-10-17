@@ -11,7 +11,8 @@ const IMG = {};
 const ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike',
   ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm', 'butterfly', 'balloon'].map(k => 'foe_' + k),
   ...['ring', 'heart', 'star', 'rapid', 'triple', 'magnet', 'bomb'].map(k => 'pick_' + k),
-  ...Array.from({ length: NCH }, (_, i) => 'boss_' + i), 'happy_0', 'happy_1', 'happy_9'];
+  ...Array.from({ length: NCH }, (_, i) => 'boss_' + i), 'happy_0', 'happy_1', 'happy_9',
+  ...['whale', 'comet', 'fairy', 'koi', 'dragon', 'airship', 'phoenix', 'train'].map(k => 'fx_' + k)];
 if (typeof Image !== 'undefined') {
   for (const n of ART) { const im = new Image(); im.onload = () => { IMG[n] = im; }; im.src = 'assets/img/' + n + '.png'; }
   for (let i = 0; i < NCH; i++) { const im = new Image(); im.onload = () => { IMG['bg_' + i] = im; }; im.src = 'assets/img/bg_' + i + '.jpg';
@@ -159,7 +160,7 @@ function netSnap() {
     tr: trans ? [trans.t, trans.label || ''] : 0, rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
     u: [rd(uni.x), rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, rd(uni.tilt * 100) / 100, uni.dash], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
     b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
-    th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0]),
+    th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0, o.golden ? 1 : 0, rd(o.vy || 0)]),
     sh: shots.map(q => [rd(q.x), rd(q.y), q.m ? 1 : 0, rd(q.vy || 0)]), bo: bolts.map(b => [rd(b.x), rd(b.y), rd(b.vx), rd(b.vy)]), ev: net.ev.splice(0) }));
 }
 function applySnap(m) {
@@ -168,7 +169,7 @@ function applySnap(m) {
   if (m.rs) [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars] = m.rs;
   uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, uni.tilt, uni.dash] = m.u.slice(2); uni.fp = t / 5 * 1.3; [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
   boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
-  things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7] }));
+  things = m.th.map(a => ({ kind: a[0], x: a[1], y: a[2], y0: a[2], vx: a[3], ph: a[4], hit: a[5], top: !!a[6], foe: a[7], golden: a[8], vy: a[9] }));
   shots = m.sh.map(a => ({ x: a[0], y: a[1], m: a[2], vy: a[3] }));
   bolts = m.bo.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3] }));
   for (const e of m.ev) { if (e[0] === 'x') sfx(e[1], e[2]); else if (e[0] === 'v') voice(e[1]); else if (e[0] === 'b') boom(e[1], e[2], e[3], e[4]); }
@@ -177,8 +178,8 @@ function guestTick() {   // between snapshots: keep things moving smoothly and s
   t++;
   const kx = (l, r) => (keys[r] ? 1 : 0) - (keys[l] ? 1 : 0);
   steerDir(p2, kx('ArrowLeft', 'ArrowRight') + kx('a', 'd') + padX[0], kx('ArrowUp', 'ArrowDown') + kx('w', 's') + padDir[0]);
-  if (state === 'play' && !paused) movePlayer(p2);
-  for (const o of things) o.x += o.vx;
+  if (state === 'play' && !paused) { movePlayer(p2); stageTick(false); }
+  for (const o of things) { o.x += o.vx; if (o.vy) o.y += o.vy; }
   for (const q of shots) { q.x += q.m ? 10 : 12; q.y += q.vy || 0; if (t % 2 === 0 && !q.m) sparks.push({ x: q.x, y: q.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + q.x) % 360},90%,75%)` }); }
   for (const b of bolts) { b.x += b.vx; b.y += b.vy; }
   if (shake > 0) shake--;
@@ -227,7 +228,7 @@ function go(fn, label) { if (!trans) trans = { t: 0, fn, label }; }
 function start(c, fresh) {
   go(() => {
     if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
-    ch = c; t = 0; pops = []; Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
+    ch = c; t = 0; pops = []; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = 0; p.x = p.tx = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); p.vx = p.vy = p.tilt = p.dash = p.dashCd = 0; }
     if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
@@ -269,7 +270,7 @@ const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'gh
 const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
 function applyPower(p, k) {
   if (k !== 'bomb') { p[k] = 480; sfx('power'); voice('vo_u_power'); score += 25; return; }
-  for (const o of things) if (o.foe || o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'spike') { o.dead = true; score += o.foe ? FOE[o.kind].pts : 10; boom(o.x, o.y, '#ffb347', 10); }
+  for (const o of things) if (o.foe || o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'spike' || o.kind === 'rock') { o.dead = true; score += o.foe ? FOE[o.kind].pts : 10; boom(o.x, o.y, '#ffb347', 10); }
   bolts = []; shake = 20; if (boss && !clear) boss.hp = Math.max(1, boss.hp - 6);
   sfx('bomb');
 }
@@ -336,7 +337,8 @@ function movePlayer(p) {
     p.vy += (Math.max(-sp, Math.min(sp, p.ty - p.y)) - p.vy) * .35;
   }
   if (p.dashCd > 0) p.dashCd--;
-  p.x = Math.max(MINX, Math.min(MAXX, p.x + p.vx)); p.y = Math.max(30, Math.min(H - 30, p.y + p.vy));
+  p.x = Math.max(MINX, Math.min(MAXX, p.x + p.vx - (p.dash > 0 ? 0 : windX * .8)));   // wind pushes you back
+  p.y = Math.max(30, Math.min(H - 30, p.y + p.vy));
   p.tilt += (Math.max(-.45, Math.min(.45, p.vy * .05 - p.vx * .012)) - p.tilt) * .2;   // bank into the move
   p.fp = (p.fp || 0) + .2 + Math.max(0, -p.vy) * .06 + Math.abs(p.vx) * .02;           // wings beat faster when climbing
   if (p.vy < -3.5 && t - (p.lastFlap || 0) > 16) { p.lastFlap = t; sfx('flap'); }
@@ -372,9 +374,11 @@ function update() {
     things = []; warn = 120; sfx('warn'); sfx('boss'); voice('vo_u_boss');
   }
   if (!boss && !clear && t % CHAPTERS[ch].rate === 0) spawn();
+  stageTick(true);   // weather, wind and surprises (stages.js)
 
   for (const o of things) {
     o.x += o.vx;
+    if (o.vy) { o.y += o.vy; if (o.y > H + 60) { o.dead = true; continue; } }
     if (o.foe) { moveFoe(o); if (o.hit > 0) o.hit--; for (const p of players) if (hit(o, p, o.r + 20)) hurt(p);
       if (o.x < -60) o.dead = true; continue; }
     if (o.kind === 'bat') o.y = o.y0 + Math.sin(t / 15 + o.ph) * 70;
@@ -401,7 +405,8 @@ function update() {
       if (!o.foe || o.dead || !hit(s, o, o.r + 8)) continue;
       s.dead = true; o.hp--; o.hit = 6; sfx('pop');
       if (o.hp <= 0) {
-        o.dead = true; stat.foes++; score += FOE[o.kind].pts; if (++kills % 12 === 0) voice('vo_m_nice'); pop(o.x, o.y - 20, '+' + FOE[o.kind].pts, '#fff'); boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
+        const pts = o.golden ? 300 : FOE[o.kind].pts; o.dead = true; stat.foes++; score += pts; if (++kills % 12 === 0) voice('vo_m_nice'); pop(o.x, o.y - 20, '+' + pts, o.golden ? '#ffe45c' : '#fff');
+        if (o.golden) { sfx('golden'); boom(o.x, o.y, '#ffe45c', 30); for (let d = 0; d < 4; d++) things.push({ kind: d === 0 ? 'heart' : 'ring', x: o.x + d * 26, y: o.y - 20 + (d % 2) * 40, y0: 0, ph: 0, vx: -2.5, r: 16 }); } boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
         const heart = o.kind === 'pig' && lives < maxLives() && Math.random() < .4;
         if (heart || Math.random() < .35) things.push({ kind: heart ? 'heart' : 'ring', x: o.x, y: o.y, y0: o.y, ph: 0, vx: -3, r: 16 });
       }
@@ -918,10 +923,12 @@ const FOE_H = { pig: 76, bird: 48, jelly: 68, fish: 68, owl: 64, ghost: 60, bug:
 function drawFoe(o) {
   g.save(); g.translate(o.x, o.y);
   const h = o.hit > 0, fl = Math.sin(t / 3 + o.ph), k = o.kind, OL = 'rgba(70,30,80,.55)';
+  if (o.golden) { g.save(); g.globalCompositeOperation = 'lighter'; const gq = g.createRadialGradient(0, 0, 4, 0, 0, FOE_H[k] * .85); gq.addColorStop(0, `rgba(255,220,90,${.55 + .2 * Math.sin(t / 5)})`); gq.addColorStop(1, 'rgba(255,200,60,0)'); g.fillStyle = gq; g.beginPath(); g.arc(0, 0, FOE_H[k] * .85, 0, 7); g.fill(); g.restore();
+    g.strokeStyle = `rgba(255,228,92,${.6 + .3 * Math.sin(t / 4)})`; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, FOE_H[k] * .62, 0, 7); g.stroke(); if (t % 6 === 0) sparks.push({ x: o.x + (Math.random() - .5) * 60, y: o.y + (Math.random() - .5) * 60, vx: 0, vy: -.5, l: 25, col: '#ffe45c' }); }
   if (IMG['foe_' + k]) {   // generated sprite with a little wobble and squash
     const fh = FOE_H[k], sq = 1 + Math.sin(t / 4 + o.ph) * .04;
     g.rotate(Math.sin(t / 10 + o.ph) * .08); g.scale(1 / sq, sq);
-    spr('foe_' + k, 0, 0, fh, false, k === 'bug' && o.top); if (h) flashSpr('foe_' + k, 0, 0, fh, .55);
+    spr('foe_' + k, 0, 0, fh, false, k === 'bug' && o.top); if (h) flashSpr('foe_' + k, 0, 0, fh, .55); else if (o.golden) flashSpr('foe_' + k, 0, 0, fh, .3 + .1 * Math.sin(t / 4));
     g.restore(); return;
   }
   const F = (a, b, y0, y1) => h ? '#ffffff' : lg(0, y0, 0, y1, a, b);
@@ -1032,6 +1039,16 @@ function drawThingSprite(o) {
 }
 function drawThing(o) {
   if (o.foe) return drawFoe(o);
+  if (o.kind === 'rock') {   // glowing volcano rock with a trail
+    const tail = g.createLinearGradient(o.x, o.y, o.x + 50, o.y - 70); tail.addColorStop(0, 'rgba(255,140,60,.85)'); tail.addColorStop(1, 'rgba(255,90,160,0)');
+    g.fillStyle = tail; g.beginPath(); g.moveTo(o.x - 16, o.y - 6); g.lineTo(o.x + 60, o.y - 80); g.lineTo(o.x + 14, o.y + 10); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,150,80,.35)'; g.beginPath(); g.arc(o.x, o.y, 28, 0, 7); g.fill();
+    g.fillStyle = lg(0, o.y - 20, 0, o.y + 20, '#6a4a6a', '#2a1a2e'); g.beginPath(); g.moveTo(o.x - 20, o.y - 4); g.lineTo(o.x - 10, o.y - 19); g.lineTo(o.x + 12, o.y - 17); g.lineTo(o.x + 21, o.y + 2); g.lineTo(o.x + 8, o.y + 19); g.lineTo(o.x - 14, o.y + 15); g.closePath(); g.fill();
+    g.strokeStyle = '#ff8fd0'; g.lineWidth = 2.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(o.x - 12, o.y - 2); g.lineTo(o.x - 2, o.y + 4); g.lineTo(o.x + 4, o.y - 8); g.moveTo(o.x - 2, o.y + 4); g.lineTo(o.x + 6, o.y + 12); g.stroke();
+    g.strokeStyle = 'rgba(255,220,120,.9)'; g.lineWidth = 1.2; g.stroke();
+    if (t % 3 === 0) sparks.push({ x: o.x, y: o.y - 14, vx: 1, vy: -1.5, l: 18, col: '#ffb36b' });
+    return;
+  }
   if (drawThingSprite(o)) return;
   if (o.kind === 'cloud' && ch === 8) { g.fillStyle = '#2a5a2a'; g.beginPath(); g.arc(o.x, o.y, 22, 0, 7); g.fill(); g.strokeStyle = '#1a3a1a'; g.lineWidth = 4; for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(o.x + Math.cos(a * .785) * 18, o.y + Math.sin(a * .785) * 18); g.lineTo(o.x + Math.cos(a * .785) * 32, o.y + Math.sin(a * .785) * 32); g.stroke(); } }
   else if (o.kind === 'cloud' && ch === 9) { g.fillStyle = '#9a4fd1'; g.beginPath(); g.arc(o.x, o.y, 24, 0, 7); g.fill(); g.fillStyle = '#d9a8ff'; g.beginPath(); g.arc(o.x - 8, o.y - 8, 5, 0, 7); g.arc(o.x + 9, o.y + 6, 4, 0, 7); g.fill(); g.strokeStyle = '#2a0a3a'; g.lineWidth = 3; g.beginPath(); g.arc(o.x, o.y + 12, 8, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
@@ -1318,6 +1335,7 @@ function draw() {
       txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2 + 60, 521, 13);
       if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 274, 20, '#fff36b'); }
     } else {
+      stageBack();
       for (const o of things) drawThing(o);
       if (boss) drawBoss(boss);
       for (const s of shots) {
@@ -1339,6 +1357,7 @@ function draw() {
       }
       for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
       for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 18 + (q.l > 42 ? (50 - q.l) : 8), q.col); } g.globalAlpha = 1;
+      if (state === 'play') stageFront();
       if (state !== 'chapter' && state !== 'results') hud();
       if (state === 'play' && ch === 0 && !boss && t < 600) {   // first-time tips
         const tip = t < 300 ? 'Drag, or use the arrows, to fly anywhere' : 'Double-tap, Space or B to dash through danger!';

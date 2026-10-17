@@ -53,9 +53,10 @@ const tests = {
     for (let q = 0; q < 1500; q++) { lives = 5; step(1); }
     const m = JSON.parse(snaps[snaps.length - 1]);
     mode = 'guest'; net.role = 'guest'; things = []; shots = []; score = -1; ch = -1; state = 'title'; applySnap(m); step(30);
+    const same = score === m.sc && ch === m.ch && state === m.st && things.length === m.th.length;
     const sent = []; net.sendR = x => sent.push(x); press();
     mode = 'host'; net.role = 'host'; net.remoteTy = 400; state = 'play'; p2.y = 200; p2.ty = 200; step(60);
-    return [score === m.sc && ch === m.ch && state === m.st && things.length === m.th.length, sent[0] === '{"p":1}', Math.round(p2.y) === 400];`, 3],
+    return [same, sent[0] === '{"p":1}', Math.round(p2.y) === 400];`, 3],
 };
 
 let failed = 0;

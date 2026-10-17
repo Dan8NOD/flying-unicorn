@@ -7,3 +7,5 @@ Source only, no build step, no assets (all art and sound is drawn/synthesised in
 Run: open `index.html`, or serve the folder (`python3 -m http.server`). Works with mouse, touch (iPad) and keyboard. M = mute, P = pause.
 
 Modes: 1 Player, 2 Players on one screen (arrows + W/S, touch halves, or two gamepads), and 2 Devices online (host / join with a pasted code, `net.js`). Installable on Android as an app (manifest + service worker). See `NEXT-STEPS.md`.
+
+Extras: power-ups (rapid fire, triple shot, ring magnet, bomb), chapter picker with saved progress, easy mode (press E on the title screen).

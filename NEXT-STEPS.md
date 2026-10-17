@@ -15,12 +15,11 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 4. **Sound effects**: replace the square-wave blips with softer, magical sounds (chimes, whooshes, pops) and a distinct sound per enemy type.
 5. **Transitions and ending**: the rainbow curtain and the sunrise ending work but are basic. Ideas: story panels between chapters, the mermaid and unicorn talking, a longer ending with credits.
 6. **UI**: title screen logo, menu buttons (rounded, glowing), HUD icons instead of text glyphs, game-over screen, chapter cards with a picture.
-7. **Feel**: screen shake, hit flashes, combo effects, boss intro animation, a satisfying boss death.
+7. **Power-up and enemy art**: the four power-up discs (R/»/✦/M/!) and the nine foes are placeholders; give each a clear, cute icon.
+8. **Feel**: screen shake, hit flashes, combo effects, boss intro animation, a satisfying boss death.
 
 ## Engineering backlog (mechanical)
-- Power-ups: rapid fire, triple shot, magnet for rings, bomb.
-- Chapter select from saved progress; difficulty options (easy mode for little kids).
-- Save settings (mute) and progress in localStorage.
+- (done) Power-ups, chapter picker with saved progress, easy mode. Still open: save the mute setting; tune power-up spawn rate and easy-mode numbers by playing.
 - A tiny automated test: a headless script that runs `game.js` with a fake canvas for a full playthrough (see git history of this note's author, or recreate with `osascript -l JavaScript`).
 - Optional: online play with a tiny relay server instead of copy/paste codes.
 

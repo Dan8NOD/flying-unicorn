@@ -6,14 +6,15 @@ let Q = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) |
 cv.width = W * Q; cv.height = H * Q;
 
 // ---- generated art (Meshy). IMG[name] is set once the file has loaded ----
+const NCH = 15;   // number of chapters (keep in step with CHAPTERS below)
 const IMG = {};
 const ART = ['uni_up', 'uni_down', 'mermaid', 'haz_cloud', 'haz_bat', 'haz_spike',
-  ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm'].map(k => 'foe_' + k),
+  ...['pig', 'bird', 'jelly', 'fish', 'owl', 'ghost', 'bug', 'bee', 'storm', 'butterfly', 'balloon'].map(k => 'foe_' + k),
   ...['ring', 'heart', 'star', 'rapid', 'triple', 'magnet', 'bomb'].map(k => 'pick_' + k),
-  ...Array.from({ length: 12 }, (_, i) => 'boss_' + i), 'happy_0', 'happy_1', 'happy_9'];
+  ...Array.from({ length: NCH }, (_, i) => 'boss_' + i), 'happy_0', 'happy_1', 'happy_9'];
 if (typeof Image !== 'undefined') {
   for (const n of ART) { const im = new Image(); im.onload = () => { IMG[n] = im; }; im.src = 'assets/img/' + n + '.png'; }
-  for (let i = 0; i < 12; i++) { const im = new Image(); im.onload = () => { IMG['bg_' + i] = im; }; im.src = 'assets/img/bg_' + i + '.jpg';
+  for (let i = 0; i < NCH; i++) { const im = new Image(); im.onload = () => { IMG['bg_' + i] = im; }; im.src = 'assets/img/bg_' + i + '.jpg';
     const fg = new Image(); fg.onload = () => { IMG['fg_' + i] = fg; }; fg.src = 'assets/img/fg_' + i + '.png'; }
 }
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
@@ -39,6 +40,9 @@ const CHAPTERS = [
   { name: 'Enchanted Forest', line: "Fireflies light the way. Watch out for thorns!", sky: ['#1e5b4f', '#0b2a3a'], time: 52, rate: 27, boss: 'Thorn Saucer', hp: 84, pat: 1, bats: 1, spikes: 1, hull: '#3f8f3f', spike: '#3a7d2c' },
   { name: 'Cotton Candy Kingdom', line: "Sweet... but those gumballs are SOUR.", sky: ['#ffc8ea', '#fff0fa'], time: 52, rate: 26, boss: 'Sugar Saucer', hp: 90, pat: 2, bats: 1, spikes: 1, hull: '#ff7eb6', spike: '#ff5d7d' },
   { name: 'Moonlit Lake', line: "Lotus flowers glow on the quiet water.", sky: ['#1a2a6c', '#4b6cb7'], time: 54, rate: 25, boss: 'Moonbeam Saucer', hp: 96, pat: 0, bats: 1, spikes: 0, hull: '#4b6cb7' },
+  { name: 'Sakura Valley', line: "Pink petals everywhere! Watch the busy bees.", sky: ['#ffd9ec', '#ffeef6'], time: 54, rate: 25, boss: 'Blossom Saucer', hp: 100, pat: 1, bats: 0, spikes: 0, hull: '#ff9ec8' },
+  { name: 'Rainbow Waterfalls', line: "A rainbow in every waterfall. Hold on tight!", sky: ['#a8e6cf', '#3fb8af'], time: 55, rate: 24, boss: 'Splash Saucer', hp: 104, pat: 0, bats: 1, spikes: 1, hull: '#2fbf8f', spike: '#7fe8ff' },
+  { name: 'Starlight Carnival', line: "A carnival in the night sky. The last stop before home!", sky: ['#2b1055', '#7597de'], time: 55, rate: 24, boss: 'Carnival Saucer', hp: 110, pat: 2, bats: 1, spikes: 0, hull: '#7b3fe4' },
   { name: 'Unicorn Castle', line: "Home at last. One more grumpy queen to cheer up.", sky: ['#ffd1f0', '#ffa8d8'], time: 56, rate: 24, boss: 'Queen of Sparkles', hp: 120, pat: 2, bats: 1, spikes: 1, hull: '#b8329e', spike: '#ffd36b', crown: 1 },
 ];
 const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b', '#18a999', '#5a5f7a'];
@@ -240,9 +244,12 @@ const FOE = {
   bug:   { hp: 2, r: 20, vx: -3.5, pts: 30 },   // crawls along the floor or ceiling
   bee:   { hp: 1, r: 14, vx: -5,   pts: 20 },   // zig-zags
   storm: { hp: 3, r: 32, vx: -2,   pts: 50 },   // thundercloud that throws lightning
+  butterfly: { hp: 1, r: 20, vx: -3.5, pts: 25 }, // flutters in big lazy waves
+  balloon: { hp: 2, r: 26, vx: -2.2, pts: 40 },   // balloon animal drifting up from below
 };
 const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'ghost'], ['bird', 'bee', 'pig'], ['fish', 'jelly'],
-  ['bug', 'ghost'], ['storm', 'bird'], ['owl', 'bee', 'pig'], ['pig', 'bee', 'bird'], ['bird', 'owl', 'ghost'], ['pig', 'bird', 'storm']];
+  ['bug', 'ghost'], ['storm', 'bird'], ['owl', 'bee', 'pig'], ['pig', 'bee', 'bird'], ['bird', 'owl', 'ghost'],
+  ['butterfly', 'bee', 'bird'], ['bird', 'fish', 'butterfly', 'bug'], ['balloon', 'ghost', 'storm', 'bird'], ['pig', 'bird', 'storm', 'balloon']];
 const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
 function applyPower(p, k) {
   if (k !== 'bomb') { p[k] = 480; sfx('power'); voice('vo_u_power'); score += 25; return; }
@@ -259,10 +266,12 @@ function moveFoe(o) {
   else if (k === 'owl') { if (o.x > 350) o.y += Math.max(-1.6, Math.min(1.6, nearest(o).y - o.y)); }
   else if (k === 'ghost') o.y = o.y0 + Math.sin(t / 20 + o.ph) * 50;
   else if (k === 'bee') o.y = o.y0 + Math.sin(t / 6 + o.ph) * 50;
+  else if (k === 'butterfly') o.y = o.y0 + Math.sin(t / 14 + o.ph) * 70 + Math.sin(t / 5 + o.ph) * 8;
+  else if (k === 'balloon') { o.y0 -= .55; o.y = o.y0 + Math.sin(t / 25 + o.ph) * 12; if (o.y < -40) o.dead = true; }
   else if (k === 'storm' && o.x < W - 60 && o.x > 200 && ++o.cd % 90 === 0) {
     const tg = nearest(o), a = Math.atan2(tg.y - o.y, tg.x - o.x); bolts.push({ x: o.x, y: o.y + 20, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5 });
   }
-  o.y = Math.max(25, Math.min(H - 25, o.y));
+  if (k !== 'balloon') o.y = Math.max(25, Math.min(H - 25, o.y));
 }
 function spawn() {
   const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + ch * .6 + Math.random() * 2) * (easy ? .85 : 1);
@@ -271,7 +280,7 @@ function spawn() {
   if (kind === 'cloud' && c.spikes && Math.random() < .5) kind = 'spike';
   if (kind === 'heart' && lives >= maxLives()) kind = 'ring';
   if (kind === 'cloud' && Math.random() < .55) {   // swap hazard for a shootable enemy
-    const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : y;
+    const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : k === 'balloon' ? H - 20 - Math.random() * 120 : y;
     things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: (f.vx - ch * .1) * (easy ? .85 : 1), r: f.r, top, cd: 60, hit: 0 });
     return;
   }
@@ -677,13 +686,16 @@ function mirrorScroll(im, sp, y, h) {
 }
 function bgFx(i) {   // light particles over the painted backgrounds
   if (!fx) return;
-  if (i === 2 || i === 3 || i === 10) twinkles(30, .05, H * .5);
+  if (i === 2 || i === 3 || i === 10 || i === 13) twinkles(30, .05, H * .5);
+  if (i === 13 && t % 70 === 0) boom(150 + (t * 37) % (W - 300), 60 + (t * 13) % 140, RAINBOW[(t / 70 | 0) % 6], 24);   // carnival fireworks
+  if (i === 12) { g.fillStyle = 'rgba(255,255,255,.55)'; for (let k = 0; k < 30; k++) { g.beginPath(); g.arc(sx(k, 1.4, 34), H - ((k * 71 + t * (2 + k % 3)) % 260), 1.5 + k % 3, 0, 7); g.fill(); } }   // waterfall spray
   if (i === 3) { g.fillStyle = '#fff'; g.globalAlpha = .75; for (let k = 0; k < 40; k++) { g.beginPath(); g.arc(sx(k, 1.2, 24) + Math.sin(t / 30 + k) * 10, (k * 61 + t * (1 + k % 3 * .4)) % H, 1.5 + k % 3, 0, 7); g.fill(); } g.globalAlpha = 1; }
   if (i === 1 || i === 5) for (let k = 0; k < 14; k++) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(sx(k, .6, 70) + Math.sin(t / 20 + k) * 6, ((k * 83 - t * (1 + k % 3)) % H + H) % H, 3 + k % 4 * 2, 0, 7); g.stroke(); }
   if (i === 6 || i === 8 || i === 10) fireflies(22, i === 6 ? '#b8fff2' : '#fff7a0');
   if (i === 7) { g.strokeStyle = 'rgba(180,190,230,.35)'; g.lineWidth = 1.5; g.beginPath(); for (let k = 0; k < 60; k++) { const x = (k * 53 + t * 9) % (W + 100) - 50, y = (k * 97 + t * 14) % (H + 40) - 20; g.moveTo(x, y); g.lineTo(x - 6, y + 16); } g.stroke(); if (t % 240 < 8) { g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(0, 0, W, H); } }
   if (i === 9) { const cols = ['#ff5fa8', '#ffb347', '#7ee8e0', '#b48cff']; for (let k = 0; k < 30; k++) { g.fillStyle = cols[k % 4]; g.fillRect(sx(k, .5, 32), (k * 47 + t * (1 + k % 3)) % H, 7, 3); } }
-  if (i === 11 || i === 0) for (let k = 0; k < 16; k++) { g.globalAlpha = .7; g.fillStyle = k % 2 ? '#ff8fc2' : '#fff'; g.beginPath(); g.arc(sx(k, .6, 60) + Math.sin(t / 50 + k) * 12, H - ((k * 61 + t * (.8 + k % 3 * .4)) % H), 2.5, 0, 7); g.fill(); g.globalAlpha = 1; }
+  if (i === 11) for (let k = 0; k < 26; k++) { const x = sx(k, .9, 40) + Math.sin(t / 30 + k) * 20, y = (k * 67 + t * (1 + k % 3 * .5)) % (H + 20) - 10; g.save(); g.translate(x, y); g.rotate(t / 30 + k); g.fillStyle = k % 3 ? '#ffc2dc' : '#fff0f6'; g.beginPath(); g.ellipse(0, 0, 5, 3, 0, 0, 7); g.fill(); g.restore(); }   // blossom petals
+  if (i === 14 || i === 0) for (let k = 0; k < 16; k++) { g.globalAlpha = .7; g.fillStyle = k % 2 ? '#ff8fc2' : '#fff'; g.beginPath(); g.arc(sx(k, .6, 60) + Math.sin(t / 50 + k) * 12, H - ((k * 61 + t * (.8 + k % 3 * .4)) % H), 2.5, 0, 7); g.fill(); g.globalAlpha = 1; }
   if (i === 4) for (let k = 0; k < 18; k++) { g.globalAlpha = .5; g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(sx(k, 1.5, 50), H - 30 - (k * 37) % 200 + Math.sin(t / 20 + k) * 6, 2, 0, 7); g.fill(); g.globalAlpha = 1; }
 }
 function drawBg(i) {
@@ -696,7 +708,7 @@ function drawBg(i) {
     if (IMG['fg_' + i]) { const im = IMG['fg_' + i], fh = Math.min(150, W * im.height / im.width); mirrorScroll(im, 1.6, H - fh, fh); }
     bgFx(i); return;
   }
-  [candyClouds, mermaidBay, starryNight, auroraPeaks, rainbowCanyon, coralReef, crystalCaves, stormFortress, forest, candyland, lake, castle][i]();
+  [candyClouds, mermaidBay, starryNight, auroraPeaks, rainbowCanyon, coralReef, crystalCaves, stormFortress, forest, candyland, lake, candyClouds, mermaidBay, starryNight, castle][i]();
 }
 // ---- scenery for chapters 1-8 (each a stack of parallax layers, slowest first) ----
 function cloud(x, y, s, a, shade) { g.globalAlpha = a; blob(x, y + 5 * s, s, shade || '#f3d3ee'); blob(x, y, s, '#ffffff'); g.globalAlpha = 1; }
@@ -884,7 +896,7 @@ function eye(x, y, r, brow) {   // cartoon eye with a shine; brow > 0 tilts an a
   g.fillStyle = '#fff'; g.beginPath(); g.arc(x - r * .05, y - r * .3, r * .28, 0, 7); g.fill();
   if (brow) { g.strokeStyle = '#2b2440'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(x - r * 1.2, y - r * 1.5 - brow); g.lineTo(x + r * .9, y - r * 1.05); g.stroke(); }
 }
-const FOE_H = { pig: 76, bird: 48, jelly: 68, fish: 68, owl: 64, ghost: 60, bug: 48, bee: 44, storm: 76 };
+const FOE_H = { pig: 76, bird: 48, jelly: 68, fish: 68, owl: 64, ghost: 60, bug: 48, bee: 44, storm: 76, butterfly: 56, balloon: 70 };
 function drawFoe(o) {
   g.save(); g.translate(o.x, o.y);
   const h = o.hit > 0, fl = Math.sin(t / 3 + o.ph), k = o.kind, OL = 'rgba(70,30,80,.55)';
@@ -964,6 +976,12 @@ function drawFoe(o) {
     g.save(); g.beginPath(); g.ellipse(0, 0, 15, 11, 0, 0, 7); g.clip(); g.fillStyle = h ? '#fff' : '#3a2a3f'; g.fillRect(-1, -12, 5, 24); g.fillRect(8, -12, 5, 24); g.restore();
     g.fillStyle = '#3a2a3f'; g.beginPath(); g.moveTo(14, -2); g.lineTo(20, 0); g.lineTo(14, 2); g.fill();
     eye(-8, -2, 3.4, 1.5);
+  } else if (k === 'butterfly') {
+    for (const sd of [-1, 1]) { g.fillStyle = h ? '#fff' : sd < 0 ? '#ffb3e1' : '#d8b4ff'; g.beginPath(); g.ellipse(sd * 12, -4, 14 * Math.abs(fl), 18, sd * .3, 0, 7); g.fill(); outline(); }
+    g.fillStyle = '#5a3a6a'; g.beginPath(); g.ellipse(0, 0, 4, 14, 0, 0, 7); g.fill(); eye(-1, -10, 3, 1.5);
+  } else if (k === 'balloon') {
+    g.fillStyle = F('#d9a8ff', '#9a4fd1', -26, 26); [[0, -8, 16], [-14, 8, 11], [14, 8, 11], [0, 20, 9]].forEach(([x, y, r]) => { g.beginPath(); g.ellipse(x, y, r, r * 1.2, 0, 0, 7); g.fill(); });
+    g.strokeStyle = '#ccc'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, 30); g.lineTo(0, 46); g.stroke(); eye(-5, -10, 3.5, 2); eye(6, -10, 3.5, 2);
   } else if (k === 'storm') {
     blob(0, 0, 1.2, h ? '#fff' : '#4a4d6a'); blob(2, -5, 1, h ? '#fff' : '#5c6080');
     g.fillStyle = '#ffe84d'; g.beginPath(); g.moveTo(-2, 16); g.lineTo(8, 16); g.lineTo(1, 28); g.lineTo(10, 28); g.lineTo(-8, 48); g.lineTo(-2, 32); g.lineTo(-8, 32); g.closePath(); g.fill(); g.strokeStyle = '#d9a400'; g.lineWidth = 1.5; g.stroke();
@@ -1000,7 +1018,7 @@ function drawThing(o) {
   if (o.kind === 'cloud' && ch === 8) { g.fillStyle = '#2a5a2a'; g.beginPath(); g.arc(o.x, o.y, 22, 0, 7); g.fill(); g.strokeStyle = '#1a3a1a'; g.lineWidth = 4; for (let a = 0; a < 8; a++) { g.beginPath(); g.moveTo(o.x + Math.cos(a * .785) * 18, o.y + Math.sin(a * .785) * 18); g.lineTo(o.x + Math.cos(a * .785) * 32, o.y + Math.sin(a * .785) * 32); g.stroke(); } }
   else if (o.kind === 'cloud' && ch === 9) { g.fillStyle = '#9a4fd1'; g.beginPath(); g.arc(o.x, o.y, 24, 0, 7); g.fill(); g.fillStyle = '#d9a8ff'; g.beginPath(); g.arc(o.x - 8, o.y - 8, 5, 0, 7); g.arc(o.x + 9, o.y + 6, 4, 0, 7); g.fill(); g.strokeStyle = '#2a0a3a'; g.lineWidth = 3; g.beginPath(); g.arc(o.x, o.y + 12, 8, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
   else if (o.kind === 'cloud') {   // grumpy rain cloud
-    const dark = [7, 10].includes(ch), top = dark ? '#6a6d8c' : ch === 11 ? '#d79ac8' : '#a9a3c4', bot = dark ? '#3a3c58' : ch === 11 ? '#a96a9e' : '#7d7699';
+    const dark = [7, 10, 13].includes(ch), top = dark ? '#6a6d8c' : ch === 14 ? '#d79ac8' : '#a9a3c4', bot = dark ? '#3a3c58' : ch === 14 ? '#a96a9e' : '#7d7699';
     g.strokeStyle = 'rgba(120,170,255,.6)'; g.lineWidth = 2; for (let r = 0; r < 4; r++) { const ry = (t * 2 + r * 9) % 24; g.beginPath(); g.moveTo(o.x - 15 + r * 10, o.y + 18 + ry); g.lineTo(o.x - 17 + r * 10, o.y + 24 + ry); g.stroke(); }
     blob(o.x, o.y + 3, 1.05, bot); blob(o.x, o.y - 1, 1, top);
     g.fillStyle = 'rgba(255,255,255,.3)'; g.beginPath(); g.ellipse(o.x - 6, o.y - 16, 12, 5, 0, 0, 7); g.fill();
@@ -1076,6 +1094,9 @@ const TALK = [
   ['The fireflies are showing the way!', 'Mind the thorny bits!'],
   ['Can I eat the clouds?', 'Yes! Just not the sour gumballs!'],
   ['The lake is like a mirror.', 'Make a wish on the moon!'],
+  ['Pink petals everywhere! Just like my mane!', 'Catch them before the bees do!'],
+  ['A rainbow in every waterfall!', "Hold on tight, it's going to be splashy!"],
+  ['A carnival in the sky? At night?!', "Last stop before home. Let's have fun!"],
   ["We're almost home!", 'One last grumpy queen to cheer up!'],
 ];
 function wrapText(s, maxW) { const out = []; let line = ''; for (const w of s.split(' ')) { const tt = line ? line + ' ' + w : w; if (g.measureText(tt).width > maxW && line) { out.push(line); line = w; } else line = tt; } out.push(line); return out; }
@@ -1139,8 +1160,8 @@ function drawEnding() {
   const gr = g.createLinearGradient(0, 0, 0, H);
   gr.addColorStop(0, `rgb(${40 + 215 * k | 0},${20 + 170 * k | 0},${100 + 130 * k | 0})`); gr.addColorStop(1, `rgb(255,${130 + 90 * k | 0},${170 + 40 * k | 0})`);
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
-  if (IMG.bg_11) {   // painted castle at dawn: starts dark, brightens as the sun rises
-    g.drawImage(IMG.bg_11, 0, 0, W, H);
+  if (IMG.bg_14) {   // painted castle at dawn: starts dark, brightens as the sun rises
+    g.drawImage(IMG.bg_14, 0, 0, W, H);
     g.fillStyle = `rgba(40,20,90,${.6 * (1 - k)})`; g.fillRect(0, 0, W, H);
     if (k < 1) twinkles(40, .05, H * .5);
     endingActors(e); return;
@@ -1171,7 +1192,7 @@ function endingActors(e) {
   if (e > 40 && e < 300) bubble(W / 2, 80, 'The sky is happy again!', Math.min(1, (e - 40) / 14), false);
   if (e >= 300 && e < 700) bubble(W / 2, 80, 'Thank you, Pink Unicorn and Mermaid!', Math.min(1, (e - 300) / 14), true);
   if (e >= 700) {   // credits roll
-    const lines = ['PINK UNICORN', '', 'Starring', 'Pink Unicorn  &  Mermaid', '', 'Featuring', 'twelve cheered-up saucers', 'chunky pigs, sleepy owls, bubbly jellyfish', 'and one very sparkly queen', '', `Chapters cleared: ${CHAPTERS.length}`, `Final score: ${score}`, `Best: ${best}`, '', 'Made with love', '', 'THE END'];
+    const lines = ['PINK UNICORN', '', 'Starring', 'Pink Unicorn  &  Mermaid', '', 'Featuring', `${CHAPTERS.length} cheered-up saucers`, 'chunky pigs, sleepy owls, bubbly jellyfish, grumpy balloons', 'and one very sparkly queen', '', `Chapters cleared: ${CHAPTERS.length}`, `Final score: ${score}`, `Best: ${best}`, '', 'Made with love', '', 'THE END'];
     const y0 = H + 20 - (e - 700) * .9;
     panel(W / 2 - 250, 20, 500, H - 40, 30, 'rgba(122,26,99,.45)', 'rgba(255,255,255,.6)');
     g.save(); rr(W / 2 - 250, 20, 500, H - 40, 30); g.clip();

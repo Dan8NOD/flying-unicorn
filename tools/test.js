@@ -72,6 +72,8 @@ const tests = {
     keys.ArrowLeft = true; step(40); keys.ArrowLeft = false; const movedLeft = uni.x < x0 + 20;
     uni.vx = 5; uni.vy = 0; dash(uni); const dashing = uni.dash > 0; lives = 3; hurt(uni); const safe = lives === 3;
     return [movedRight, movedUp, tilted, movedLeft, dashing, safe];`, 6],
+  'chapter lists stay in step': [`
+    return [CHAPTERS.length === NCH, FOES.length === NCH, TALK.length === NCH, CHAPTERS.every((_, i) => SONGS[i]), FOES.every(l => l.every(k => FOE[k]))];`, 5],
 };
 
 let failed = 0;

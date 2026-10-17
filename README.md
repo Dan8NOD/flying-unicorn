@@ -1,7 +1,7 @@
 # Pink Unicorn
-A magical side-scrolling shooter for phones, tablets and computers. Fly a pink unicorn anywhere on screen, throw pony-dust stars, dash through danger, collect rings, hearts, shield stars and power-ups, and cheer up a grumpy flying-saucer boss at the end of each of 12 chapters. Your mermaid best friend helps (or a second player controls her).
+A magical side-scrolling shooter for phones, tablets and computers. Fly a pink unicorn anywhere on screen, throw pony-dust stars, dash through danger, collect rings, hearts, shield stars and power-ups, and cheer up a grumpy flying-saucer boss at the end of each of 15 chapters. Your mermaid best friend helps (or a second player controls her).
 
-Chapters: Candy Clouds, Mermaid Bay, Starry Night, Aurora Peaks, Rainbow Canyon, Coral Reef, Crystal Caves, Storm Fortress, Enchanted Forest, Cotton Candy Kingdom, Moonlit Lake, Unicorn Castle.
+Chapters: Candy Clouds, Mermaid Bay, Starry Night, Aurora Peaks, Rainbow Canyon, Coral Reef, Crystal Caves, Storm Fortress, Enchanted Forest, Cotton Candy Kingdom, Moonlit Lake, Sakura Valley, Rainbow Waterfalls, Starlight Carnival, Unicorn Castle.
 
 **Play:** open `index.html`, or serve the folder (`python3 -m http.server`) for full audio. Mouse, touch, keyboard and gamepads.
 Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / pad B. M = mute, P = pause, E = easy mode (title screen).

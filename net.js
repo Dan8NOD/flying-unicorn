@@ -28,6 +28,7 @@ function setupChannel(dc, pc) {
     if (m.y != null) net.remoteTy = Math.max(30, Math.min(H - 30, +m.y || 0));
     if (m.x != null) net.remoteTx = +m.x || 0;
     if (m.p === 3) dash(p2);
+    if (m.p === 4) nova();
     if (m.p === 1) press();
     if (m.p === 2 && state === 'play') paused = !paused;
   };

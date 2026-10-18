@@ -257,6 +257,7 @@ addEventListener('keydown', e => {
     if (e.key >= '1' && e.key <= '4') { sel = +e.key - 1; press(); }
   }
   if (e.key === 'p' || e.key === 'Escape') paused = !paused && state === 'play';
+  if (state === 'play' && !paused && (e.key === 'z' || e.key === 'Enter')) { nova(); return; }
   if (state === 'play' && !paused && (e.key === ' ' || e.key === 'Shift' || e.key === 'x' || e.key === 'q')) {   // dash (local 2P: Q dashes player 2)
     const who = mode === 'local' && e.key === 'q' ? p2 : mode === 'guest' ? null : uni;
     if (who) dash(who); else net.sendR('{"p":3}');
@@ -306,6 +307,7 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { toggleMute(); return; }
+    if (Math.hypot(x - 44, y - (H - 44)) < 30) { nova(); return; }   // Sparkle Meter button
   }
   press();
 });
@@ -316,7 +318,7 @@ function press() {
   if (paused) { paused = false; return; }
   if (state === 'title') chooseMode();
   else if (state === 'over' && t > 40) { if (run) { runSeg = 0; start(runPick(0), true); } else start(ch, true); }   // try again right away
-  else if (state === 'chapter') state = 'play';
+  else if (state === 'chapter') { state = 'play'; bark(Math.random() < .5 ? 'vo_u_go' : 'vo_m_go', .6); }
   else if (state === 'results' && t > 60) nextChapter();
   else if (state === 'ending' && ending > 240) toTitle();
 }
@@ -336,7 +338,7 @@ function netEv(e) { if (net.role === 'host' && net.open && net.ev.length < 60) n
 const rd = o => Math.round(o * 10) / 10;
 function netSnap() {
   net.send(JSON.stringify({ st: state, ch, t, sc: score, l: lives, cb: combo, cl: clear, pa: paused ? 1 : 0, w: warn, sk: shake,
-    tr: trans ? [trans.t, trans.label || ''] : 0, sk: skin, rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
+    tr: trans ? [trans.t, trans.label || ''] : 0, sk: skin, mt: [meter, novaT], rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
     u: [rd(uni.x), rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, rd(uni.tilt * 100) / 100, uni.dash], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
     b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
     th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0, o.golden ? 1 : 0, rd(o.vy || 0)]),
@@ -345,7 +347,7 @@ function netSnap() {
 function applySnap(m) {
   state = m.st; ch = m.ch; useChapterArt(ch); t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
   trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
-  hostSkin = m.sk || '';
+  hostSkin = m.sk || ''; if (m.mt) [meter, novaT] = m.mt;
   if (m.rs) [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars] = m.rs;
   uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, uni.tilt, uni.dash] = m.u.slice(2); uni.fp = t / 5 * 1.3; [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
   boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
@@ -391,9 +393,10 @@ function pollPads() {
     padDir[i] = d;
     let dx = Math.abs(gp.axes[0] || 0) > .25 ? gp.axes[0] : 0; if (b(14)) dx = -1; if (b(15)) dx = 1;
     padX[i] = dx;
-    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0, dash: b(1) || b(2) };
+    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0, dash: b(1) || b(2), nova: b(3) };
     if (state === 'title' && !trans) { if (cur.up && !prev.up) sel = (sel + MENU.length - 1) % MENU.length; if (cur.down && !prev.down) sel = (sel + 1) % MENU.length; }
     if (cur.a && !prev.a) press();
+    if (cur.nova && !prev.nova && state === 'play') nova();
     if (cur.dash && !prev.dash && state === 'play') { const p = mode === 'guest' ? null : players[i]; if (p) dash(p); else net.sendR('{"p":3}'); }
     if (cur.s && !prev.s) { if (state === 'play') paused = !paused; else press(); }
     padPrev[gp.index] = cur;
@@ -413,7 +416,8 @@ function start(c, fresh) {
     ch = c; t = 0; pops = []; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = p.weaponT = p.stompInv = p.squash = 0; p.weapon = ''; p.x = p.tx = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); p.vx = p.vy = p.tilt = p.dash = p.dashCd = 0; }
-    if (c === 0 || fresh) { score = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
+    if (c === 0 || fresh) { score = 0; meter = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
+    novaT = 0;
     combo = 0; state = run ? 'play' : 'chapter'; ending = 0;
     sfx('start');
   }, `Chapter ${c + 1} · ${CHAPTERS[c].name}`);
@@ -422,7 +426,7 @@ function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; run = false;
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
 function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0 || p.dash > 0 || p.stompInv > 0) return;
-  lives--; stat.hits++; combo = 0; p.flash = 90; buzz(70); shake = 12; sfx('hurt'); voice(lives % 2 ? 'vo_u_hurt' : 'vo_m_look');
+  lives--; stat.hits++; combo = 0; p.flash = 90; buzz(70); shake = 12; sfx('hurt'); if (lives === 1) voice('vo_u_low'); else bark(lives % 2 ? 'vo_u_hurt' : 'vo_m_look', .8);
   if (lives <= 0) { state = 'over'; t = 0; saveBest(); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
@@ -451,7 +455,7 @@ const FOES = [['bird', 'pig'], ['jelly', 'fish'], ['owl', 'ghost'], ['bird', 'gh
   ['butterfly', 'ghost', 'balloon', 'bird'], ['bird', 'bee', 'bug', 'owl'], ['bird', 'storm', 'bug', 'pig'], ['pig', 'bird', 'storm', 'balloon']];
 const POW = ['rapid', 'triple', 'magnet', 'bomb'];   // rapid fire, triple shot, ring magnet, screen-clearing bomb
 function applyPower(p, k) {
-  if (k !== 'bomb') { p[k] = 480; sfx('power'); voice('vo_u_power'); score += 25; return; }
+  if (k !== 'bomb') { p[k] = 480; sfx('power'); bark(p === uni ? 'vo_u_power' : 'vo_m_bubble', .8); score += 25; return; }
   for (const o of things) if (o.foe || o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'spike' || o.kind === 'rock') { o.dead = true; score += o.foe ? FOE[o.kind].pts : 10; boom(o.x, o.y, '#ffb347', 10); }
   bolts = []; shake = 20; if (boss && !clear) boss.hp = Math.max(1, boss.hp - 6);
   sfx('bomb');
@@ -542,9 +546,10 @@ function stepPlayers() {   // read keys / pads / remote steering and move every 
 // ---- damage, shared by stars, bubbles, the beam, boomerang hearts, cupcakes and stomps ----
 function hurtFoe(o, dmg) {   // returns true when the enemy is cheered up (defeated)
   if (o.dead) return false;
-  o.hp -= dmg; o.hit = 6; sfx('pop');
+  o.hp -= dmg; o.hit = 6; sfx('pop'); boom(o.x, o.y, RAINBOW[(t + o.x | 0) % 6], 6);   // rainbow impact sparkles
   if (o.hp > 0) return false;
-  const pts = o.golden ? 300 : FOE[o.kind].pts; o.dead = true; stat.foes++; score += pts; if (++kills % 12 === 0) voice('vo_m_nice'); pop(o.x, o.y - 20, '+' + pts, o.golden ? '#ffe45c' : '#fff');
+  addMeter(o.golden ? 20 : 6);
+  const pts = o.golden ? 300 : FOE[o.kind].pts; o.dead = true; stat.foes++; score += pts; if (++kills % 12 === 0) bark(['vo_m_nice', 'vo_m_amazing', 'vo_m_go', 'vo_u_cheer1', 'vo_u_cheer2', 'vo_u_cheer3'][kills / 12 % 6 | 0], 1); pop(o.x, o.y - 20, '+' + pts, o.golden ? '#ffe45c' : '#fff');
   if (o.golden) { sfx('golden'); boom(o.x, o.y, '#ffe45c', 30); for (let d = 0; d < 4; d++) things.push({ kind: d === 0 ? 'heart' : 'ring', x: o.x + d * 26, y: o.y - 20 + (d % 2) * 40, y0: 0, ph: 0, vx: -2.5, r: 16 }); }
   boom(o.x, o.y, '#fff', 14); boom(o.x, o.y, '#ffd36b', 8); sfx('poof');
   const heart = o.kind === 'pig' && lives < maxLives() && Math.random() < .4;
@@ -569,7 +574,7 @@ function fire(p) {
   const star = p === uni, w = p.weapon, [x, y] = muzzle(p);
   if (w === 'beam') { if (t % 8 === 0) beamHit(p); if (t % 16 === 0) sfx('beam'); return; }
   if (w === 'seek') { if (t % 18 === 0) { for (const vy of [-3, 3]) shots.push({ x, y, vx: 6, vy, w: 'seek' }); sfx('fairy'); } return; }
-  if (w === 'boom') { if (t % 30 === 0 && shots.filter(q => q.w === 'boom' && q.own === p.i).length < 2) { shots.push({ x, y, vx: 11, vy: 0, w: 'boom', age: 0, own: p.i }); sfx('dash'); } return; }
+  if (w === 'boom') { if (t % 30 === 0 && shots.filter(q => q.w === 'boom' && q.own === p.i).length < 2) { shots.push({ x, y, vx: 11, vy: 0, w: 'boom', age: 0, own: p.i }); sfx('boomerang'); } return; }
   if (w === 'lob') {   // aimed so it lands on the nearest enemy ahead (or arcs forward if there is none)
     if (t % 30 === 0) {
       let tg = null, bd = 1e9; for (const o of things) if (o.foe && !o.dead && o.x > x + 40 && o.x - x < bd) { bd = o.x - x; tg = o; }
@@ -582,7 +587,7 @@ function fire(p) {
   const gap = star ? (p.rapid > 0 ? 7 : 14) : (p.rapid > 0 ? 8 : 16);
   if (t % gap === (star ? 0 : 8 % gap)) {
     for (const vy of p.triple > 0 ? [-2.2, 0, 2.2] : [0]) shots.push({ x, y, vx: star ? 12 : 10, vy, m: star ? 0 : 1 });
-    if (star) { boom(x, y, '#fff', 4); sfx('shot'); } else sfx('bubble');
+    if (star) { boom(x, y, '#fff', 6); boom(x, y, RAINBOW[(t / gap | 0) % 6], 4); p.hornFx = 6; sfx('shot'); } else sfx('bubble');
   }
 }
 function moveShot(s) {
@@ -602,7 +607,7 @@ function moveShot(s) {
 }
 function explode(s) {   // cupcake splash: hurts everything nearby
   if (s.dead) return; s.dead = true;
-  boom(s.x, s.y, '#ff8fd0', 24); boom(s.x, s.y, '#fff3a0', 14); sfx('poof'); shake = Math.max(shake, 6);
+  boom(s.x, s.y, '#ff8fd0', 24); boom(s.x, s.y, '#fff3a0', 14); sfx('splat'); shake = Math.max(shake, 6);
   for (const o of things) if (o.foe && !o.dead && Math.hypot(o.x - s.x, o.y - s.y) < 95) hurtFoe(o, 3);
   if (boss && !clear && Math.hypot(boss.x - s.x, boss.y - s.y) < 120) hurtBoss(3, s.x, s.y);
 }
@@ -612,18 +617,35 @@ function beamHit(p) {
   if (boss && !clear && boss.x > x && Math.abs(boss.y - y) < 64) hurtBoss(1, boss.x - 60, y);
 }
 // ---- stomp: fly down onto an enemy to squash it and bounce off ----
+// ---- Sparkle Meter and Rainbow Nova: the meter fills from rings, defeats and stomps; when full, Z / Enter / Y / the meter button unleashes a screen-wide blast ----
+let meter = 0, novaT = 0;
+function addMeter(n) { if (meter >= 100) return; meter = Math.min(100, meter + n); if (meter >= 100) { sfx('meter'); bark('vo_u_meter', 1); } }
+function nova() {
+  if (meter < 100 || state !== 'play' || paused || clear) return;
+  if (mode === 'guest') { net.sendR('{"p":4}'); return; }
+  novaT = 60; shake = 26; sfx('nova'); voice('vo_u_nova'); buzz([30, 30, 120]);
+  setTimeout(() => bark('vo_m_nova', 1), 1700);
+  for (const o of things) if (o.foe && !o.dead) hurtFoe(o, o.golden ? 6 : 99);
+  for (const o of things) if (o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'rock') { o.dead = true; boom(o.x, o.y, '#fff', 10); }
+  bolts = []; hurtBoss(12, boss ? boss.x : 0, boss ? boss.y : 0);
+  for (let i = 0; i < 40; i++) boom(uni.x + (Math.random() - .5) * 200, uni.y + (Math.random() - .5) * 160, RAINBOW[i % 6], 3);
+  meter = 0;   // after the blast, so its own defeats don't refill it
+}
+// Catchphrases: skipped while someone is already talking, and only now and then (chance) so they stay special.
+function bark(name, chance = .5) { if (typeof voiceUntil !== 'undefined' && Date.now() < voiceUntil + 1200) return; if (Math.random() > chance) return; voice(name); }
 function stomp(p, o) {
   hurtFoe(o, o.golden ? 3 : 99);
   p.stompChain = t - (p.stompT || -999) < 100 ? (p.stompChain || 1) + 1 : 1; p.stompT = t; p.stompInv = 18; p.squash = 12;
   p.vy = -10; p.ty = p.y - 130;
   score += 20 * p.stompChain; pop(p.x, p.y - 70, p.stompChain > 1 ? 'Stomp x' + p.stompChain + '!' : 'Stomp!', '#fff36b');
-  sfx('boing', p.stompChain); boom(p.x, p.y + 30, '#fff', 12); buzz(20);
+  sfx('boing', p.stompChain); boom(p.x, p.y + 30, '#fff', 12); buzz(20); addMeter(8); bark('vo_u_stomp' + (1 + (p.stompChain - 1) % 3), .45);
 }
 function update() {
   t++;
-  for (const p of players) { for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet', 'weaponT', 'stompInv', 'squash']) if (p[k] > 0) p[k]--; if (p.weapon && !(p.weaponT > 0)) p.weapon = ''; }
+  for (const p of players) { for (const k of ['flash', 'shield', 'rapid', 'triple', 'magnet', 'weaponT', 'stompInv', 'squash', 'hornFx']) if (p[k] > 0) p[k]--; if (p.weapon && !(p.weaponT > 0)) p.weapon = ''; }
   if (shake > 0) shake--;
   if (warn > 0) warn--;
+  if (novaT > 0) novaT--;
   stepPlayers();
   mer.x += (Math.max(40, uni.x - 90) - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
 
@@ -653,10 +675,10 @@ function update() {
     if (pp) {
       if (o.kind === 'spike') { hurt(pp); continue; }
       o.dead = true;
-      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); if (combo === 5 || combo === 10) voice('vo_u_combo'); boom(o.x, o.y, '#ffc400'); pop(o.x, o.y - 10, '+' + 10 * Math.min(combo, 10), '#ffe45c'); }
-      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); voice('vo_u_heart'); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
+      if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); addMeter(2); if (combo === 5 || combo === 10) bark('vo_u_combo', 1); if (combo === 15 || combo === 20) bark('vo_u_cheer' + (1 + combo % 3), 1); boom(o.x, o.y, '#ffc400'); pop(o.x, o.y - 10, '+' + 10 * Math.min(combo, 10), '#ffe45c'); }
+      else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); bark('vo_u_heart', .7); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
-      else if (o.kind.startsWith('w_')) { pp.weapon = o.kind.slice(2); pp.weaponT = 600; sfx('power'); pop(o.x, o.y - 30, WEAPONS[pp.weapon] + '!', '#fff36b'); boom(o.x, o.y, '#fff', 14); }
+      else if (o.kind.startsWith('w_')) { pp.weapon = o.kind.slice(2); pp.weaponT = 600; sfx('power'); bark(pp === uni ? 'vo_u_' + pp.weapon : 'vo_m_bubble', 1); pop(o.x, o.y - 30, WEAPONS[pp.weapon] + '!', '#fff36b'); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
     }
@@ -671,14 +693,14 @@ function update() {
       if (!o.foe || o.dead || !hit(s, o, o.r + (s.w === 'lob' ? 14 : 8))) continue;
       if (s.w === 'boom') { if ((o.boomT || 0) <= t) { o.boomT = t + 12; hurtFoe(o, 2); } continue; }   // hearts pass through
       if (s.w === 'lob') { explode(s); break; }
-      s.dead = true; hurtFoe(o, 1); break;
+      s.dead = true; hurtFoe(o, !s.m && !s.w ? 2 : 1); break;   // pony-dust stars hit twice as hard
     }
     if (s.dead) continue;
     if (!s.w && !s.m && t % 2 === 0) sparks.push({ x: s.x, y: s.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + s.x) % 360},90%,75%)` });
     if (boss && !clear && hit(s, boss, 60)) {
       if (s.w === 'boom') { if ((boss.boomT || 0) <= t) { boss.boomT = t + 12; hurtBoss(2, s.x, s.y); } }
       else if (s.w === 'lob') explode(s);
-      else { s.dead = true; hurtBoss(1, s.x, s.y); }
+      else { s.dead = true; hurtBoss(!s.m && !s.w ? 2 : 1, s.x, s.y); }
     }
     if (s.w === 'lob' && s.y > H - 26) explode(s);
     if (s.w !== 'boom' && (s.x > W + 20 || s.x < -40 || s.y < -60 || s.y > H + 20)) s.dead = true;
@@ -692,7 +714,7 @@ function update() {
     if (boss.hit > 0) boss.hit--;
     for (const p of players) if (p.vy > 1.2 && Math.abs(p.x - boss.x) < 80 && p.y < boss.y - 30 && p.y > boss.y - 110) { hurtBoss(3, p.x, p.y + 30); p.vy = -11; p.ty = p.y - 150; p.squash = 12; p.stompInv = 18; sfx('boing', 3); pop(p.x, p.y - 70, 'Bonk!', '#fff36b'); }
     const ph = bossPhase();
-    if (ph > (boss.ph || 0)) { boss.ph = ph; shake = 16; sfx('warn'); pop(boss.x, boss.y - 110, ph === 1 ? 'Grrr!' : 'SUPER grumpy!', '#ff6b8b'); }
+    if (ph > (boss.ph || 0)) { boss.ph = ph; shake = 16; sfx('warn'); if (ph === 1) setTimeout(() => bark('vo_u_half', 1), 900); pop(boss.x, boss.y - 110, ph === 1 ? 'Grrr!' : 'SUPER grumpy!', '#ff6b8b'); }
     boss.x += (W - 170 + Math.sin(t / 55) * 70 * ph - boss.x) * .03;
     boss.y = H / 2 + Math.sin(t / (40 - ph * 8)) * (H / 2 - 100);
     bossFire();
@@ -1687,6 +1709,16 @@ function hud() {
       g.scale(.62, .62); if (k === 'shield') star(0, 0, 13, 0, '#fff'); else powIcon(k); g.restore(); x += 38;
     }
   });
+  {   // Sparkle Meter (bottom left): fills up; glows and pulses when the Rainbow Nova is ready
+    const full = meter >= 100, cx = 44, cy = H - 44, pul = full ? 1 + .08 * Math.sin(t / 5) : 1;
+    g.save(); g.translate(cx, cy); g.scale(pul, pul);
+    if (full) { g.fillStyle = `rgba(255,243,140,${.35 + .2 * Math.sin(t / 5)})`; g.beginPath(); g.arc(0, 0, 36, 0, 7); g.fill(); }
+    g.fillStyle = 'rgba(122,26,99,.5)'; g.beginPath(); g.arc(0, 0, 26, 0, 7); g.fill();
+    g.lineWidth = 6; g.lineCap = 'round'; const q = g.createLinearGradient(-26, 0, 26, 0); RAINBOW.forEach((c, i) => q.addColorStop(i / 5, c)); g.strokeStyle = q;
+    g.beginPath(); g.arc(0, 0, 22, -Math.PI / 2, -Math.PI / 2 + 6.283 * meter / 100); g.stroke();
+    star(0, 0, 12, full ? t / 15 : 0, full ? '#fff36b' : 'rgba(255,255,255,.7)'); g.restore();
+    if (full) txt(touchUI ? 'Tap!' : 'Z', cx, cy - 40, 15, '#fff36b');
+  }
   const btn = (x, draw) => { g.fillStyle = 'rgba(122,26,99,.4)'; g.beginPath(); g.arc(x, H - 34, 20, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2.5; g.stroke(); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; draw(); };
   btn(W - 40, () => { g.fillRect(W - 47, H - 43, 5, 18); g.fillRect(W - 38, H - 43, 5, 18); });
   btn(W - 94, () => { g.beginPath(); g.moveTo(W - 104, H - 39); g.lineTo(W - 99, H - 39); g.lineTo(W - 92, H - 45); g.lineTo(W - 92, H - 23); g.lineTo(W - 99, H - 29); g.lineTo(W - 104, H - 29); g.closePath(); g.fill();
@@ -1761,12 +1793,18 @@ function draw() {
         if (p.flash > 0 && t % 8 < 4) continue;
         const one = (ox, a) => { g.save(); g.globalAlpha = a; g.translate(p.x + ox * p.vx, p.y + ox * p.vy); g.rotate(p.tilt || 0); const sq = p.squash > 0 ? Math.sin(p.squash / 12 * Math.PI) * .22 : 0; g.scale(1.15 * (1 + sq), 1.15 * (1 - sq)); p === uni ? drawUnicorn(0, 0, p.shield > 0, p.fp) : drawMermaid(0, 0, p.shield > 0); g.restore(); g.globalAlpha = 1; };
         if (p.dash > 0) { one(-4, .2); one(-2, .35); }   // dash after-images
+        if (p.hornFx > 0 && p === uni) { const [hx, hy] = muzzle(p); g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = `rgba(255,240,200,${p.hornFx / 10})`; g.beginPath(); g.arc(hx, hy, 10 + p.hornFx * 2, 0, 7); g.fill(); g.restore(); }
         one(0, 1);
         if (players.length > 1) { panel(p.x - 16, p.y - 92, 32, 20, 10, p.i ? 'rgba(20,160,160,.8)' : 'rgba(214,25,154,.8)'); txt('P' + (p.i + 1), p.x, p.y - 77, 14, '#fff'); }
       }
       for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
       for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 18 + (q.l > 42 ? (50 - q.l) : 8), q.col); } g.globalAlpha = 1;
       if (state === 'play') stageFront();
+      if (novaT > 0) {   // Rainbow Nova: expanding rainbow rings and a bright flash
+        const k = 1 - novaT / 60; g.save(); g.lineWidth = 18 * (1 - k) + 2;
+        RAINBOW.forEach((c, i) => { g.strokeStyle = c; g.globalAlpha = 1 - k; g.beginPath(); g.arc(uni.x, uni.y, 40 + k * 900 - i * 22, 0, 7); g.stroke(); });
+        g.globalAlpha = Math.max(0, .5 - k); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.restore();
+      }
       if (state !== 'chapter' && state !== 'results') hud();
       if (state === 'play' && ch === 0 && !boss && t < 600) {   // first-time tips
         const tip = t < 300 ? 'Drag, or use the arrows, to fly anywhere' : 'Double-tap, Space or B to dash through danger!';

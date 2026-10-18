@@ -32,6 +32,6 @@ dash through danger, collect rings and cheer up 27 grumpy flying-saucer bosses, 
 - Play together: 2 players on one screen (keyboard, gamepads or touch) or on two devices online
 - Full music, sound and voices
 
-**Controls (computer):** fly with the mouse, arrow keys or WASD · Space or right-click dash · P pause · M mute · F fullscreen ·
+**Controls (computer):** fly with the mouse, arrow keys or WASD · Space or right-click dash · Z Rainbow Nova · P pause · M mute · F fullscreen ·
 2 players: arrows + WASD (Q to dash) or two gamepads.
 **Touch:** drag to fly, double-tap to dash.

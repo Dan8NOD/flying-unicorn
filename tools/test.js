@@ -122,6 +122,14 @@ const tests = {
     }
     uni.weapon = ''; things = [{ kind: 'w_lob', x: uni.x, y: uni.y, vx: 0, r: 16 }]; step(2); const picked = uni.weapon === 'lob';
     return [stomped, ...out, picked];`, 6],
+  'sparkle meter fills and Rainbow Nova clears the screen': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    meter = 0; things = []; for (let i = 0; i < 20; i++) addMeter(6); const full = meter === 100;
+    things = [{ kind: 'pig', foe: 1, hp: 4, x: 500, y: 200, y0: 200, ph: 0, vx: 0, r: 30, hit: 0 }, { kind: 'cloud', x: 600, y: 300, vx: 0, r: 28 }];
+    boss = { x: 780, y: 250, hp: 40, max: 40 }; bolts = [{ x: 400, y: 200, vx: -3, vy: 0 }];
+    nova(); const cleared = things.every(o => o.dead || !o.foe) && bolts.length === 0 && boss.hp === 28 && meter === 0;
+    boss = null; meter = 50; nova(); const notReady = meter === 50;
+    return [full, cleared, notReady];`, 3],
 };
 
 let failed = 0;

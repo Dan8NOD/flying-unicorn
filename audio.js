@@ -74,6 +74,10 @@ function sfx(name, arg = 0) {
     case 'dash': noise(n, .3, .14, 'bandpass', 1200, 5000); [0, 4, 7].forEach((s, i) => bell(hz(84 + s), n + .05 + i * .03, .04, .3)); break;
     case 'boing': tone(240, n, .22, .14, 'sine', { slide: 760 + Math.min(arg, 6) * 60 }); bell(hz(84 + PENTA[Math.min(arg, 8)]), n + .05, .05, .3); break;   // stomp bounce
     case 'beam': tone(330, n, .16, .025, 'sawtooth', { lp: 1200 }); tone(660, n, .16, .015, 'sine'); break;
+    case 'nova': [0, 4, 7, 12, 16, 19, 24, 28].forEach((s, i) => bell(hz(72 + s), n + i * .04, .09, 1)); noise(n, 1.2, .2, 'bandpass', 400, 6000); tone(80, n, .9, .25, 'sine', { slide: 40 }); break;
+    case 'meter': [0, 7, 12, 19, 24].forEach((s, i) => bell(hz(79 + s), n + i * .06, .08, .7)); break;
+    case 'boomerang': noise(n, .35, .08, 'bandpass', 800, 2400); break;
+    case 'splat': tone(300, n, .12, .12, 'sine', { slide: 120 }); noise(n, .18, .08, 'lowpass', 1600); bell(hz(88), n + .05, .04, .3); break;
     case 'click': bell(hz(96), n, .03, .1); break;
     case 'over': [7, 4, 0, -5].forEach((s, i) => bell(hz(72 + s), n + i * .22, .07, .9)); break;
   }
@@ -175,7 +179,7 @@ function music() {
 // Effects are decoded once into buffers (needs http/https; on file:// the synth versions play).
 // Voices play through one <audio> element and duck the music while someone talks.
 const FILE_SFX = ['shot', 'bubble', 'ring', 'heart', 'power', 'shield', 'hurt', 'pop', 'poof', 'bossHit', 'warn', 'boss', 'win', 'bomb', 'flap', 'dash', 'start', 'click', 'over',
-  'thunder', 'whale', 'comet', 'phoenix', 'fairy', 'train', 'splash', 'dragon', 'airship', 'gust', 'rainbow', 'golden', 'eruption', 'firework', 'surprise'];
+  'boing', 'nova', 'meter', 'boomerang', 'splat', 'beam', 'thunder', 'whale', 'comet', 'phoenix', 'fairy', 'train', 'splash', 'dragon', 'airship', 'gust', 'rainbow', 'golden', 'eruption', 'firework', 'surprise'];
 const SFX_VOL = { shot: .22, bubble: .25, ring: .5, pop: .35, flap: .3, click: .4, poof: .55, dash: .6 };
 let ambEl = null, wxEl = null, ambFile = '';
 const sbuf = {}; let sfxLoading = false, mEl = null, mCur = 0, mFile = '', mFail = {}, voiceEl = null, voiceUntil = 0, musicVol = .55;

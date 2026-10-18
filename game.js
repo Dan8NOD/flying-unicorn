@@ -288,6 +288,8 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'shop') { shopTap(x, y); return; }
   if (state === 'map') { mapDrag = { x, mx: mapX, moved: false }; return; }
   if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
+  if (state === 'over' && Math.abs(x - W / 2) < 80 && y > H - 74 && y < H - 22) { toTitle(); return; }   // Menu button
+  if (state === 'bonus' && Math.hypot(x - (W - 40), y - (H - 34)) < 24) { paused = !paused; return; }
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { toggleMute(); return; }
@@ -300,7 +302,7 @@ function press() {
   if (trans) return;
   if (paused) { paused = false; return; }
   if (state === 'title') chooseMode();
-  else if (state === 'over') toTitle();
+  else if (state === 'over' && t > 40) { if (run) { runSeg = 0; start(runPick(0), true); } else start(ch, true); }   // try again right away
   else if (state === 'chapter') state = 'play';
   else if (state === 'results' && t > 60) nextChapter();
   else if (state === 'ending' && ending > 240) toTitle();
@@ -407,7 +409,7 @@ function saveBest() { if (score > best) { best = score; try { localStorage.setIt
 function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0 || p.dash > 0) return;
   lives--; stat.hits++; combo = 0; p.flash = 90; buzz(70); shake = 12; sfx('hurt'); voice(lives % 2 ? 'vo_u_hurt' : 'vo_m_look');
-  if (lives <= 0) { state = 'over'; saveBest(); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
+  if (lives <= 0) { state = 'over'; t = 0; saveBest(); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
@@ -456,15 +458,17 @@ function moveFoe(o) {
   }
   if (k !== 'balloon') o.y = Math.max(25, Math.min(H - 25, o.y));
 }
+// Difficulty rises quickly over the first chapters, then levels off (0 at chapter 1, about 0.96 at chapter 27).
+const hard = () => 1 - Math.exp(-ch / 8);
 function spawn() {
-  const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + ch * .6 + Math.random() * 2) * (easy ? .85 : 1);
+  const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + 5.5 * hard() + Math.random() * 2) * (easy ? .85 : 1);
   let kind = r < .45 ? 'ring' : r < .6 ? 'heart' : r < .65 ? 'star' : r < .7 ? POW[Math.random() * 4 | 0] : 'cloud';
   if (kind === 'cloud' && c.bats && Math.random() < .4) kind = 'bat';
   if (kind === 'cloud' && c.spikes && Math.random() < .5) kind = 'spike';
   if (kind === 'heart' && lives >= maxLives()) kind = 'ring';
   if (kind === 'cloud' && Math.random() < .55) {   // swap hazard for a shootable enemy
     const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : k === 'balloon' ? H - 20 - Math.random() * 120 : y;
-    things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: (f.vx - ch * .1) * (easy ? .85 : 1), r: f.r, top, cd: 60, hit: 0 });
+    things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: (f.vx - 1.6 * hard()) * (easy ? .85 : 1), r: f.r, top, cd: 60, hit: 0 });
     return;
   }
   if (kind === 'ring') stat.ringsAll++;
@@ -478,7 +482,7 @@ const TAUNTS = ["Hmph! Too many rainbows around here!", "Snip snap! This sea is 
 let bossIntro = 0;
 const bossPhase = () => boss.hp / boss.max > .5 ? 0 : boss.hp / boss.max > .25 ? 1 : 2;
 function bossFire() {
-  const ph = bossPhase(), sp = (4.5 + ch * .5) * (easy ? .8 : 1) * (1 + ph * .12), tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
+  const ph = bossPhase(), sp = (4.5 + 3.8 * hard()) * (easy ? .8 : 1) * (1 + ph * .12), tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
   const rate = Math.round(Math.max(40, 80 - ch * 8) * (1 - ph * .2));
   if (t % rate) return;
   const p = (CHAPTERS[ch].pat + (ph > 0 && (t / rate | 0) % 2 ? ph : 0)) % 3;   // alternate with a new pattern once angry
@@ -667,9 +671,11 @@ function drawBonus() {
   } }))];
   list.sort((a, b) => a.y - b.y).forEach(o => o.d());
   const left = Math.max(0, 20 - (bonusEnd || t) / 60);
+  g.fillStyle = 'rgba(122,26,99,.4)'; g.beginPath(); g.arc(W - 40, H - 34, 20, 0, 7); g.fill(); g.fillStyle = '#fff'; g.fillRect(W - 47, H - 43, 5, 18); g.fillRect(W - 38, H - 43, 5, 18);
   panel(W / 2 - 150, 14, 300, 40, 20, 'rgba(122,26,99,.55)'); txt(`Sky Island bonus · ${Math.ceil(left)}s · ${things.length} gems`, W / 2, 40, 17, '#fff');
   for (const p of sparks) { g.globalAlpha = Math.max(0, p.l / 30); g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, 2.6, 0, 7); g.fill(); } g.globalAlpha = 1;
   for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 22, q.col); } g.globalAlpha = 1;
+  if (paused) drawSettings('Paused');
 }
 function nextChapter() {
   if (!run && (ch + 1) % 3 === 0 && bonusDone !== ch && ch < NCH - 1 && state === 'results') { startBonus(); return; }
@@ -1638,7 +1644,8 @@ function draw() {
       if (paused) drawSettings('Paused');
       if (state === 'chapter') chapterCard();
       if (state === 'results') resultsCard();
-      if (state === 'over') card(run ? 'Run Over' : 'Game Over', run ? [`Score ${score}   ·   Stretches ${runSeg + 1}`, `Best Rainbow Run ${bestRun}`, 'tap to try again'] : [`Score ${score}   ·   Best ${best}`, 'tap to try again']);
+      if (state === 'over') card(run ? 'Run Over' : 'Game Over', run ? [`Score ${score}   ·   Stretches ${runSeg + 1}`, `Best Rainbow Run ${bestRun}`, 'tap to run again'] : [`Score ${score}   ·   Best ${best}`, `tap to try ${CHAPTERS[ch].name} again`]);
+      if (state === 'over') { panel(W / 2 - 70, H - 72, 140, 44, 22, lg(0, H - 72, 0, H - 28, '#c27ab0', '#7a1a63'), '#fff'); txt('Menu', W / 2, H - 43, 18, '#fff'); }
     }
   }
   g.restore();

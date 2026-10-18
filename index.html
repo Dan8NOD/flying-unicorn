@@ -12,16 +12,22 @@
 <style>
   html,body{margin:0;height:100%;background:#2a0f3d;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
   canvas{display:block;margin:auto;position:absolute;inset:0;max-width:100%;max-height:100%;background:#ffd6f0}
+  #rotate{display:none;position:fixed;inset:0;z-index:20;background:linear-gradient(#ffd6f0,#c9a8ff);color:#7a1a63;font:bold 24px "Trebuchet MS",sans-serif;text-align:center;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+  @media (orientation: portrait) and (pointer: coarse) { #rotate{display:flex} }
 </style>
 </head>
 <body>
 <canvas id="c" width="960" height="540"></canvas>
+<div id="rotate"><div style="font-size:64px">&#x21bb;</div>Turn your device sideways<br>to fly with Pink Unicorn!</div>
 <script src="audio.js"></script>
 <script src="game.js"></script>
 <script src="stages.js"></script>
 <script src="net.js"></script>
 <script>
   addEventListener('contextmenu', e => e.preventDefault());
+  // Pause when a phone is turned upright (the rotate screen covers the game).
+  const upright = matchMedia('(orientation: portrait) and (pointer: coarse)');
+  if (upright.addEventListener) upright.addEventListener('change', e => { if (e.matches && (state === 'play' || state === 'bonus')) paused = true; });
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
   // Go fullscreen on the first tap where the browser allows it (hides the Android address bar).
   addEventListener('pointerdown', () => { const d = document.documentElement; if (!document.fullscreenElement && d.requestFullscreen) d.requestFullscreen().catch(() => {}); }, { once: true });

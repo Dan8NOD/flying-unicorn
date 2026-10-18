@@ -24,6 +24,15 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - About 590 Meshy credits (10,419 left) and a small part of the ElevenLabs quota were used in total.
 - Screenshot / review tools: `tools/shot.js` (offscreen render), `tools/sheet.js` (all chapters), `tools/mixcheck.js`, `tools/sampler.js`.
 
+## Weak-spot audit (fixed)
+- iPad/iPhone: Safari ignores <audio>.volume, so music/ambience/voices are routed through Web Audio gain nodes (over http/https).
+  Sound unlocks on touchend/click too and resumes after the app was in the background.
+- Late chapters were nearly impossible (hazards ~20 px/frame by chapter 27); speeds now level off (about 10 px/frame max).
+- Game over now retries the same chapter (Menu button for the title); bonus rounds can be paused; phones held upright get a
+  rotate screen and the game pauses; a loading screen avoids the title popping in on slow connections.
+- Proper home-screen icon and iOS meta tags. Soak tests in real WebKit (all chapters, 2 players, Rainbow Run): no errors.
+- Re-run the soak test: start `python3 -m http.server 8765` and see the commands in this note's git history (tools/shot.js with SHOT_URL).
+
 ## Still worth doing (needs ears and hands on real devices)
 - Play through on a phone: balance volumes of music vs effects vs voices (`musicVol`, `SFX_VOL` in `audio.js`), and difficulty.
 - The painted backgrounds scroll by mirroring; if a seam looks odd in a chapter, regenerate that background as a wider panorama (Dream City shows its moon twice).

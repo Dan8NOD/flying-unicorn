@@ -72,6 +72,8 @@ function sfx(name, arg = 0) {
     case 'start': for (let i = 0; i < 9; i++) bell(hz(67 + PENTA[i]), n + i * .05, .045, .6); break;
     case 'flap': noise(n, .16, .07, 'bandpass', 900, 350); tone(180, n, .1, .03, 'sine', { slide: 120 }); break;              // soft wing whoosh
     case 'dash': noise(n, .3, .14, 'bandpass', 1200, 5000); [0, 4, 7].forEach((s, i) => bell(hz(84 + s), n + .05 + i * .03, .04, .3)); break;
+    case 'boing': tone(240, n, .22, .14, 'sine', { slide: 760 + Math.min(arg, 6) * 60 }); bell(hz(84 + PENTA[Math.min(arg, 8)]), n + .05, .05, .3); break;   // stomp bounce
+    case 'beam': tone(330, n, .16, .025, 'sawtooth', { lp: 1200 }); tone(660, n, .16, .015, 'sine'); break;
     case 'click': bell(hz(96), n, .03, .1); break;
     case 'over': [7, 4, 0, -5].forEach((s, i) => bell(hz(72 + s), n + i * .22, .07, .9)); break;
   }

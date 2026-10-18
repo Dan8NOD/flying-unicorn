@@ -108,6 +108,20 @@ const tests = {
     step(50); press(); step(80); const retried = (state === 'chapter' || state === 'play') && ch === 9 && lives >= 3;
     ch = 26; const vs = []; for (let i = 0; i < 200; i++) { things = []; spawn(); if (things[0] && !things[0].foe) vs.push(-things[0].vx); }
     return [over, retried, Math.max(...vs) < 11.5];`, 3],
+  'stomp and weapons: squash enemies, beam, boomerang, seekers, cupcakes': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    const foe = (x, y) => ({ kind: 'pig', foe: 1, hp: 4, x, y, y0: y, ph: 0, vx: 0, r: 30, hit: 0 });
+    things = [foe(300, 300)]; lives = 3; const pig = things[0]; uni.x = uni.tx = 300; uni.y = pig.y - 90; uni.vy = 3;
+    let bounced = false; for (let k = 0; k < 30 && !pig.dead; k++) { uni.tx = pig.x; uni.ty = pig.y + 60; step(1); } bounced = uni.vy < 0;
+    const stomped = pig.dead && bounced && lives === 3;
+    const out = [];
+    for (const w of ['beam', 'boom', 'seek', 'lob']) {
+      const targets = [foe(620, 210), foe(700, 260)]; things = targets.slice(); shots = []; uni.weapon = w; uni.weaponT = 600; uni.x = uni.tx = 200; uni.y = uni.ty = 270; uni.vy = 0; lives = 3;
+      for (let k = 0; k < 240; k++) { step(1); uni.ty = 270; }
+      out.push(targets.some(o => o.dead));
+    }
+    uni.weapon = ''; things = [{ kind: 'w_lob', x: uni.x, y: uni.y, vx: 0, r: 16 }]; step(2); const picked = uni.weapon === 'lob';
+    return [stomped, ...out, picked];`, 6],
 };
 
 let failed = 0;

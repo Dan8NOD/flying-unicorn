@@ -27,4 +27,4 @@ log it under **Crossings** below.
 5. Leave a short note in `NEXT-STEPS.md` when you stop, so the next agent can pick up.
 
 ## Crossings
-- (none yet)
+- Claude added PC/itch.io support (fullscreen, desktop hints, `tools/package-itch.sh`, `ITCH.md`) and iOS home-screen tags in `index.html` / `manifest.json` (platform lane).

@@ -116,11 +116,13 @@ function nextRun() {
   go(() => { ch = c; t = 0; pops = []; stageReset(); things = []; shots = []; bolts = []; boss = null; clear = 0; state = 'play'; sfx('start'); }, `Rainbow Run · stretch ${runSeg + 1} · ${CHAPTERS[c].name}`);
 }
 function buzz(ms) { try { if (opts.buzz && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
-const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']], ['buzz', 'Vibration', ['Off', 'On']]];
+const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']], ['buzz', 'Vibration', ['Off', 'On']], ['full', 'Fullscreen (F)', ['Off', 'On']]];
 function settingsTap(x, y) {   // rows of the settings panel; returns true if the tap changed a setting
   for (let i = 0; i < SETTING_ROWS.length; i++) {
-    if (Math.abs(x - W / 2) < 210 && Math.abs(y - (214 + i * 52)) < 22) {
-      const [k, , vals] = SETTING_ROWS[i]; opts[k] = (opts[k] + 1) % vals.length; saveOpt('pinkUnicornOpts', JSON.stringify(opts)); audio(); sfx('click'); return true;
+    if (Math.abs(x - W / 2) < 210 && Math.abs(y - (206 + i * 46)) < 20) {
+      const [k, , vals] = SETTING_ROWS[i];
+      if (k === 'full') { toggleFullscreen(); sfx('click'); return true; }
+      opts[k] = (opts[k] + 1) % vals.length; saveOpt('pinkUnicornOpts', JSON.stringify(opts)); audio(); sfx('click'); return true;
     }
   }
   return false;
@@ -212,15 +214,24 @@ function drawShop() {
 }
 function drawSettings(title) {
   g.fillStyle = 'rgba(42,15,61,.5)'; g.fillRect(0, 0, W, H);
-  panel(W / 2 - 250, 104, 500, 360, 30, lg(0, 104, 0, 464, 'rgba(255,242,250,.97)', 'rgba(255,205,236,.97)'), '#fff');
+  panel(W / 2 - 250, 104, 500, 372, 30, lg(0, 104, 0, 476, 'rgba(255,242,250,.97)', 'rgba(255,205,236,.97)'), '#fff');
   fancyText(title, W / 2, 162, 44);
   SETTING_ROWS.forEach(([k, label, vals], i) => {
-    const y = 214 + i * 52, on = opts[k] > 0;
-    rr(W / 2 - 210, y - 20, 420, 40, 20); g.fillStyle = on ? lg(0, y - 22, 0, y + 22, '#ff8fd0', '#e8279a') : 'rgba(122,26,99,.25)'; g.fill();
+    const y = 206 + i * 46, on = k === 'full' ? isFull() : opts[k] > 0;
+    rr(W / 2 - 210, y - 18, 420, 36, 18); g.fillStyle = on ? lg(0, y - 22, 0, y + 22, '#ff8fd0', '#e8279a') : 'rgba(122,26,99,.25)'; g.fill();
     g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.fillStyle = '#fff'; g.textAlign = 'left'; g.fillText(label, W / 2 - 186, y + 7);
-    g.textAlign = 'right'; g.fillText(vals[opts[k]], W / 2 + 186, y + 7);
+    g.textAlign = 'right'; g.fillText(vals[k === 'full' ? +isFull() : opts[k]], W / 2 + 186, y + 7);
   });
-  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, 444);
+  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, 456);
+}
+const touchUI = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;   // phones/tablets vs computers
+function isFull() { return typeof document !== 'undefined' && !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function toggleFullscreen(onlyEnter) {
+  try {
+    const d = document.documentElement;
+    if (!isFull()) { const f = d.requestFullscreen || d.webkitRequestFullscreen; if (f) { const p = f.call(d); if (p && p.catch) p.catch(() => {}); } }
+    else if (!onlyEnter) { const x = document.exitFullscreen || document.webkitExitFullscreen; if (x) x.call(document); }
+  } catch (e) {}
 }
 function toggleMute() { muted = !muted; saveOpt('pinkUnicornMute', muted ? 1 : 0); }
 
@@ -229,6 +240,7 @@ addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;   // typing in the lobby
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
+  if (e.key === 'f') toggleFullscreen();
   if (state === 'map') {
     if (e.key === 'ArrowLeft') { startCh = Math.max(0, startCh - 1); centerMap(); }
     if (e.key === 'ArrowRight') { startCh = Math.min(reached, startCh + 1); centerMap(); }
@@ -1596,14 +1608,14 @@ function draw() {
       else MENU.forEach((s, i) => menuButton(s, 276 + i * 44, i === sel));
       if (mode !== 'guest') { panel(W / 2 - 200, 452, 400, 30, 15, 'rgba(122,26,99,.35)'); txt(`◀   Map · ${startCh + 1}. ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 473, 16, '#fff'); }
       panel(10, 488, 196, 30, 15, easy ? 'rgba(80,200,120,.55)' : 'rgba(122,26,99,.35)'); txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 108, 509, 15, '#fff');
-      txt('Mouse / touch / arrows / gamepad · 2P: arrows + W/S or two pads', W / 2 + 60, 500, 13);
-      txt('M = mute · P = pause' + (best ? `   ·   Best ${best}` : ''), W / 2 + 60, 521, 13);
+      txt(touchUI ? 'Drag to fly · double-tap to dash · two players: one half of the screen each' : 'Fly: mouse, arrows or WASD · Dash: Space · 2P: arrows + WASD (Q dash) or gamepads', W / 2 + 60, 500, 13);
+      txt((touchUI ? '' : 'P pause · M mute · F fullscreen') + (best ? `${touchUI ? '' : '   ·   '}Best ${best}` : ''), W / 2 + 60, 521, 13);
       if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 274, 20, '#fff36b'); }
       if (mode !== 'guest') {   // settings gear
         g.fillStyle = 'rgba(122,26,99,.45)'; g.beginPath(); g.arc(W - 40, 40, 22, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.stroke();
         g.save(); g.translate(W - 40, 40); g.fillStyle = '#fff'; for (let k = 0; k < 8; k++) { g.rotate(Math.PI / 4); g.fillRect(-3, -12, 6, 6); } g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill(); g.fillStyle = 'rgba(122,26,99,.9)'; g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill(); g.restore();
       }
-      if (settingsOpen) drawSettings('Sound');
+      if (settingsOpen) drawSettings('Settings');
       else {   // shop bag button
         panel(16, 18, 168, 44, 22, lg(0, 18, 0, 62, '#ff8fd0', '#e8279a'), '#fff');
         g.font = 'bold 19px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.fillText('Shop', 34, 47);
@@ -1663,6 +1675,7 @@ function draw() {
 }
 
 function loop() {
+  if (cv.style) { const c = (state === 'play' || state === 'bonus') && !paused ? 'none' : 'default'; if (cv.style.cursor !== c) cv.style.cursor = c; }
   pollPads();
   music();
   if (mode === 'guest') { guestTick(); return; }

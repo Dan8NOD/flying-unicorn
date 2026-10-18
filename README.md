@@ -3,7 +3,7 @@ A magical side-scrolling shooter for phones, tablets and computers. Fly a pink u
 
 Chapters: Candy Clouds, Mermaid Bay, Starry Night, Aurora Peaks, Rainbow Canyon, Coral Reef, Crystal Caves, Storm Fortress, Enchanted Forest, Cotton Candy Kingdom, Moonlit Lake, Sakura Valley, Rainbow Waterfalls, Starlight Carnival, Sunflower Fields, Glitter Volcano, Cosmic Nebula, Autumn Woods, Airship Harbor, Dream City, Tea Party Garden, Ice Palace, Toy Workshop, Lantern Festival, Jungle Temple, Desert Oasis, Unicorn Castle.
 
-**Play:** open `index.html`, or serve the folder (`python3 -m http.server`) for full audio. Mouse, touch, keyboard and gamepads.
+**Play:** on phones, tablets and computers (Windows/Mac/Linux browsers). Publish to itch.io with `tools/package-itch.sh` (see `ITCH.md`). Locally: open `index.html`, or serve the folder (`python3 -m http.server`) for full audio. Mouse, touch, keyboard and gamepads.
 Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / pad B. M = mute, P = pause, E = easy mode (title screen).
 
 **Modes:** 1 Player; Rainbow Run (endless, random chapters that get harder, boss every third stretch, best run saved); 2 Players on one screen (arrows + WASD, touch halves, or two gamepads); 2 Devices online (host / join by swapping a code, `net.js`).

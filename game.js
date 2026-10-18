@@ -284,6 +284,7 @@ const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online', 'Rai
 cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   pointer(e);
+  if (e.button === 2 && state === 'play' && !paused) { if (mode === 'guest') net.sendR('{"p":3}'); else dash(uni); return; }   // right-click dashes (mouse players)
   if (state === 'play' && !paused) {   // double-tap to dash
     const now = Date.now(), who = mode === 'guest' || (players.length > 1 && x > W / 2 && mode === 'local') ? p2 : uni;
     if (now - (who.lastTap || 0) < 280) { if (mode === 'guest') net.sendR('{"p":3}'); else dash(who); }
@@ -1608,7 +1609,7 @@ function draw() {
       else MENU.forEach((s, i) => menuButton(s, 276 + i * 44, i === sel));
       if (mode !== 'guest') { panel(W / 2 - 200, 452, 400, 30, 15, 'rgba(122,26,99,.35)'); txt(`◀   Map · ${startCh + 1}. ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 473, 16, '#fff'); }
       panel(10, 488, 196, 30, 15, easy ? 'rgba(80,200,120,.55)' : 'rgba(122,26,99,.35)'); txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 108, 509, 15, '#fff');
-      txt(touchUI ? 'Drag to fly · double-tap to dash · two players: one half of the screen each' : 'Fly: mouse, arrows or WASD · Dash: Space · 2P: arrows + WASD (Q dash) or gamepads', W / 2 + 60, 500, 13);
+      txt(touchUI ? 'Drag to fly · double-tap to dash · two players: one half of the screen each' : 'Fly: mouse, arrows or WASD · Dash: Space or right-click · 2P: arrows + WASD (Q dash) or gamepads', W / 2 + 60, 500, 13);
       txt((touchUI ? '' : 'P pause · M mute · F fullscreen') + (best ? `${touchUI ? '' : '   ·   '}Best ${best}` : ''), W / 2 + 60, 521, 13);
       if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 274, 20, '#fff36b'); }
       if (mode !== 'guest') {   // settings gear

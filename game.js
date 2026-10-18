@@ -78,7 +78,7 @@ const CHAPTERS = [
 ];
 const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b', '#18a999', '#5a5f7a'];
 
-let state = 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
+let state = typeof Image !== 'undefined' ? 'loading' : 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
 let things = [], shots = [], bolts = [], sparks = [], boss = null, clear = 0;
 let mode = 'solo', sel = 0, reached = 0, startCh = 0, easy = false;   // solo | local (2 players, one screen) | host / guest (two devices)
 let pops = [], kills = 0;
@@ -1568,8 +1568,18 @@ function hud() {
     star(bx + 320 * p, by + 4, 9, t / 10, '#fff36b');
   }
 }
+function drawLoading() {   // first visit: wait (up to 6 s) for the main sprites so the title doesn't pop
+  const gq = g.createLinearGradient(0, 0, 0, H); gq.addColorStop(0, '#ffd6f0'); gq.addColorStop(1, '#c9a8ff'); g.fillStyle = gq; g.fillRect(0, 0, W, H);
+  logo(W / 2, 220);
+  const p = Math.min(1, Object.keys(IMG).length / (CORE_ART.length + 2));
+  rr(W / 2 - 180, 300, 360, 16, 8); g.fillStyle = 'rgba(122,26,99,.25)'; g.fill();
+  rr(W / 2 - 180, 300, 360 * Math.max(.04, p), 16, 8); const q = g.createLinearGradient(W / 2 - 180, 0, W / 2 + 180, 0); RAINBOW.forEach((c, i) => q.addColorStop(i / 5, c)); g.fillStyle = q; g.fill();
+  star(W / 2 - 180 + 360 * p, 308, 12, t / 10, '#fff36b');
+  g.font = 'bold 18px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Sprinkling sparkles...', W / 2, 350);
+}
 function draw() {
   g.setTransform(Q, 0, 0, Q, 0, 0);
+  if (state === 'loading') { drawLoading(); return; }
   g.save();
   if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   if (state === 'ending') drawEnding();
@@ -1657,6 +1667,7 @@ function loop() {
   music();
   if (mode === 'guest') { guestTick(); return; }
   if (state === 'bonus') { if (!paused) bonusUpdate(); for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; } sparks = sparks.filter(p => p.l > 0); for (const q of pops) { q.y -= .9; q.l--; } pops = pops.filter(q => q.l > 0); if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; } if (mode === 'host' && net.open && ++net.ntk % 2 === 0) netSnap(); return; }
+  if (state === 'loading') { t++; const need = CORE_ART.length + 2, have = Object.keys(IMG).length; if (have >= need || t > 360) { state = 'title'; t = 0; } return; }
   if (state === 'play') { if (!paused) update(); }
   else {
     t++; if (state === 'ending') ending++;

@@ -102,6 +102,12 @@ const tests = {
     const g0 = things[0]; uni.x = uni.tx = g0.x; uni.y = uni.ty = g0.y; step(2); const got = things.length < 14;
     t = 20 * 60; step(220); const after = state === 'chapter' || state === 'play';
     return [inBonus, got, after && ch === 3];`, 3],
+  'game over: tap retries the same chapter; late chapters stay dodgeable': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    ch = 9; lives = 1; uni.flash = 0; uni.shield = 0; hurt(uni); const over = state === 'over';
+    step(50); press(); step(80); const retried = (state === 'chapter' || state === 'play') && ch === 9 && lives >= 3;
+    ch = 26; const vs = []; for (let i = 0; i < 200; i++) { things = []; spawn(); if (things[0] && !things[0].foe) vs.push(-things[0].vx); }
+    return [over, retried, Math.max(...vs) < 11.5];`, 3],
 };
 
 let failed = 0;

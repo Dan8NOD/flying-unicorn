@@ -1,7 +1,7 @@
 // Pink Unicorn audio: everything is synthesised with WebAudio (no sound files).
 // sfx(name, arg) plays a sound effect; music() keeps the right song playing (call it every frame).
 // Uses game globals at run time: muted, state, ch, boss, clear, netEv.
-let ac = null, master, sfxBus, musicBus, noiseBuf;
+let ac = null, master, sfxBus, musicBus, noiseBuf, comp, streamBus;
 function audio() {
   if (!ac) {
     try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
@@ -12,7 +12,8 @@ function audio() {
 }
 function buildGraph() {
   {
-    const comp = ac.createDynamicsCompressor(); comp.connect(ac.destination);
+    comp = ac.createDynamicsCompressor(); comp.connect(ac.destination);
+    streamBus = ac.createGain(); streamBus.gain.value = 1; streamBus.connect(comp);   // music files, ambience and voices (no reverb)
     master = ac.createGain(); master.gain.value = 2.1; master.connect(comp);
     const verb = ac.createConvolver(), wet = ac.createGain(); wet.gain.value = .28;   // soft hall reverb from decaying noise
     const len = ac.sampleRate * 2.2, ir = ac.createBuffer(2, len, ac.sampleRate);
@@ -176,11 +177,21 @@ const FILE_SFX = ['shot', 'bubble', 'ring', 'heart', 'power', 'shield', 'hurt', 
 const SFX_VOL = { shot: .22, bubble: .25, ring: .5, pop: .35, flap: .3, click: .4, poof: .55, dash: .6 };
 let ambEl = null, wxEl = null, ambFile = '';
 const sbuf = {}; let sfxLoading = false, mEl = null, mCur = 0, mFile = '', mFail = {}, voiceEl = null, voiceUntil = 0, musicVol = .55;
+// iPhone/iPad Safari ignores <audio>.volume, so each player is routed through its own Web Audio gain node.
+// vol(el) / setVol(el, v) work everywhere; without Web Audio they fall back to el.volume.
+function hookEl(el) {
+  if (el._g !== undefined || !ac || !streamBus) return;
+  if (typeof location === 'undefined' || !/^https?:/.test(location.protocol)) return;   // opened as a local file: routing would be silent
+  el._g = null;
+  try { const src = ac.createMediaElementSource(el), gn = ac.createGain(); gn.gain.value = el._v || 0; src.connect(gn); gn.connect(streamBus); el._g = gn; el.volume = 1; } catch (e) {}
+}
+const vol = el => el._v !== undefined ? el._v : el.volume;
+function setVol(el, v) { el._v = v; if (el._g) el._g.gain.value = v; else el.volume = v; }
 function loadFiles() {
   if (typeof Audio === 'undefined') return;
   if (!mEl) {   // create (and unlock, inside this tap) the music and voice players
     mEl = [new Audio(), new Audio()]; voiceEl = new Audio(); ambEl = new Audio(); wxEl = new Audio();
-    for (const el of [...mEl, voiceEl, ambEl, wxEl]) { el.preload = 'auto'; el.src = 'assets/audio/sfx_click.mp3'; el.volume = 0; const p = el.play(); if (p) p.then(() => el.pause()).catch(() => {}); }
+    for (const el of [...mEl, voiceEl, ambEl, wxEl]) { el.preload = 'auto'; el.src = 'assets/audio/sfx_click.mp3'; setVol(el, 0); hookEl(el); const p = el.play(); if (p) p.then(() => el.pause()).catch(() => {}); }
     [...mEl, ambEl, wxEl].forEach(el => { el.loop = true; });
   }
   if (sfxLoading || !ac || typeof fetch === 'undefined' || !/^https?:/.test(location.protocol)) return;
@@ -196,7 +207,7 @@ function playBuf(name, arg) {
 function voice(name) {
   if (typeof netEv === 'function') netEv(['v', name]);
   if (muted || !voiceEl || (typeof opts !== 'undefined' && !opts.voice)) return;
-  try { voiceEl.pause(); voiceEl.src = 'assets/audio/' + name + '.mp3'; voiceEl.volume = 1; voiceEl.currentTime = 0; const p = voiceEl.play(); if (p) p.catch(() => {}); voiceUntil = Date.now() + 2600; voiceEl.onended = () => { voiceUntil = 0; }; } catch (e) {}
+  try { voiceEl.pause(); voiceEl.src = 'assets/audio/' + name + '.mp3'; setVol(voiceEl, 1); voiceEl.currentTime = 0; const p = voiceEl.play(); if (p) p.catch(() => {}); voiceUntil = Date.now() + 2600; voiceEl.onended = () => { voiceUntil = 0; }; } catch (e) {}
 }
 function musicFileFor(key) { return key === '' ? '' : key === 'title' ? 'music_title' : key === 'ending' ? 'music_ending' : key[0] === 'b' ? 'music_boss' : 'music_ch' + key; }
 function streamMusic(key) {   // returns true while a music file is handling playback
@@ -204,14 +215,14 @@ function streamMusic(key) {   // returns true while a music file is handling pla
   const file = musicFileFor(key);
   if (file !== mFile) {
     mFile = file;
-    if (file && !mFail[file]) { mCur ^= 1; const el = mEl[mCur]; el.src = 'assets/audio/' + file + '.mp3'; el.volume = 0; el.onerror = () => { mFail[file] = 1; }; const p = el.play(); if (p) p.catch(() => {}); }
+    if (file && !mFail[file]) { mCur ^= 1; const el = mEl[mCur]; el.src = 'assets/audio/' + file + '.mp3'; setVol(el, 0); el.onerror = () => { mFail[file] = 1; }; const p = el.play(); if (p) p.catch(() => {}); }
   }
   const mv = typeof opts !== 'undefined' ? [0, .3, musicVol][opts.music] : musicVol;
   const target = muted || !file ? 0 : mv * (Date.now() < voiceUntil ? .35 : 1);
   mEl.forEach((el, i) => {   // crossfade: the current track fades in, the old one fades out
     const want = i === mCur && file && !mFail[file] ? target : 0;
-    el.volume = Math.max(0, Math.min(1, el.volume + Math.max(-.03, Math.min(.03, want - el.volume))));
-    if (el.volume === 0 && i !== mCur && !el.paused) el.pause();
+    setVol(el, Math.max(0, Math.min(1, vol(el) + Math.max(-.03, Math.min(.03, want - vol(el))))));
+    if (vol(el) === 0 && i !== mCur && !el.paused) el.pause();
   });
   if (muted && !mEl[mCur].paused) mEl[mCur].pause(); else if (!muted && file && !mFail[file] && mEl[mCur].paused && ac && ac.state === 'running') { const p = mEl[mCur].play(); if (p) p.catch(() => {}); }
   return !!file && !mFail[file];
@@ -221,11 +232,11 @@ function streamMusic(key) {   // returns true while a music file is handling pla
 function ambienceTick() {
   if (!ambEl || typeof STAGES === 'undefined') return;
   const S = STAGES[ch], bed = S && (state === 'play' || state === 'chapter' || state === 'results') ? S.amb : '';
-  if (bed !== ambFile) { ambFile = bed; if (bed) { ambEl.src = 'assets/audio/' + bed + '.mp3'; ambEl.volume = 0; const p = ambEl.play(); if (p) p.catch(() => {}); } }
+  if (bed !== ambFile) { ambFile = bed; if (bed) { ambEl.src = 'assets/audio/' + bed + '.mp3'; setVol(ambEl, 0); const p = ambEl.play(); if (p) p.catch(() => {}); } }
   const wet = state === 'play' && (wxType === 'rain' || wxType === 'storm') ? Math.min(1, wxI) : 0;
   if (wet > .05 && !muted && wxEl.paused) { if (!/wx_rain/.test(wxEl.src)) wxEl.src = 'assets/audio/wx_rain.mp3'; const p = wxEl.play(); if (p) p.catch(() => {}); }
   const duck = Date.now() < voiceUntil ? .6 : 1;
-  const ramp = (el, want) => { el.volume = Math.max(0, Math.min(1, el.volume + Math.max(-.02, Math.min(.02, want - el.volume)))); if (el.volume === 0 && !el.paused && want === 0) el.pause(); };
+  const ramp = (el, want) => { setVol(el, Math.max(0, Math.min(1, vol(el) + Math.max(-.02, Math.min(.02, want - vol(el)))))); if (vol(el) === 0 && !el.paused && want === 0) el.pause(); };
   const fxOn = typeof opts === 'undefined' || opts.sfx;
   ramp(ambEl, muted || !bed || !fxOn ? 0 : .32 * duck);
   ramp(wxEl, muted || !fxOn ? 0 : .5 * wet * duck);

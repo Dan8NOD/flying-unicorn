@@ -12,8 +12,9 @@ function run(argv) {
   const wv = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, 960, 540), cfg);
   const win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(-3000, 0, 960, 540), 0, $.NSBackingStoreBuffered, false);
   win.contentView = wv; win.orderFrontRegardless;
-  const url = $.NSURL.fileURLWithPath(cwd + '/index.html');
-  wv.loadFileURLAllowingReadAccessToURL(url, $.NSURL.fileURLWithPath(cwd));
+  const env = $.NSProcessInfo.processInfo.environment.objectForKey('SHOT_URL');   // optional: load over http instead of file://
+  if (env && !env.isNil()) wv.loadRequest($.NSURLRequest.requestWithURL($.NSURL.URLWithString(env.js)));
+  else wv.loadFileURLAllowingReadAccessToURL($.NSURL.fileURLWithPath(cwd + '/index.html'), $.NSURL.fileURLWithPath(cwd));
   const spin = s => { const until = $.NSDate.dateWithTimeIntervalSinceNow(s); while (until.timeIntervalSinceNow > 0) $.NSRunLoop.currentRunLoop.runModeBeforeDate($.NSDefaultRunLoopMode, $.NSDate.dateWithTimeIntervalSinceNow(0.05)); };
   spin(1.5);
   wv.evaluateJavaScriptCompletionHandler('typeof loadAllArt === "function" && loadAllArt()', () => {}); spin(2);   // screenshots may show any chapter

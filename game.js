@@ -261,7 +261,11 @@ function pointer(e) {
     who.ty = y; who.tx = mode === 'local' && players.length > 1 ? (who === p2 ? x - W / 2 : x) * 1.4 : x;
   }
 }
-addEventListener('blur', () => { if (state === 'play') paused = true; });
+addEventListener('blur', () => { if (state === 'play' || state === 'bonus') paused = true; });
+// iOS only unlocks sound on touchend / click, so try again on those too; resume audio when coming back to the app.
+addEventListener('touchend', () => audio(), { passive: true });
+addEventListener('click', () => audio());
+if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden && typeof ac !== 'undefined' && ac && ac.state !== 'running') ac.resume(); if (document.hidden) saveShop(); });
 cv.addEventListener('mousemove', pointer);
 cv.addEventListener('touchmove', e => { pointer(e); e.preventDefault(); }, { passive: false });
 const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online', 'Rainbow Run · endless'];

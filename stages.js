@@ -171,3 +171,63 @@ function stageFront() {
     g.globalAlpha = a; panel(W / 2 - 170, 70, 340, 44, 22, lg(0, 70, 0, 114, '#fff3a0', '#ffb300'), '#fff'); txt(banner.text, W / 2, 100, 22, '#fff'); g.globalAlpha = 1;
   }
 }
+
+// ---- Level polish: ribbon trail, glowing pickups, depth bokeh, vignette, boss mood, combo frame ----
+const TRAIL = [[], []], GLOW = {};
+const GLOW_COL = { ring: '255,216,74', heart: '255,111,168', star: '255,243,107' };
+function glowSpr(rgb) {   // soft additive halo, drawn once per colour
+  if (GLOW[rgb]) return GLOW[rgb];
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+    const q = x.createRadialGradient(32, 32, 2, 32, 32, 32); q.addColorStop(0, `rgba(${rgb},.9)`); q.addColorStop(1, `rgba(${rgb},0)`);
+    x.fillStyle = q; x.fillRect(0, 0, 64, 64); return GLOW[rgb] = c;
+  } catch (e) { return GLOW[rgb] = null; }
+}
+let trailT = -1, vigA = null, vigB = null;
+// Behind the characters: rainbow ribbon trails and halos behind everything collectible.
+function polishBack() {
+  if (state !== 'play') { TRAIL[0].length = TRAIL[1].length = 0; trailT = -1; return; }
+  const keep = fx ? 24 : 10;
+  if (t !== trailT && !paused) {
+    trailT = t;
+    players.forEach((p, i) => { const a = TRAIL[i] || (TRAIL[i] = []); for (const q of a) q[0] -= 7; a.push([0, p.y]); if (a.length > keep) a.shift(); });
+  }
+  g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+  players.forEach((p, i) => {
+    const a = TRAIL[i]; if (!a || a.length < 3) return;
+    RAINBOW.forEach((c, b) => {
+      g.strokeStyle = c; g.lineWidth = 4; g.globalAlpha = .55; g.beginPath();
+      a.forEach((q, k) => { const x = p.x + q[0] - 36, y = q[1] + (b - 2.5) * 4.2 + 8; k ? g.lineTo(x, y) : g.moveTo(x, y); });
+      g.stroke();
+    });
+  });
+  g.restore();
+  if (!fx) return;
+  g.save(); g.globalCompositeOperation = 'lighter';
+  for (const o of things) {
+    const rgb = GLOW_COL[o.kind] || (POW.includes(o.kind) ? '140,240,255' : null); if (!rgb) continue;
+    const im = glowSpr(rgb); if (!im) continue;
+    const r = 34 + 6 * Math.sin(t / 8 + o.x / 50); g.globalAlpha = .5 + .2 * Math.sin(t / 6 + o.x / 40);
+    g.drawImage(im, o.x - r, o.y - r, r * 2, r * 2);
+  }
+  g.restore();
+}
+// In front of everything but the HUD.
+function polishFront() {
+  if (state !== 'play') return;
+  if (fx) {   // big soft bokeh drifting past in the foreground gives the scene depth
+    const im = glowSpr('255,244,255');
+    if (im) { g.save(); g.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 7; k++) { const r = 40 + (k * 17) % 44; g.globalAlpha = .3 + .15 * Math.sin(t / 40 + k); g.drawImage(im, sx(k, 2.6, 170) - r, 60 + (k * 131) % (H - 120) + Math.sin(t / 70 + k) * 18 - r, r * 2, r * 2); }
+      g.restore(); }
+  }
+  if (!vigA) {
+    vigA = g.createRadialGradient(W / 2, H / 2, H * .45, W / 2, H / 2, H * 1.0); vigA.addColorStop(0, 'rgba(40,0,60,0)'); vigA.addColorStop(1, 'rgba(40,0,60,.36)');
+    vigB = g.createRadialGradient(W / 2, H / 2, H * .4, W / 2, H / 2, H * .95); vigB.addColorStop(0, 'rgba(255,40,160,0)'); vigB.addColorStop(1, 'rgba(255,40,160,.55)');
+  }
+  g.fillStyle = vigA; g.fillRect(0, 0, W, H);
+  if (boss && !clear) { g.globalAlpha = .45 + .35 * Math.sin(t / 14); g.fillStyle = vigB; g.fillRect(0, 0, W, H); g.globalAlpha = 1; }   // boss-fight pulse
+  if (combo >= 5) {   // rainbow frame that grows brighter with the combo
+    g.save(); g.lineWidth = 8; g.strokeStyle = `hsl(${t * 5 % 360},95%,65%)`; g.globalAlpha = Math.min(.55, combo / 24); g.strokeRect(0, 0, W, H); g.restore();
+  }
+}

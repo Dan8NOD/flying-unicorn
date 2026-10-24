@@ -1775,6 +1775,7 @@ function draw() {
     } else {
       stageBack();
       if (state === 'play') { for (const o of things) if (o.foe) groundShadow(o.x, o.y, FOE_H[o.kind] * .45); if (boss) groundShadow(boss.x, boss.y, 90); for (const p of players) groundShadow(p.x, p.y, 48); if (players.length === 1) groundShadow(mer.x, mer.y, 36); }
+      if (state === 'play') polishBack();
       for (const o of things) drawThing(o);
       if (boss) drawBoss(boss);
       for (const s of shots) {
@@ -1805,6 +1806,7 @@ function draw() {
         RAINBOW.forEach((c, i) => { g.strokeStyle = c; g.globalAlpha = 1 - k; g.beginPath(); g.arc(uni.x, uni.y, 40 + k * 900 - i * 22, 0, 7); g.stroke(); });
         g.globalAlpha = Math.max(0, .5 - k); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.restore();
       }
+      polishFront();
       if (state !== 'chapter' && state !== 'results') hud();
       if (state === 'play' && ch === 0 && !boss && t < 600) {   // first-time tips
         const tip = t < 300 ? 'Drag, or use the arrows, to fly anywhere' : 'Double-tap, Space or B to dash through danger!';

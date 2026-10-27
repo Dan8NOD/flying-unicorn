@@ -91,9 +91,9 @@ const tests = {
     return [direct, seg2, bossCame];`, 3],
   'sparkle shop: buy, wear, and refuse when short': [`
     wallet = 200; owned = ['']; skin = ''; state = 'shop';
-    shopTap(W / 2 - 172, 250); const bought = owned.includes('mint') && skin === 'mint' && wallet === 50;
-    shopTap(W / 2 + 344, 250); const refused = !owned.includes('golden') && wallet === 50;
-    shopTap(W / 2 - 344, 250); const back = skin === '';
+    shopTap(shopCardX(1), 250); const bought = owned.includes('mint') && skin === 'mint' && wallet === 50;
+    shopTap(shopCardX(4), 250); const refused = !owned.includes('golden') && wallet === 50;
+    shopTap(shopCardX(0), 250); const back = skin === '';
     return [bought, refused, back];`, 3],
   'isometric bonus round after every third chapter': [`
     sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
@@ -130,6 +130,15 @@ const tests = {
     nova(); const cleared = things.every(o => o.dead || !o.foe) && bolts.length === 0 && boss.hp === 28 && meter === 0;
     boss = null; meter = 50; nova(); const notReady = meter === 50;
     return [full, cleared, notReady];`, 3],
+  'golden horseshoes drop, save, unlock Rainbow; pegasus friend helps': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    shoes = []; owned = ['']; things = []; t = Math.round(segTime() * 60 * SHOE_AT[0]) - 1; step(1);
+    const s0 = things.find(o => o.kind === 'shoe'); const dropped = !!s0 && s0.k === 0;
+    s0.x = uni.x; s0.y = s0.y0 = uni.y; step(2); const saved = (shoes[ch] & 1) === 1;
+    things = []; t = Math.round(segTime() * 60 * SHOE_AT[0]) - 1; step(1); const notAgain = !things.some(o => o.kind === 'shoe');
+    shoes = Array.from({ length: 17 }, () => 7); getShoe({ k: 1, x: 300, y: 200 }); const unlocked = shoeCount() >= 50 && owned.includes('rainbow');
+    things = [{ kind: 'friend', x: uni.x, y: uni.y, vx: 0, r: 16 }]; shots = []; step(30); const helper = !!pal && shots.some(s => s.w === 'seek');
+    return [dropped, saved, notAgain, unlocked, helper];`, 5],
 };
 
 let failed = 0;

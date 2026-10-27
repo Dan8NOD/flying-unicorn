@@ -78,6 +78,8 @@ function sfx(name, arg = 0) {
     case 'meter': [0, 7, 12, 19, 24].forEach((s, i) => bell(hz(79 + s), n + i * .06, .08, .7)); break;
     case 'boomerang': noise(n, .35, .08, 'bandpass', 800, 2400); break;
     case 'splat': tone(300, n, .12, .12, 'sine', { slide: 120 }); noise(n, .18, .08, 'lowpass', 1600); bell(hz(88), n + .05, .04, .3); break;
+    case 'shoe': [0, 4, 7, 12, 16].forEach((q, i) => bell(hz(79 + q), n + i * .05, .08, .6)); break;
+    case 'friend': [12, 7, 12, 16].forEach((q, i) => bell(hz(76 + q), n + i * .08, .07, .5)); break;
     case 'click': bell(hz(96), n, .03, .1); break;
     case 'over': [7, 4, 0, -5].forEach((s, i) => bell(hz(72 + s), n + i * .22, .07, .9)); break;
   }
@@ -179,7 +181,7 @@ function music() {
 // Effects are decoded once into buffers (needs http/https; on file:// the synth versions play).
 // Voices play through one <audio> element and duck the music while someone talks.
 const FILE_SFX = ['shot', 'bubble', 'ring', 'heart', 'power', 'shield', 'hurt', 'pop', 'poof', 'bossHit', 'warn', 'boss', 'win', 'bomb', 'flap', 'dash', 'start', 'click', 'over',
-  'boing', 'nova', 'meter', 'boomerang', 'splat', 'beam', 'thunder', 'whale', 'comet', 'phoenix', 'fairy', 'train', 'splash', 'dragon', 'airship', 'gust', 'rainbow', 'golden', 'eruption', 'firework', 'surprise'];
+  'shoe', 'friend', 'boing', 'nova', 'meter', 'boomerang', 'splat', 'beam', 'thunder', 'whale', 'comet', 'phoenix', 'fairy', 'train', 'splash', 'dragon', 'airship', 'gust', 'rainbow', 'golden', 'eruption', 'firework', 'surprise'];
 const SFX_VOL = { shot: .22, bubble: .25, ring: .5, pop: .35, flap: .3, click: .4, poof: .55, dash: .6 };
 let ambEl = null, wxEl = null, ambFile = '';
 const sbuf = {}; let sfxLoading = false, mEl = null, mCur = 0, mFile = '', mFail = {}, voiceEl = null, voiceUntil = 0, musicVol = .55;

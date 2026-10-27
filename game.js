@@ -33,8 +33,8 @@ function useChapterArt(c) {
   for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
   for (const n of keep) loadArt(n);
 }
-function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
-CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
+CORE_ART.push('pick_shoe', 'friend_pegasus'); CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
 try { const sk0 = localStorage.getItem('pinkUnicornSkin'); if (sk0) ['up', 'down'].forEach(f => loadArt('skin_' + sk0 + '_' + f)); } catch (e) {}
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
 function spr(n, x, y, h, flipX, flipY) {
@@ -101,7 +101,8 @@ const opts = { music: 2, sfx: 1, voice: 1, buzz: 1 };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('pinkUnicornOpts') || '{}')); } catch (e) {}
 let settingsOpen = false;
 // Sparkle Shop: rings collected in any game are saved; spend them on unicorn looks.
-const SKINS = [{ id: '', name: 'Classic', price: 0 }, { id: 'mint', name: 'Mint', price: 150 }, { id: 'snow', name: 'Snow', price: 300 }, { id: 'galaxy', name: 'Galaxy', price: 600 }, { id: 'golden', name: 'Golden', price: 1000 }];
+const SKINS = [{ id: '', name: 'Classic', price: 0 }, { id: 'mint', name: 'Mint', price: 150 }, { id: 'snow', name: 'Snow', price: 300 }, { id: 'galaxy', name: 'Galaxy', price: 600 }, { id: 'golden', name: 'Golden', price: 1000 }, { id: 'rainbow', name: 'Rainbow', price: 0, shoes: 50 }];
+const shopCardX = i => W / 2 + (i - (SKINS.length - 1) / 2) * 152;
 let wallet = 0, owned = [''], skin = '', hostSkin = '', shopMsg = '', shopMsgT = 0;
 try { wallet = +localStorage.getItem('pinkUnicornWallet') || 0; owned = JSON.parse(localStorage.getItem('pinkUnicornOwned') || '[""]'); skin = localStorage.getItem('pinkUnicornSkin') || ''; } catch (e) {}
 function saveShop() { saveOpt('pinkUnicornWallet', wallet); saveOpt('pinkUnicornOwned', JSON.stringify(owned)); saveOpt('pinkUnicornSkin', skin); }
@@ -173,6 +174,7 @@ function drawMap() {
     panel(p.x - lw / 2, p.y + 84, lw, 24, 12, locked ? 'rgba(90,70,110,.6)' : on ? 'rgba(232,39,154,.85)' : 'rgba(122,26,99,.6)');
     g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(label, p.x, p.y + 101);
     if (!locked && starsBest[i]) txt('★'.repeat(starsBest[i]), p.x, p.y + 126, 16, '#ffe45c');
+    if (!locked && shoes[i]) for (let k = 0; k < shoeBits(shoes[i]); k++) if (!spr('pick_shoe', p.x - 16 + k * 16, p.y + 146, 16)) txt('U', p.x - 16 + k * 16, p.y + 152, 13, '#ffd84a');
     if (locked) { g.fillStyle = '#fff'; rr(p.x - 9, p.y - 4 + bob, 18, 14, 3); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(p.x, p.y - 4 + bob, 6, Math.PI, 0); g.stroke(); }
     if (on) { g.save(); g.translate(p.x + 10, p.y - 92 + Math.sin(t / 15) * 6); g.scale(.6, .6); drawUnicorn(0, 0); g.restore(); }
   }
@@ -185,9 +187,10 @@ function drawMap() {
 function shopTap(x, y) {
   if (y > 452) { state = 'title'; sfx('click'); return; }   // back
   SKINS.forEach((k, i) => {
-    const cx = W / 2 + (i - 2) * 172;
-    if (Math.abs(x - cx) > 80 || y < 130 || y > 420) return;
+    const cx = shopCardX(i);
+    if (Math.abs(x - cx) > 70 || y < 130 || y > 420) return;
     if (owned.includes(k.id)) { skin = k.id; sfx('click'); }
+    else if (k.shoes) { shopMsg = `Find ${Math.max(0, k.shoes - shoeCount())} more golden horseshoes`; shopMsgT = 120; sfx('hurt'); }
     else if (wallet >= k.price) { wallet -= k.price; owned.push(k.id); skin = k.id; sfx('power'); voice('vo_u_power'); shopMsg = k.name + ' look unlocked!'; shopMsgT = 120; }
     else { shopMsg = `You need ${k.price - wallet} more rings`; shopMsgT = 120; sfx('hurt'); }
     saveShop();
@@ -199,15 +202,17 @@ function drawShop() {
   panel(W / 2 - 90, 86, 180, 34, 17, 'rgba(122,26,99,.55)'); g.save(); g.translate(W / 2 - 62, 103); g.strokeStyle = '#ffc94a'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.stroke(); g.restore();
   g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(wallet + ' rings', W / 2 + 12, 110);
   SKINS.forEach((k, i) => {
-    const cx = W / 2 + (i - 2) * 172, on = skin === k.id, has = owned.includes(k.id);
-    panel(cx - 80, 136, 160, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
+    const cx = shopCardX(i), on = skin === k.id, has = owned.includes(k.id);
+    panel(cx - 70, 136, 140, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
     g.save(); g.translate(cx, 250 + Math.sin(t / 20 + i) * 5);
     const fr = Math.sin(t / 5) > 0 ? 'up' : 'down';
-    if (!(k.id && spr('skin_' + k.id + '_' + fr, 0, 0, 104)) && !(!k.id && spr('uni_' + fr, 0, 0, 104))) { g.scale(.8, .8); drawUnicorn(0, 10); }
+    if (k.shoes && !has) g.globalAlpha = .45;
+    if (!(k.id && spr('skin_' + k.id + '_' + fr, 0, 0, 92)) && !(!k.id && spr('uni_' + fr, 0, 0, 92))) { g.scale(.7, .7); drawUnicorn(0, 10); }
+    g.globalAlpha = 1;
     g.restore();
     g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(k.name, cx, 350);
     g.font = 'bold 16px "Trebuchet MS", sans-serif'; g.fillStyle = on ? '#e8279a' : has ? '#7a1a63' : wallet >= k.price ? '#2a9d5c' : '#a07090';
-    g.fillText(on ? 'Wearing' : has ? 'Tap to wear' : k.price + ' rings', cx, 384);
+    g.fillText(on ? 'Wearing' : has ? 'Tap to wear' : k.shoes ? `${shoeCount()}/${k.shoes} shoes` : k.price + ' rings', cx, 384);
   });
   if (shopMsgT > 0) { shopMsgT--; panel(W / 2 - 170, 420, 340, 30, 15, 'rgba(255,179,0,.9)', '#fff'); txt(shopMsg, W / 2, 441, 16, '#fff'); }
   else { panel(W / 2 - 70, 460, 140, 38, 19, lg(0, 460, 0, 498, '#ff8fd0', '#e8279a'), '#fff'); txt('Back', W / 2, 486, 18, '#fff'); }
@@ -338,7 +343,7 @@ function netEv(e) { if (net.role === 'host' && net.open && net.ev.length < 60) n
 const rd = o => Math.round(o * 10) / 10;
 function netSnap() {
   net.send(JSON.stringify({ st: state, ch, t, sc: score, l: lives, cb: combo, cl: clear, pa: paused ? 1 : 0, w: warn, sk: shake,
-    tr: trans ? [trans.t, trans.label || ''] : 0, sk: skin, mt: [meter, novaT], rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
+    tr: trans ? [trans.t, trans.label || ''] : 0, sk: skin, mt: [meter, novaT], pl: pal ? [rd(pal.x), rd(pal.y), pal.t] : 0, rs: [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars],
     u: [rd(uni.x), rd(uni.y), uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, rd(uni.tilt * 100) / 100, uni.dash], p: [p2.x, rd(p2.y), p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet],
     b: boss ? [rd(boss.x), rd(boss.y), boss.hp, boss.max] : 0,
     th: things.map(o => [o.kind, rd(o.x), rd(o.y), rd(o.vx), rd(o.ph || 0), o.hit || 0, o.top ? 1 : 0, o.foe ? 1 : 0, o.golden ? 1 : 0, rd(o.vy || 0)]),
@@ -347,7 +352,7 @@ function netSnap() {
 function applySnap(m) {
   state = m.st; ch = m.ch; useChapterArt(ch); t = m.t; score = m.sc; lives = m.l; combo = m.cb; clear = m.cl; paused = !!m.pa; warn = m.w; shake = m.sk;
   trans = m.tr ? { t: m.tr[0], label: m.tr[1] } : null;
-  hostSkin = m.sk || ''; if (m.mt) [meter, novaT] = m.mt;
+  hostSkin = m.sk || ''; if (m.mt) [meter, novaT] = m.mt; pal = m.pl ? { x: m.pl[0], y: m.pl[1], t: m.pl[2] } : null;
   if (m.rs) [stat.rings, stat.ringsAll, stat.foes, stat.hits, stat.stars] = m.rs;
   uni.x = m.u[0]; uni.y = m.u[1]; [uni.flash, uni.shield, uni.rapid, uni.triple, uni.magnet, uni.tilt, uni.dash] = m.u.slice(2); uni.fp = t / 5 * 1.3; [p2.flash, p2.shield, p2.rapid, p2.triple, p2.magnet] = m.p.slice(2);   // guest steers its own mermaid locally
   boss = m.b ? { x: m.b[0], y: m.b[1], hp: m.b[2], max: m.b[3] } : null;
@@ -413,7 +418,7 @@ function start(c, fresh) {
   useChapterArt(c);   // start loading while the rainbow curtain plays
   go(() => {
     if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
-    ch = c; t = 0; pops = []; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
+    ch = c; t = 0; pops = []; pal = null; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = p.weaponT = p.stompInv = p.squash = 0; p.weapon = ''; p.x = p.tx = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); p.vx = p.vy = p.tilt = p.dash = p.dashCd = 0; }
     if (c === 0 || fresh) { score = 0; meter = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
@@ -484,6 +489,7 @@ function spawn() {
   if (kind === 'cloud' && c.bats && Math.random() < .4) kind = 'bat';
   if (kind === 'cloud' && c.spikes && Math.random() < .5) kind = 'spike';
   if (kind === 'heart' && lives >= maxLives()) kind = 'ring';
+  if (kind === 'cloud' && !pal && !run && Math.random() < .035) kind = 'friend';
   if (kind === 'cloud' && Math.random() < .55) {   // swap hazard for a shootable enemy
     const list = FOES[ch], k = list[Math.random() * list.length | 0], f = FOE[k], top = Math.random() < .5, yy = k === 'bug' ? (top ? 30 : H - 30) : k === 'balloon' ? H - 20 - Math.random() * 120 : y;
     things.push({ kind: k, foe: 1, hp: f.hp, x: W + 40, y: yy, y0: yy, ph: Math.random() * 6, vx: (f.vx - 1.6 * hard()) * (easy ? .85 : 1), r: f.r, top, cd: 60, hit: 0 });
@@ -619,6 +625,20 @@ function beamHit(p) {
 // ---- stomp: fly down onto an enemy to squash it and bounce off ----
 // ---- Sparkle Meter and Rainbow Nova: the meter fills from rings, defeats and stomps; when full, Z / Enter / Y / the meter button unleashes a screen-wide blast ----
 let meter = 0, novaT = 0;
+// ---- Golden Horseshoes: three hidden in every chapter; which ones you found is saved. 50 unlock the Rainbow look ----
+let shoes = []; try { shoes = JSON.parse(localStorage.getItem('pinkUnicornShoes') || '[]'); } catch (e) {}
+const shoeBits = m => (m & 1) + (m >> 1 & 1) + (m >> 2 & 1);
+const shoeCount = () => shoes.reduce((a, m) => a + shoeBits(m || 0), 0);
+const SHOE_AT = [.28, .55, .82];
+function shoeSpot(c, k) { const r = ((c * 7 + k * 13) % 10) / 10; return k === 1 ? 70 + r * 50 : k === 2 ? H - 90 - r * 50 : 200 + r * 160; }   // one high, one low, one in the middle
+function getShoe(o) {
+  shoes[ch] = (shoes[ch] || 0) | (1 << o.k); saveOpt('pinkUnicornShoes', JSON.stringify(shoes));
+  score += 100; sfx('shoe'); boom(o.x, o.y, '#ffd84a', 24); pop(o.x, o.y - 30, 'Golden horseshoe!', '#ffe45c');
+  if (shoeBits(shoes[ch]) === 3) voice('vo_u_shoe3'); else bark('vo_u_shoe', 1);
+  if (shoeCount() >= 50 && !owned.includes('rainbow')) { owned.push('rainbow'); saveShop(); setTimeout(() => voice('vo_u_rainbow'), 1600); pop(W / 2, 160, 'Rainbow look unlocked in the shop!', '#fff36b'); }
+}
+// ---- Little Pegasus: a rare pickup; a baby pegasus flies with you for 12 seconds and shoots sparkles ----
+let pal = null;
 function addMeter(n) { if (meter >= 100) return; meter = Math.min(100, meter + n); if (meter >= 100) { sfx('meter'); bark('vo_u_meter', 1); } }
 function nova() {
   if (meter < 100 || state !== 'play' || paused || clear) return;
@@ -661,6 +681,17 @@ function update() {
   }
   if (!boss && !clear && t % (run ? Math.max(14, CHAPTERS[ch].rate - runSeg) : CHAPTERS[ch].rate) === 0) spawn();
   stageTick(true);   // weather, wind and surprises (stages.js)
+  if (!run && !boss && !clear) SHOE_AT.forEach((f, k) => {   // drop this chapter's horseshoes you haven't found yet
+    if (t === Math.round(segTime() * 60 * f) && !((shoes[ch] || 0) >> k & 1)) {
+      const y = shoeSpot(ch, k); things.push({ kind: 'shoe', k, x: W + 40, y, y0: y, ph: k, vx: -3, r: 20 });
+      if (k === 2) things.push({ kind: 'cloud', x: W + 40, y: y - 72, vx: -3, r: 28 });   // the last one is guarded
+    }
+  });
+  if (pal) {   // the little pegasus follows the unicorn and shoots seekers
+    pal.t--; pal.x += (uni.x + 70 - pal.x) * .08; pal.y += (uni.y - 80 + Math.sin(t / 20) * 14 - pal.y) * .08;
+    if (pal.t % 22 === 0) { shots.push({ x: pal.x + 24, y: pal.y, vx: 8, vy: 0, w: 'seek' }); sfx('fairy'); }
+    if (pal.t <= 0) { boom(pal.x, pal.y, '#bfe6ff', 20); pal = null; }
+  }
 
   for (const o of things) {
     o.x += o.vx;
@@ -670,7 +701,7 @@ function update() {
       if (o.x < -60) o.dead = true; continue; }
     if (o.kind === 'bat') o.y = o.y0 + Math.sin(t / 15 + o.ph) * 70;
     const mg = players.find(p => p.magnet > 0 && Math.hypot(o.x - p.x, o.y - p.y) < 260);
-    if (mg && (o.kind === 'ring' || o.kind === 'heart' || o.kind === 'star' || o.kind.startsWith('w_'))) { o.x += (mg.x - o.x) * .1; o.y += (mg.y - o.y) * .1; }
+    if (mg && (o.kind === 'ring' || o.kind === 'heart' || o.kind === 'star' || o.kind === 'shoe' || o.kind === 'friend' || o.kind.startsWith('w_'))) { o.x += (mg.x - o.x) * .1; o.y += (mg.y - o.y) * .1; }
     const pp = players.find(p => (o.kind === 'spike' ? Math.hypot(o.x - p.x, (o.top ? o.y + 40 : o.y - 40) - p.y) : Math.hypot(o.x - p.x, o.y - p.y)) < o.r + 22);
     if (pp) {
       if (o.kind === 'spike') { hurt(pp); continue; }
@@ -678,6 +709,8 @@ function update() {
       if (o.kind === 'ring') { combo++; score += 10 * Math.min(combo, 10); sfx('ring', combo); addMeter(2); if (combo === 5 || combo === 10) bark('vo_u_combo', 1); if (combo === 15 || combo === 20) bark('vo_u_cheer' + (1 + combo % 3), 1); boom(o.x, o.y, '#ffc400'); pop(o.x, o.y - 10, '+' + 10 * Math.min(combo, 10), '#ffe45c'); }
       else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); bark('vo_u_heart', .7); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
+      else if (o.kind === 'shoe') getShoe(o);
+      else if (o.kind === 'friend') { pal = { t: 720, x: pp.x, y: pp.y - 60 }; sfx('friend'); voice('vo_u_friend'); setTimeout(() => bark('vo_m_friend', 1), 2200); boom(o.x, o.y, '#bfe6ff', 20); }
       else if (o.kind.startsWith('w_')) { pp.weapon = o.kind.slice(2); pp.weaponT = 600; sfx('power'); bark(pp === uni ? 'vo_u_' + pp.weapon : 'vo_m_bubble', 1); pop(o.x, o.y - 30, WEAPONS[pp.weapon] + '!', '#fff36b'); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
@@ -1420,6 +1453,16 @@ function drawThingSprite(o) {
   if (k === 'cloud') return spr('haz_cloud', o.x, o.y + bob, 72);
   if (k === 'bat') { if (!IMG.haz_bat) return false; g.save(); g.translate(o.x, o.y); g.scale(1, 1 + Math.sin(t / 3 + o.x / 50) * .15); spr('haz_bat', 0, 0, 54); g.restore(); return true; }
   if (k === 'spike') return spr('haz_spike', o.x, o.top ? 40 : H - 40, 84, false, o.top);
+  if (k === 'shoe') {   // golden horseshoe with a soft halo
+    g.fillStyle = `rgba(255,216,74,${.3 + .15 * Math.sin(t / 6)})`; g.beginPath(); g.arc(o.x, o.y + bob, 30, 0, 7); g.fill();
+    if (!spr('pick_shoe', o.x, o.y + bob, 46)) { g.strokeStyle = '#ffc400'; g.lineWidth = 8; g.beginPath(); g.arc(o.x, o.y + bob, 14, Math.PI * .15, Math.PI * .85, true); g.stroke(); }
+    if (t % 12 < 4) sparkle(o.x + 14, o.y - 14 + bob, 6, 1); return true;
+  }
+  if (k === 'friend') {   // little pegasus waiting to be picked up
+    g.fillStyle = 'rgba(191,230,255,.4)'; g.beginPath(); g.arc(o.x, o.y + bob, 30, 0, 7); g.fill();
+    if (!spr('friend_pegasus', o.x, o.y + bob, 54)) { g.save(); g.translate(o.x, o.y + bob); g.scale(.45, .45); drawUnicorn(0, 0); g.restore(); }
+    return true;
+  }
   if (k === 'ring') { if (!IMG.pick_ring) return false; g.save(); g.translate(o.x, o.y); g.scale(Math.abs(Math.cos(t / 14 + o.x / 90)) * .7 + .3, 1); spr('pick_ring', 0, 0, 34); g.restore(); if ((t + (o.x | 0)) % 50 < 12) sparkle(o.x + 9, o.y - 10, 5, .9); return true; }
   if (k === 'heart' || k === 'star' || POW.includes(k)) {
     if (!IMG['pick_' + k]) return false;
@@ -1568,7 +1611,7 @@ function resultsCard() {
     g.restore();
   }
   g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63';
-  const lines = [`Rings  ${stat.rings} / ${stat.ringsAll}`, `Enemies cheered up  ${stat.foes}`, stat.hits ? `Hits taken  ${stat.hits}` : 'No hits. Perfect flying!', `Score  ${score}`];
+  const lines = [`Rings  ${stat.rings} / ${stat.ringsAll}   ·   Horseshoes  ${shoeBits(shoes[ch] || 0)} / 3`, `Enemies cheered up  ${stat.foes}`, stat.hits ? `Hits taken  ${stat.hits}` : 'No hits. Perfect flying!', `Score  ${score}`];
   lines.forEach((l, i) => g.fillText(l, W / 2, y + 222 + i * 30));
   if (t > 60 && t % 50 < 36) { g.fillStyle = '#e8279a'; g.fillText('Tap to continue', W / 2, y + 356); }
   g.globalAlpha = 1;
@@ -1770,7 +1813,7 @@ function draw() {
         panel(16, 18, 168, 44, 22, lg(0, 18, 0, 62, '#ff8fd0', '#e8279a'), '#fff');
         g.font = 'bold 19px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.fillText('Shop', 34, 47);
         g.strokeStyle = '#ffd84a'; g.lineWidth = 4; g.beginPath(); g.arc(102, 40, 8, 0, 7); g.stroke(); g.fillText(wallet, 116, 47);
-        if (bestRun) { g.textAlign = 'right'; g.fillText('Best run ' + bestRun, W - 72, 46); }
+        g.textAlign = 'right'; g.fillText((bestRun ? 'Best run ' + bestRun + '   ·   ' : '') + 'Horseshoes ' + shoeCount() + '/' + NCH * 3, W - 72, 46);
       }
     } else {
       stageBack();
@@ -1789,6 +1832,7 @@ function draw() {
         g.fillStyle = '#fff'; g.beginPath(); g.arc(b.x - 3, b.y - 3, 2.5, 0, 7); g.fill();
       }
       for (const p of players) if (p.weapon === 'beam' && state === 'play') drawBeam(p);
+      if (pal) { g.save(); g.translate(pal.x, pal.y); g.rotate(Math.sin(t / 15) * .1); if (!spr('friend_pegasus', 0, 0, 62)) { g.scale(.5, .5); drawUnicorn(0, 0); } g.restore(); if (pal.t < 120 && t % 10 < 5) sparkle(pal.x, pal.y - 30, 6, .9); }
       if (players.length === 1 && state !== 'chapter') drawMermaid(mer.x, mer.y);
       for (const p of state === 'chapter' ? [] : players) {
         if (p.flash > 0 && t % 8 < 4) continue;

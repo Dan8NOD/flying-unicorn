@@ -1,0 +1,24 @@
+# To turn this on: copy to .github/workflows/ci.yml and push (pushing workflow files needs the GitHub "workflow" permission:
+#   ~/bin/gh auth refresh -h github.com -s workflow   — run by the repo owner).
+# CI toll booth: the same checks as tools/check.sh, run on GitHub for every push and pull request,
+# so a push from any machine or agent is tested. (tools/check.sh is the macOS pre-commit version.)
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: JavaScript parses
+        run: for f in game.js stages.js audio.js net.js sw.js; do node --check "$f"; done
+      - name: Smoke tests (headless playthroughs)
+        run: node tools/test.js
+      - name: No API keys committed
+        run: "! git grep -nE 'msy_[A-Za-z0-9]{20,}|sk_[a-f0-9]{30,}' -- . ':!tools/check.sh' ':!.github'"
+      - name: No file over 1.5 MB
+        run: |
+          big=$(git ls-files -z | xargs -0 ls -l | awk '$5 > 1572864 {print $9}')
+          if [ -n "$big" ]; then echo "Too big:"; echo "$big"; exit 1; fi

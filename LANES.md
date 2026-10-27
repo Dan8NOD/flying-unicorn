@@ -28,3 +28,4 @@ log it under **Crossings** below.
 
 ## Crossings
 - Claude added PC/itch.io support (fullscreen, desktop hints, `tools/package-itch.sh`, `ITCH.md`) and iOS home-screen tags in `index.html` / `manifest.json` (platform lane).
+- Claude prepared GitHub Actions CI in `tools/ci-workflow.yml` (node tests, key scan, file-size check); to enable, copy it to `.github/workflows/ci.yml` once the GitHub login has the `workflow` permission (platform lane).

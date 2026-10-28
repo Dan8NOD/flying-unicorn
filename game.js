@@ -33,7 +33,7 @@ function useChapterArt(c) {
   for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
   for (const n of keep) loadArt(n);
 }
-function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) { loadArt('isle_' + i); loadArt('happy_' + i); } }   // tools/screenshots only
 CORE_ART.push('pick_shoe', 'friend_pegasus'); CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
 try { const sk0 = localStorage.getItem('pinkUnicornSkin'); if (sk0) ['up', 'down'].forEach(f => loadArt('skin_' + sk0 + '_' + f)); } catch (e) {}
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
@@ -818,7 +818,7 @@ function nextChapter() {
   if (!run && (ch + 1) % 3 === 0 && bonusDone !== ch && ch < NCH - 1 && state === 'results') { startBonus(); return; }
   ch + 1 >= CHAPTERS.length ? startEnding() : start(ch + 1);
 }
-function startEnding() { go(() => { state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
+function startEnding() { go(() => { for (let i = 0; i < NCH; i++) loadArt('happy_' + i); state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
 
 // ---- drawing ----
 function star(x, y, r, rot, col) {
@@ -1631,7 +1631,7 @@ function chapterCard() {
   if (t > 100 && t % 50 < 36) { panel(W / 2 - 90, H - 62, 180, 40, 20, lg(0, H - 62, 0, H - 22, '#ff8fd0', '#e8279a'), '#fff'); txt('Tap to fly!', W / 2, H - 34, 20, '#fff'); }
 }
 function happySaucer(x, y, hull, s, n = 0) {   // a cheered-up boss waving goodbye
-  const hs = ['happy_0', 'happy_1', 'happy_9'][n % 3];
+  const hs = IMG['happy_' + n] ? 'happy_' + n : ['happy_0', 'happy_1', 'happy_9'][n % 3];   // each boss has its own cheered-up portrait
   if (IMG[hs]) { g.save(); g.translate(x, y); g.rotate(Math.sin(t / 12 + x) * .08); spr(hs, 0, 0, 150 * s); g.restore(); return; }
   g.save(); g.translate(x, y); g.scale(s, s); g.rotate(Math.sin(t / 12 + x) * .08);
   g.fillStyle = 'rgba(190,240,255,.6)'; g.beginPath(); g.ellipse(0, -6, 30, 26, 0, Math.PI, 0); g.fill();
@@ -1673,7 +1673,7 @@ function drawEnding() {
 }
 function endingActors(e) {
   // cheered-up saucers float away waving
-  if (e > 60 && e < 560) for (let i = 0; i < 6; i++) { const x = W + 120 - (e - 60 - i * 40) * 2.6, y = 120 + (i * 53) % 180 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55, i); }
+  if (e > 60) for (let i = 0; i < NCH; i++) { const x = W + 120 - (e - 60 - i * 22) * 2.6, y = 100 + (i * 53) % 200 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55, i); }   // the whole boss parade, one per chapter
   // the friends
   const fx = e < 380 ? Math.min(e * 2.5 - 100, 300) : 300 + (e - 380) * .5, hy = H / 2 + 20 + Math.sin(e / 20) * 12;
   if (fx < W - 120) { drawMermaid(fx - 120, hy + 30); drawUnicorn(fx, hy); }

@@ -51,3 +51,7 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 
 ## Safety
 - No API keys are in this repo and none should be. The Meshy and ElevenLabs keys were pasted into chat sessions several times: rotate them, then update `~/.config/pink-unicorn/keys.env`.
+
+## Boss parade (done)
+- Every boss now has its own cheered-up portrait (`assets/img/happy_0..26.png`, made with `gen.py edit` from each `boss_N`, gpt-image-2, transparent bg).
+  The ending shows all 27 waving as they fly away. About 380 Meshy credits were used (the later calls cost 16 each, not 12). Raw files: `~/.cache/pink-unicorn-raw/happy_N.png`.

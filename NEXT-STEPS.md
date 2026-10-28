@@ -1,10 +1,12 @@
 # Pink Unicorn - next steps and handoff notes
 
-## Getting it onto GitHub (needed before the iPad can load it)
-This repo has **no GitHub remote yet**. On the Mac that pushes: create an empty repo on GitHub (for example `pink-unicorn`), then
-`git remote add origin https://github.com/<you>/pink-unicorn.git` and `git push -u origin main`.
-The repo is about 60 MB (art and audio), well within GitHub limits. To play on the iPad, turn on GitHub Pages
-(Settings > Pages > deploy from `main`) and open the Pages URL in Safari, then Share > Add to Home Screen.
+## GitHub and the iPad
+Repo: https://github.com/Dan8NOD/flying-unicorn (default branch `more-levels`). GitHub Pages serves `more-levels` at
+https://dan8nod.github.io/flying-unicorn/ - open it in Safari on the iPad, then Share > Add to Home Screen.
+Only the iMac / MacBook Pro pushes. From an editing Mac, hand over new commits with
+`git bundle create pink-unicorn-update.bundle origin/more-levels..more-levels`; on the pushing Mac run
+`git pull origin more-levels`, `git pull <bundle> more-levels`, `tools/check.sh`, `git push origin more-levels`.
+After a push, `sw.js` on the live site should show the new `CACHE` version within 1-2 minutes.
 Agents sharing this repo: read `LANES.md`; every commit must pass `tools/check.sh`.
 
 Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `index.html`, `game.js` (game), `net.js` (two-device lobby/WebRTC), `sw.js` + `manifest.json` + icons (installable/offline app for Android).

@@ -57,3 +57,17 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 ## Boss parade (done)
 - Every boss now has its own cheered-up portrait (`assets/img/happy_0..26.png`, made with `gen.py edit` from each `boss_N`, gpt-image-2, transparent bg).
   The ending shows all 27 waving as they fly away. About 380 Meshy credits were used (the later calls cost 16 each, not 12). Raw files: `~/.cache/pink-unicorn-raw/happy_N.png`.
+
+## Reef ride and Castle Garden (done, branch claude/reef-ride-garden)
+- **Coral Reef (chapter 6) is now a gentle sightseeing ride** (`tour: 1` in CHAPTERS, helpers under "Reef ride" in `stages.js`):
+  Mermaid rides on the unicorn's back, five big sea friends swim past (turtle, dolphins, whale, seahorse, manta: fly close to "say hi"),
+  stars and bubbles steer themselves toward the few slow grumpy fish, bumps never cost a heart, no spikes or clouds, tiny bubbles
+  (so they don't look like rings), a softer boss. Results show "Sea friends met". Any other chapter can become a ride by adding `tour: 1`
+  and `sight` events to its STAGES entry (e.g. Mermaid Bay).
+- **Castle Garden: new last stage after the castle** (`state === 'walk'`, "Castle Garden" section in `stages.js`): no flying. Walk (drag,
+  arrows, mouse), hop (tap, Space, Up; again in the air to flutter), munch apples (bump the tree), cupcakes and carrots, play the music
+  flowers, splash in the pond where Mermaid sits, bounce on mushrooms up to cloud platforms, say hi to bunnies (they follow you) and five
+  cheered-up bosses, stomp two grumpy rain clouds into rainbows, open the treasure chest, then walk through the castle gate into the ending.
+  It also has its own island (28) on the world map once unlocked. Music borrows `music_ch14`; new synth sounds `munch` and `chime`.
+- Credits: Meshy 3803 -> 3503 (I used 153 for 16 images; about 147 went elsewhere before my batch started). ElevenLabs: 12 voice lines,
+  about 206 characters (`vo_s_*`, `vo_w_*`). Not made: a painted map island for the garden (it is drawn from the garden sprites instead).

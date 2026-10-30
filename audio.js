@@ -56,6 +56,8 @@ function sfx(name, arg = 0) {
   const n = ac.currentTime + .005;
   switch (name) {
     case 'shot': bell(hz(84 + PENTA[shotN++ % 5]), n, .035, .16); break;                                  // pony-dust twinkle
+    case 'munch': for (let i = 0; i < 3; i++) noise(n + i * .11, .07, .12, 'bandpass', 900 + i * 300, 500); bell(hz(84), n + .36, .05, .3); break;   // crunch crunch crunch, then a happy ding
+    case 'chime': bell(hz(72 + PENTA[Math.min(arg, 10)]), n, .12, .9); bell(hz(84 + PENTA[Math.min(arg, 10)]), n + .02, .03, .5); break;   // a music flower in the garden
     case 'bubble': tone(500, n, .12, .03, 'sine', { slide: 900 }); break;
     case 'ring': { const s = PENTA[Math.min(arg, 10) - 1] || 0; bell(hz(76 + s), n, .11, .5); bell(hz(88 + s), n + .06, .05, .4); break; }
     case 'heart': [0, 4, 7, 12].forEach((s, i) => bell(hz(72 + s), n + i * .07, .07, .7)); tone(hz(48), n, .6, .05, 'triangle', { a: .05, lp: 800 }); break;
@@ -160,12 +162,12 @@ function playNote(kind, m, steps, t0, spb, lead) {
 let song = null, songKey = '', songStep = 0, songTime = 0;
 function music() {
   if (!ac) return;
-  const key = state === 'title' ? 'title' : state === 'ending' ? 'ending' : state === 'over' ? '' : (boss && !clear ? 'b' : '') + ch;
+  const key = state === 'title' ? 'title' : state === 'ending' ? 'ending' : state === 'over' ? '' : state === 'walk' ? 'walk' : (boss && !clear ? 'b' : '') + ch;
   ambienceTick();
   if (streamMusic(key)) { songKey = ''; song = null; return; }   // a generated track is playing
   if (key !== songKey) {
     songKey = key; songStep = 0; songTime = ac.currentTime + .08;
-    song = key === '' ? null : makeSong(key[0] === 'b' ? ch : key === 'title' || key === 'ending' ? key : ch, (key.length * 7 + (ch | 0) * 13 + 3), key[0] === 'b');
+    song = key === '' ? null : makeSong(key[0] === 'b' ? ch : key === 'title' || key === 'ending' ? key : key === 'walk' ? 14 : ch, (key.length * 7 + (ch | 0) * 13 + 3), key[0] === 'b');
   }
   if (!song || muted || (typeof opts !== 'undefined' && !opts.music)) { if (song) songTime = ac.currentTime + .05; return; }
   const spb = 60 / song.bpm / 4;
@@ -217,7 +219,7 @@ function voice(name) {
   if (muted || !voiceEl || (typeof opts !== 'undefined' && !opts.voice)) return;
   try { voiceEl.pause(); voiceEl.src = 'assets/audio/' + name + '.mp3'; setVol(voiceEl, 1); voiceEl.currentTime = 0; const p = voiceEl.play(); if (p) p.catch(() => {}); voiceUntil = Date.now() + 2600; voiceEl.onended = () => { voiceUntil = 0; }; } catch (e) {}
 }
-function musicFileFor(key) { return key === '' ? '' : key === 'title' ? 'music_title' : key === 'ending' ? 'music_ending' : key[0] === 'b' ? 'music_boss' : 'music_ch' + key; }
+function musicFileFor(key) { return key === '' ? '' : key === 'title' ? 'music_title' : key === 'ending' ? 'music_ending' : key === 'walk' ? 'music_ch14' : key[0] === 'b' ? 'music_boss' : 'music_ch' + key; }   // the garden walk borrows the sunny Sunflower Fields song
 function streamMusic(key) {   // returns true while a music file is handling playback
   if (!mEl) return false;
   const file = musicFileFor(key);
@@ -239,7 +241,7 @@ function streamMusic(key) {   // returns true while a music file is handling pla
 // Ambience: one looping soundscape per chapter (STAGES[ch].amb, stages.js) plus a rain layer while it rains.
 function ambienceTick() {
   if (!ambEl || typeof STAGES === 'undefined') return;
-  const S = STAGES[ch], bed = S && (state === 'play' || state === 'chapter' || state === 'results') ? S.amb : '';
+  const S = STAGES[ch], bed = state === 'walk' ? 'amb_breeze' : S && (state === 'play' || state === 'chapter' || state === 'results') ? S.amb : '';
   if (bed !== ambFile) { ambFile = bed; if (bed) { ambEl.src = 'assets/audio/' + bed + '.mp3'; setVol(ambEl, 0); const p = ambEl.play(); if (p) p.catch(() => {}); } }
   const wet = state === 'play' && (wxType === 'rain' || wxType === 'storm') ? Math.min(1, wxI) : 0;
   if (wet > .05 && !muted && wxEl.paused) { if (!/wx_rain/.test(wxEl.src)) wxEl.src = 'assets/audio/wx_rain.mp3'; const p = wxEl.play(); if (p) p.catch(() => {}); }

@@ -17,3 +17,5 @@ Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / right
 - `previews/` screenshots. `tools/` test and art tools (see `NEXT-STEPS.md`).
 
 Tests: `osascript -l JavaScript tools/test.js` (any Mac) or `node tools/test.js`. Before committing: `tools/check.sh` (the toll booth; also runs as a pre-commit hook). Several AI agents share this repo: see `LANES.md`.
+
+**New:** Coral Reef is a gentle sightseeing ride for small players (Mermaid rides along, say hi to five sea friends, no hearts lost), and the adventure now ends with the Castle Garden, a walking stage where the unicorn eats treats, hops on mushrooms, makes friends and walks home through the castle gate.

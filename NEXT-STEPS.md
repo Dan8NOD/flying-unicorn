@@ -51,3 +51,9 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 
 ## Safety
 - No API keys are in this repo and none should be. The Meshy and ElevenLabs keys were pasted into chat sessions several times: rotate them, then update `~/.config/pink-unicorn/keys.env`.
+
+## iOS App Store (2026-11-02, branch `ios/capacitor-wrap`)
+- The Capacitor 8 wrap is in `ios/`, copied from Bible Story Pals. **Nothing has been built yet:** the first `npm install && npm run ios` and archive happen on the MacBook Pro.
+- Fixed for the app: Web Audio routing and the SFX files were switched off on `capacitor://` (iOS). Edge swipes are deferred so dragging near the bottom doesn't go home. 2 Devices and the fullscreen row are hidden in the app.
+- The 1024 icon is the 512 icon upscaled. A sharper one needs the raw Meshy art or a new render (after the Meshy key is rotated).
+- Still needs real devices: play all 27 chapters on an iPad and an iPhone, check frame rate and volume balance, and check that progress survives force-quitting the app.

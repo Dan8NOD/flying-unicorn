@@ -1,0 +1,24 @@
+/* Plain reading pages (privacy, support). The game itself draws everything on the canvas. */
+:root {
+  --ink: #4a1d4f;
+  --cream: #fff5fb;
+  --pink: #e8279a;
+  --line: #ff8fd0;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font: 18px/1.55 "Trebuchet MS", system-ui, sans-serif;
+}
+
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0.4em 0 0.1em; color: var(--pink); }
+h2 { font-size: 1.25rem; margin: 1.4em 0 0.3em; }
+.meta { margin-top: 0; opacity: 0.75; }
+a { color: #8a2be2; }
+dt { font-weight: 700; margin-top: 0.9em; }
+dd { margin: 0.2em 0 0; }
+hr { border: 0; border-top: 2px dashed var(--line); margin: 40px 0; }
+.back { font-weight: 600; }

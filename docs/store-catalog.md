@@ -74,8 +74,9 @@ Art uses the method that worked before (`NEXT-STEPS.md`): Meshy `gpt-image-2`, "
 - **Sandbox:** a sandbox tester account in App Store Connect, and test each purchase plus Restore on a real device. Dan creates the tester password himself.
 - **Paid Apps Agreement:** Active (confirmed 11/1).
 
-## When: recommendation
-**Ship 1.0 free on Sunday 11/8 as planned (PR #1), and bring the store in 1.1.**
+## When: decided by Dan on 2026-11-03
+**1.0 ships free on Sunday 11/8 (PR #1). The store comes in 1.1.**
+The item list, names, prices and art spend are still waiting for Dan.
 - **Why not 1.0:** adding purchases now means a new plugin, App Store Connect products, sandbox testing and a first-time in-app purchase review, all before Thursday. One rejection there would push the whole launch past Sunday.
 - **Rough 1.1 timeline once Dan approves this list:**
   - art: 1–2 days;

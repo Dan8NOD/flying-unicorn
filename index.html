@@ -32,10 +32,10 @@
   const upright = matchMedia('(orientation: portrait) and (pointer: coarse)');
   if (upright.addEventListener) upright.addEventListener('change', e => { if (e.matches && (state === 'play' || state === 'bonus')) paused = true; });
   // Offline cache only when the game is its own page (not inside an itch.io / embed frame).
-  const framed = window.self !== window.top;
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !framed) navigator.serviceWorker.register('sw.js').catch(() => {});
+  const framed = window.self !== window.top, nativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !framed && !nativeApp) navigator.serviceWorker.register('sw.js').catch(() => {});
   // Phones and tablets: go fullscreen on the first tap (hides the address bar). Computers use F or the settings row.
-  if (matchMedia('(pointer: coarse)').matches) addEventListener('pointerdown', () => toggleFullscreen(true), { once: true });
+  if (matchMedia('(pointer: coarse)').matches && !nativeApp) addEventListener('pointerdown', () => toggleFullscreen(true), { once: true });
 </script>
 </body>
 </html>

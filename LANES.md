@@ -27,5 +27,6 @@ log it under **Crossings** below.
 5. Leave a short note in `NEXT-STEPS.md` when you stop, so the next agent can pick up.
 
 ## Crossings
+- Claude added the iOS app (`ios/`, `package.json`, `capacitor.config.json`, `tools/stage-www.mjs`), `privacy.html` / `support.html` and the store listing, copied from Bible Story Pals (platform lane). `net.js` is untouched; 2 Devices is only hidden in the iOS app.
 - Claude added PC/itch.io support (fullscreen, desktop hints, `tools/package-itch.sh`, `ITCH.md`) and iOS home-screen tags in `index.html` / `manifest.json` (platform lane).
 - Claude prepared GitHub Actions CI in `tools/ci-workflow.yml` (node tests, key scan, file-size check); to enable, copy it to `.github/workflows/ci.yml` once the GitHub login has the `workflow` permission (platform lane).

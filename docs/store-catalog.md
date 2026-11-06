@@ -75,13 +75,8 @@ Art uses the method that worked before (`NEXT-STEPS.md`): Meshy `gpt-image-2`, "
 - **Sandbox:** a sandbox tester account in App Store Connect, and test each purchase plus Restore on a real device. Dan creates the tester password himself.
 - **Paid Apps Agreement:** Active (confirmed 11/1).
 
-## When: decided by Dan on 2026-11-03
-**1.0 ships free on Sunday 11/8 (PR #1). The store comes in 1.1.**
-The item list, names, prices and art spend are still waiting for Dan.
-- **Why not 1.0:** adding purchases now means a new plugin, App Store Connect products, sandbox testing and a first-time in-app purchase review, all before Thursday. One rejection there would push the whole launch past Sunday.
-- **Rough 1.1 timeline once Dan approves this list:**
-  - art: 1–2 days;
-  - code and tests: 2–3 days;
-  - sandbox testing and submission: 1 day.
-  - **That's 1.1 in review around Fri 11/13 to Mon 11/16.**
-- **What families get meanwhile:** the free looks in the Sparkle Shop. "New heroes coming soon!" can go in the 1.0 promotional text, which can be changed at any time without a new build.
+## When: decided by Dan on 2026-11-06
+**The store ships in 1.0.** Dan moved the Apple submission back a few days to make room; this replaces the 11/3 decision (free 1.0, store in 1.1). Code is on draft PR #4.
+- Weapons are drawn in code, so the art budget is now only the 4 characters: about 84 credits plus retries, roughly 125.
+- Before submitting: real character art, Dan's Paid Apps agreement, the 9 products in App Store Connect, and a sandbox purchase test on a real device.
+

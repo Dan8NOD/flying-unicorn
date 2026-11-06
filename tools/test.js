@@ -27,6 +27,7 @@ const autoplay = `
       step(1); seen[state] = 1;
       if (state === 'play') { lives = 5; if (boss && !clear && t % 5 === 0) boss.hp -= 3; if (!boss && !clear && t % 7 === 0 && t < CHAPTERS[ch].time * 60 - 5) t += 50; }
       if (state === 'chapter') press();
+      if (state === 'walk') { keys.ArrowRight = true; if (t % 45 === 0) walkJump(); } else keys.ArrowRight = false;   // the Castle Garden: walk to the gate
     }
     step(700); press(); step(5);
     return { ch, state, seen: Object.keys(seen).join(',') };
@@ -176,6 +177,38 @@ const tests = {
     shoes = Array.from({ length: 17 }, () => 7); getShoe({ k: 1, x: 300, y: 200 }); const unlocked = shoeCount() >= 50 && owned.includes('rainbow');
     things = [{ kind: 'friend', x: uni.x, y: uni.y, vx: 0, r: 16 }]; shots = []; step(30); const helper = !!pal && shots.some(s => s.w === 'seek');
     return [dropped, saved, notAgain, unlocked, helper];`, 5],
+  'reef ride: bumps cost no hearts, sea friends say hi, stars steer themselves': [`
+    sel = 0; startCh = 5; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    const ride = ch === 5 && tour();
+    lives = 3; uni.flash = 0; things = [{ kind: 'fish', foe: 1, hp: 2, x: uni.x, y: uni.y, y0: uni.y, ph: 0, vx: 0, r: 26, hit: 0 }]; step(2);
+    const safe = lives === 3 && uni.flash > 0 && things.every(o => o.dead || o.kind !== 'fish');
+    const e = STAGES[5].ev.find(x => x[1] === 'sight'); things = []; t = Math.round(e[0] * 60) + 300; const q = sightPos(e); uni.flash = 0;
+    uni.x = uni.tx = Math.max(MINX, Math.min(MAXX, q.x)); uni.y = uni.ty = q.y; const s0 = stat.sights; step(2); const met = stat.sights === s0 + 1;
+    shots = [{ x: 300, y: 270, vx: 12, vy: 0 }]; things = [{ kind: 'jelly', foe: 1, hp: 2, x: 640, y: 120, y0: 120, ph: 0, vx: 0, r: 22, hit: 0 }]; uni.y = uni.ty = 450; step(8);
+    const homed = shots.length === 0 || shots[0].vy < -1;
+    for (let k = 0; k < 300; k++) { things = []; spawn(); }
+    return [ride, safe, met, homed, !things.some(o => o.kind === 'spike' || o.kind === 'cloud' || o.kind === 'bat')];`, 5],
+  'castle garden: walk, hop, munch, make friends, open the treasure, go home': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    ch = 26; state = 'results'; t = 100; nextChapter(); step(80);
+    const there = state === 'walk' && !!wk;
+    walkJump(); step(3); const hopped = wk.y < GY - 10; step(60);
+    wk.x = 1240; wk.face = 1; step(40); const ate = wk.yum >= 1;
+    wk.x = 1660; step(20); const friend = wk.met >= 1;
+    wk.x = CHEST_X - 40; step(10); const treasure = !!wk.chestOpen;
+    keys.ArrowRight = true; for (let k = 0; k < 600 && state === 'walk'; k++) step(1); keys.ArrowRight = false; step(80);
+    return [there, hopped, ate, friend, treasure, state === 'ending'];`, 6],
+  'stickers: earned once, saved, old saves catch up, book opens and closes': [`
+    const before = stickerCount(); award('nova'); award('nova'); const once = stickerCount() === before + 1 && toasts.length === 1;
+    starsBest = [3]; stickerCheck(); const three = !!(stk.got.first && stk.got.shine);
+    const saved = JSON.parse(localStorage.getItem('pinkUnicornStickers')).got.shine === 1;
+    openStickers(); const open = state === 'stickers'; stickerTap(stickerX(9), stickerY(9)); const hint = stkMsg.startsWith('To earn it'); step(5);
+    stickerTap(W / 2, 480); step(250);
+    return [once, three, saved, open, hint, state === 'title' && toasts.length < 3];`, 6],
+  'daily gift: once a day, more rings each day, the count never resets': [`
+    wallet = 0; gift = { d: '', n: 0 }; const ready = giftReady(); openGift(); const first = wallet === GIFTS[0]; openGift(); const onlyOnce = wallet === GIFTS[0];
+    gift.d = '2000-1-1'; gift.n = 6; openGift();
+    return [ready, first, onlyOnce, wallet === GIFTS[0] + 30 && gift.n === 7 && !giftReady()];`, 4],
   'App Store app (Capacitor): no 2 Devices, no fullscreen row, Rainbow Run still starts': [`
     const noNet = !MENU.some(s => s.startsWith('2 Devices')) && MENU.length === 3, noFull = !SETTING_ROWS.some(r => r[0] === 'full');
     sel = 2; press(); return [noNet, noFull, run === true && mode === 'solo'];`, 3, { Capacitor: { isNativePlatform: () => true } }],

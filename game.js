@@ -23,7 +23,8 @@ function dropArt(n) { const im = loadedArt[n]; if (!im) return; delete loadedArt
 function chapterArt(c) {
   if (c < 0 || c >= NCH) return [];
   const list = ['bg_' + c, 'fg_' + c, 'boss_' + c];
-  if (typeof STAGES !== 'undefined' && STAGES[c]) for (const e of STAGES[c].ev) if (e[1] === 'flyby') list.push(e[2]);
+  if (typeof STAGES !== 'undefined' && STAGES[c]) for (const e of STAGES[c].ev) if (e[1] === 'flyby' || e[1] === 'sight') list.push(e[2]);
+  if (CHAPTERS[c] && CHAPTERS[c].tour) list.push('rider');
   return list;
 }
 let artCh = -1;
@@ -33,7 +34,7 @@ function useChapterArt(c) {
   for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
   for (const n of keep) loadArt(n);
 }
-function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow', 'moonbeam', 'coral', 'ember', 'whiskerwing']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow', 'moonbeam', 'coral', 'ember', 'whiskerwing']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) { loadArt('isle_' + i); loadArt('happy_' + i); } if (typeof WALK_ART !== 'undefined') WALK_ART.forEach(loadArt); }   // tools/screenshots only
 CORE_ART.push('pick_shoe', 'friend_pegasus'); CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
 try { const sk0 = localStorage.getItem('pinkUnicornSkin'); if (sk0) ['up', 'down'].forEach(f => loadArt('skin_' + sk0 + '_' + f)); } catch (e) {}
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
@@ -53,7 +54,7 @@ const CHAPTERS = [
   { name: 'Starry Night', line: "The saucers hide in the dark. Follow the stars.",   sky: ['#3a1c71', '#0f0c29'], time: 40, rate: 41, boss: 'Moon Saucer',   hp: 36, pat: 0, bats: 1, spikes: 0 },
   { name: 'Aurora Peaks', line: "Lights are dancing over the snowy peaks!",   sky: ['#123a5e', '#0b1e3a'], time: 42, rate: 38, boss: 'Aurora Saucer', hp: 42, pat: 1, bats: 1, spikes: 0 },
   { name: 'Rainbow Canyon', line: "Sunset over the canyon... something is humming.", sky: ['#ffb36b', '#8e44ad'], time: 42, rate: 36, boss: 'Sunset Saucer', hp: 48, pat: 2, bats: 1, spikes: 0 },
-  { name: 'Coral Reef', line: "Dive deep — the reef is hiding something shiny.", sky: ['#7fe3d0', '#146b8a'], time: 44, rate: 34, boss: 'Coral Saucer', hp: 54, pat: 0, bats: 0, spikes: 1 },
+  { name: 'Coral Reef', line: "A gentle ride: say hi to the sea friends and keep Mermaid safe.", sky: ['#7fe3d0', '#146b8a'], time: 62, rate: 44, boss: 'Coral Saucer', hp: 30, pat: 0, bats: 0, spikes: 0, tour: 1 },
   { name: 'Crystal Caves', line: "Careful! The crystals are sharp.",  sky: ['#0b3d4a', '#1b1038'], time: 46, rate: 31, boss: 'Gem Saucer',    hp: 60, pat: 1, bats: 1, spikes: 1 },
   { name: 'Storm Fortress', line: "The Storm King's gloomy fortress... but it isn't the end!", sky: ['#4a4e69', '#14141f'], time: 50, rate: 28, boss: 'Storm King',    hp: 78, pat: 2, bats: 1, spikes: 1 },
   { name: 'Enchanted Forest', line: "Fireflies light the way. Watch out for thorns!", sky: ['#1e5b4f', '#0b2a3a'], time: 52, rate: 27, boss: 'Thorn Saucer', hp: 84, pat: 1, bats: 1, spikes: 1, hull: '#3f8f3f', spike: '#3a7d2c' },
@@ -240,12 +241,13 @@ function settingsTap(x, y) {   // rows of the settings panel; returns true if th
 // ---- isometric world map: one floating island per chapter along a rainbow path; drag to scroll, tap to fly there ----
 let mapX = 0, mapDrag = null;
 const isoPos = i => ({ x: 150 + i * 178, y: 270 + Math.sin(i * 1.1) * 70 + (i % 2 ? 16 : -16) });
-const MAP_W = () => isoPos(NCH - 1).x + 150;
+const MAP_W = () => isoPos(NCH).x + 150;   // one extra island at the end: the Castle Garden walk
 function centerMap() { mapX = Math.max(0, Math.min(MAP_W() - W, isoPos(startCh).x - W / 2)); }
-function openMap() { state = 'map'; centerMap(); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); audio(); sfx('click'); }
+function openMap() { state = 'map'; centerMap(); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); ['tree_apple', 'pal_bunny', 'food_cupcake'].forEach(loadArt); audio(); sfx('click'); }
 function mapPlay(i) { if (i > reached) return; startCh = i; if (sel > 1) sel = 0; chooseMode(); }
 function mapTap(x, y) {
   if (y > H - 64 && Math.abs(x - W / 2) < 80) { state = 'title'; sfx('click'); return; }
+  if (walkOpen) { const p = isoPos(NCH); if (Math.hypot(x - (p.x - mapX), y - p.y) < 72) { mode = 'solo'; players = [uni]; run = false; startWalk(); return; } }
   for (let i = 0; i < NCH; i++) {
     const p = isoPos(i);
     if (Math.hypot(x - (p.x - mapX), y - p.y) < 72) {
@@ -271,6 +273,23 @@ function drawMap() {
     g.beginPath(); g.moveTo(a.x, a.y + 30); g.bezierCurveTo(a.x + 80, a.y + 70, b.x - 80, b.y + 70, b.x, b.y + 30); g.stroke();
   }
   if (g.setLineDash) g.setLineDash([]);
+  {   // the Castle Garden island (unlocked by cheering up the Queen)
+    const a = isoPos(NCH - 1), p = isoPos(NCH), bob = Math.sin(t / 30 + NCH) * 5;
+    g.strokeStyle = walkOpen ? RAINBOW[0] : 'rgba(255,255,255,.55)'; g.lineWidth = 7; if (g.setLineDash) g.setLineDash(walkOpen ? [] : [10, 12]);
+    g.beginPath(); g.moveTo(a.x, a.y + 30); g.bezierCurveTo(a.x + 80, a.y + 70, p.x - 80, p.y + 70, p.x, p.y + 30); g.stroke(); if (g.setLineDash) g.setLineDash([]);
+    g.fillStyle = 'rgba(60,20,80,.18)'; g.beginPath(); g.ellipse(p.x, p.y + 78, 58, 12, 0, 0, 7); g.fill();
+    g.globalAlpha = walkOpen ? 1 : .45;
+    {   // a little garden island built from the garden's own sprites
+      const y = p.y + bob; g.fillStyle = '#8f7f8f'; g.beginPath(); g.moveTo(p.x - 62, y + 6); g.lineTo(p.x - 30, y + 58); g.lineTo(p.x + 8, y + 72); g.lineTo(p.x + 40, y + 52); g.lineTo(p.x + 64, y + 6); g.closePath(); g.fill();
+      g.fillStyle = '#a99aa8'; g.beginPath(); g.moveTo(p.x - 62, y + 6); g.lineTo(p.x - 30, y + 58); g.lineTo(p.x + 2, y + 40); g.lineTo(p.x + 64, y + 6); g.closePath(); g.fill();
+      g.fillStyle = '#6cc552'; g.beginPath(); g.ellipse(p.x, y + 4, 68, 30, 0, 0, 7); g.fill(); g.fillStyle = '#9be36e'; g.beginPath(); g.ellipse(p.x, y, 64, 25, 0, 0, 7); g.fill();
+      g.fillStyle = '#5cc8ff'; g.beginPath(); g.ellipse(p.x + 26, y + 6, 18, 7, 0, 0, 7); g.fill();
+      spr('tree_apple', p.x - 22, y - 38, 92); spr('pal_bunny', p.x + 34, y - 10, 30); spr('food_cupcake', p.x - 2, y + 6, 20);
+    }
+    g.globalAlpha = 1;
+    const label = (NCH + 1) + '. Castle Garden'; g.font = 'bold 14px "Trebuchet MS", sans-serif'; const lw = g.measureText(label).width + 24;
+    panel(p.x - lw / 2, p.y + 84, lw, 24, 12, walkOpen ? 'rgba(80,170,90,.85)' : 'rgba(90,70,110,.6)'); g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(label, p.x, p.y + 101);
+  }
   for (let i = 0; i < NCH; i++) {
     const p = isoPos(i); if (p.x - mapX < -160 || p.x - mapX > W + 160) continue;
     const locked = i > reached, bob = Math.sin(t / 30 + i) * 5, on = i === startCh;
@@ -370,6 +389,9 @@ addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
   if (e.key === 'f' && !NATIVE_APP) toggleFullscreen();
+  if ((state === 'stickers' || state === 'shop') && e.key === 'Escape') { gate = null; state = 'title'; return; }
+  if (state === 'title' && !trans && !settingsOpen && mode !== 'guest' && e.key === 'b') openStickers();
+  if (state === 'title' && !trans && !settingsOpen && mode !== 'guest' && e.key === 'g') openGift();
   if (state === 'map') {
     if (e.key === 'ArrowLeft') { startCh = Math.max(0, startCh - 1); centerMap(); }
     if (e.key === 'ArrowRight') { startCh = Math.min(reached, startCh + 1); centerMap(); }
@@ -385,7 +407,8 @@ addEventListener('keydown', e => {
     if (e.key === 'e') { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); }
     if (e.key >= '1' && e.key <= String(MENU.length)) { sel = +e.key - 1; press(); }
   }
-  if (e.key === 'p' || e.key === 'Escape') paused = !paused && state === 'play';
+  if (e.key === 'p' || e.key === 'Escape') paused = !paused && (state === 'play' || state === 'walk');
+  if (state === 'walk' && !paused && (e.key === 'ArrowUp' || e.key === 'w')) { if (!e.repeat) walkJump(); return; }
   if (state === 'play' && !paused && (e.key === 'z' || e.key === 'Enter')) { nova(); return; }
   if (state === 'play' && !paused && (e.key === ' ' || e.key === 'Shift' || e.key === 'x' || e.key === 'q')) {   // dash (local 2P: Q dashes player 2)
     const who = mode === 'local' && e.key === 'q' ? p2 : mode === 'guest' ? null : uni;
@@ -399,11 +422,12 @@ function pointer(e) {
   const r = cv.getBoundingClientRect();
   for (const p of e.touches ? [...e.touches] : [e]) {   // in 2-player games the right half of the screen steers player 2
     const x = (p.clientX - r.left) * W / r.width, y = (p.clientY - r.top) * H / r.height;
+    if (state === 'walk') { walkAim(x); continue; }
     const who = mode === 'guest' || (players.length > 1 && x > W / 2 && mode === 'local') ? p2 : uni;
     who.ty = y; who.tx = mode === 'local' && players.length > 1 ? (who === p2 ? x - W / 2 : x) * 1.4 : x;
   }
 }
-addEventListener('blur', () => { if (state === 'play' || state === 'bonus') paused = true; });
+addEventListener('blur', () => { if (state === 'play' || state === 'bonus' || state === 'walk') paused = true; });
 // iOS only unlocks sound on touchend / click, so try again on those too; resume audio when coming back to the app.
 addEventListener('touchend', () => audio(), { passive: true });
 addEventListener('click', () => audio());
@@ -426,13 +450,17 @@ cv.addEventListener('pointerdown', e => {
     if (y > 452 && y < 484) { if (x < W / 2 - 150) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 150) startCh = Math.min(reached, startCh + 1); else { openMap(); return; } }
     if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
     if (x < 190 && y < 66) { state = 'shop'; audio(); sfx('click'); SKINS.forEach(k => k.id && ['up', 'down'].forEach(f => loadArt('skin_' + k.id + '_' + f))); return; }
+    if (mode !== 'guest' && x < 190 && y < 110) { openStickers(); return; }
+    if (mode !== 'guest' && x < 190 && y < 154 && giftReady()) { openGift(); return; }
     if (y > 452 && y < 484) return;
     MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 276 + i * 44 && y < 314 + i * 44) sel = i; }); }
   if (state === 'shop') { shopTap(x, y); return; }
+  if (state === 'stickers') { stickerTap(x, y); return; }
   if (state === 'map') { mapDrag = { x, mx: mapX, moved: false }; return; }
   if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
   if (state === 'over' && Math.abs(x - W / 2) < 80 && y > H - 74 && y < H - 22) { toTitle(); return; }   // Menu button
-  if (state === 'bonus' && Math.hypot(x - (W - 40), y - (H - 34)) < 24) { paused = !paused; return; }
+  if ((state === 'bonus' || state === 'walk') && Math.hypot(x - (W - 40), y - (H - 34)) < 24) { paused = !paused; return; }
+  if (state === 'walk' && paused && settingsTap(x, y)) return;
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { toggleMute(); return; }
@@ -447,6 +475,7 @@ function press() {
   if (paused) { paused = false; return; }
   if (state === 'title') chooseMode();
   else if (state === 'over' && t > 40) { if (run) { runSeg = 0; start(runPick(0), true); } else start(ch, true); }   // try again right away
+  else if (state === 'walk') walkJump();
   else if (state === 'chapter') { state = 'play'; bark(Math.random() < .5 ? 'vo_u_go' : 'vo_m_go', .6); }
   else if (state === 'results' && t > 60) nextChapter();
   else if (state === 'ending' && ending > 240) toTitle();
@@ -542,7 +571,7 @@ function start(c, fresh) {
   useChapterArt(c);   // start loading while the rainbow curtain plays
   go(() => {
     if (c > reached) { reached = c; saveOpt('pinkUnicornReached', c); }
-    ch = c; t = 0; pops = []; pal = null; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
+    ch = c; t = 0; pops = []; pal = null; stageReset(); Object.assign(stat, { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0, sights: 0 }); things = []; shots = []; bolts = []; boss = null; clear = 0;
     players = mode === 'solo' ? [uni] : [uni, p2];
     for (const p of [uni, p2]) { p.flash = p.shield = p.rapid = p.triple = p.magnet = p.weaponT = p.stompInv = p.squash = 0; p.weapon = ''; p.x = p.tx = p.i ? 110 : 150; p.y = p.ty = H / 2 + (p.i ? 60 : -30); p.vx = p.vy = p.tilt = p.dash = p.dashCd = 0; }
     if (c === 0 || fresh) { score = 0; meter = 0; lives = (mode === 'solo' ? 3 : 5) + (easy ? 2 : 0); }
@@ -555,8 +584,9 @@ function toTitle() { go(() => { state = 'title'; ending = 0; t = 0; run = false;
 function saveBest() { if (score > best) { best = score; try { localStorage.setItem('pinkUnicornBest', best); } catch (e) {} } }
 function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0 || p.dash > 0 || p.stompInv > 0) return;
+  if (tour() && state === 'play') { bump(p); return; }   // reef ride: bumps never cost a heart (stages.js)
   lives--; stat.hits++; combo = 0; p.flash = 90; buzz(70); shake = 12; sfx('hurt'); if (lives === 1) voice('vo_u_low'); else bark(lives % 2 ? 'vo_u_hurt' : 'vo_m_look', .8);
-  if (lives <= 0) { state = 'over'; t = 0; saveBest(); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
+  if (lives <= 0) { state = 'over'; t = 0; saveBest(); if (run && score >= 5000) award('run'); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
@@ -607,7 +637,9 @@ function moveFoe(o) {
 }
 // Difficulty rises quickly over the first chapters, then levels off (0 at chapter 1, about 0.96 at chapter 27).
 const hard = () => 1 - Math.exp(-ch / 8);
+const tour = () => !run && !!CHAPTERS[ch].tour;   // gentle sightseeing ride (Coral Reef): see stages.js
 function spawn() {
+  if (tour()) { tourSpawn(); return; }
   const c = CHAPTERS[ch], r = Math.random(), y = 40 + Math.random() * (H - 80), vx = -(3 + 5.5 * hard() + Math.random() * 2) * (easy ? .85 : 1);
   let kind = r < .45 ? 'ring' : r < .58 ? 'heart' : r < .63 ? 'star' : r < .68 ? POW[Math.random() * 4 | 0] : r < .73 ? 'w_' + Object.keys(WEAPONS)[Math.random() * 4 | 0] : 'cloud';
   if (kind === 'cloud' && c.bats && Math.random() < .4) kind = 'bat';
@@ -630,10 +662,10 @@ const TAUNTS = ["Hmph! Too many rainbows around here!", "Snip snap! This sea is 
 let bossIntro = 0;
 const bossPhase = () => boss.hp / boss.max > .5 ? 0 : boss.hp / boss.max > .25 ? 1 : 2;
 function bossFire() {
-  const ph = bossPhase(), sp = (4.5 + 3.8 * hard()) * (easy ? .8 : 1) * (1 + ph * .12), tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
-  const rate = Math.round(Math.max(40, 80 - ch * 8) * (1 - ph * .2));
+  const ph = bossPhase(), sp = (4.5 + 3.8 * hard()) * (easy ? .8 : 1) * (1 + ph * .12) * (tour() ? .55 : 1), tg = nearest(boss), a = Math.atan2(tg.y - boss.y, tg.x - boss.x);
+  const rate = Math.round(Math.max(40, 80 - ch * 8) * (1 - ph * .2) * (tour() ? 1.8 : 1));
   if (t % rate) return;
-  const p = (CHAPTERS[ch].pat + (ph > 0 && (t / rate | 0) % 2 ? ph : 0)) % 3;   // alternate with a new pattern once angry
+  const p = tour() ? 0 : (CHAPTERS[ch].pat + (ph > 0 && (t / rate | 0) % 2 ? ph : 0)) % 3;   // alternate with a new pattern once angry
   if (p === 0) bolts.push({ x: boss.x - 40, y: boss.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
   else if (p === 1) for (const d of ph === 2 ? [-.5, -.25, 0, .25, .5] : [-.35, 0, .35]) bolts.push({ x: boss.x - 40, y: boss.y, vx: Math.cos(a + d) * sp, vy: Math.sin(a + d) * sp });
   else { const n = 8 + ph * 2; for (let i = 0; i < n; i++) { const b = i / n * 6.283 + t / 30; bolts.push({ x: boss.x, y: boss.y, vx: Math.cos(b) * sp * .8, vy: Math.sin(b) * sp * .8 }); } }
@@ -744,6 +776,7 @@ function chainZap(from) {   // Thunder Horn: jumps to the 3 nearest foes
   });
 }
 function moveShot(s) {
+  if ((!s.w || s.w === 'yarn' || s.w === 'bub' || s.w === 'flame' || s.w === 'flake' || s.w === 'zap') && tour()) homeShot(s);   // reef ride: stars, bubbles and bought shots find the grumpy fish by themselves
   if (s.w === 'note') s.vy = Math.sin(s.x / 38 + (s.ph || 0)) * 5;
   else if (s.w === 'flame') { if (++s.age > 26) s.dead = true; }
   else if (s.w === 'trail') { if (++s.age > 70) s.dead = true; }
@@ -786,6 +819,85 @@ function getShoe(o) {
   score += 100; sfx('shoe'); boom(o.x, o.y, '#ffd84a', 24); pop(o.x, o.y - 30, 'Golden horseshoe!', '#ffe45c');
   if (shoeBits(shoes[ch]) === 3) voice('vo_u_shoe3'); else bark('vo_u_shoe', 1);
   if (shoeCount() >= 50 && !owned.includes('rainbow')) { owned.push('rainbow'); saveShop(); setTimeout(() => voice('vo_u_rainbow'), 1600); pop(W / 2, 160, 'Rainbow look unlocked in the shop!', '#fff36b'); }
+  stickerCheck();
+}
+// ---- Sticker Book and Daily Gift: 16 stickers to earn, and a present every day you play (the day count never resets) ----
+const STICKERS = [
+  ['first', 'First Flight', 'Finish any chapter', 'uni_up'], ['shine', 'Three Stars', 'Get 3 stars in a chapter', 'pick_star'],
+  ['stars10', 'Star Collector', 'Get 3 stars in 10 chapters', 'fx_comet'], ['pals', 'Cheer Squad', 'Cheer up 10 bosses', 'happy_0'],
+  ['rings', 'Ring Master', 'Collect 1000 rings', 'pick_ring'], ['stomp', 'Bouncy Hooves', 'Stomp 25 enemies', 'foe_pig'],
+  ['nova', 'Rainbow Blast', 'Set off a Rainbow Nova', 'fx_phoenix'], ['shoe', 'Lucky Shoes', 'Find all 3 horseshoes in a chapter', 'pick_shoe'],
+  ['friend', 'New Friend', 'Meet the Little Pegasus', 'friend_pegasus'], ['rainbow', 'Rainbow Look', 'Find 50 golden horseshoes', 'skin_rainbow_up'],
+  ['sea', 'Sea Friends', 'Say hi to all the Coral Reef friends', 'fx_turtle'], ['island', 'Island Sweep', 'Grab every gem in a Sky Island', 'fx_airship'],
+  ['run', 'Rainbow Runner', 'Score 5000 in Rainbow Run', 'fx_dragon'], ['team', 'Better Together', 'Finish a chapter with 2 players', 'mermaid'],
+  ['chest', 'Treasure!', 'Open the Castle Garden treasure', 'fx_fairy'], ['end', 'Happily Ever After', 'See the ending', 'happy_9'],
+];
+let stk = { got: {}, rings: 0, stomps: 0 }, gift = { d: '', n: 0 }, toasts = [], stkMsg = '';
+try { Object.assign(stk, JSON.parse(localStorage.getItem('pinkUnicornStickers') || '{}')); Object.assign(gift, JSON.parse(localStorage.getItem('pinkUnicornGift') || '{}')); } catch (e) {}
+const saveStk = () => saveOpt('pinkUnicornStickers', JSON.stringify(stk));
+const stickerCount = () => STICKERS.filter(s => stk.got[s[0]]).length;
+function toast(art, title, sub) { loadArt(art); if (toasts.length < 4) toasts.push({ art, title, sub, l: 200 }); }
+function award(id, quiet) {
+  if (stk.got[id]) return;
+  stk.got[id] = 1; saveStk(); if (quiet) return;
+  const s = STICKERS.find(k => k[0] === id); toast(s[3], 'New sticker!', s[1]); sfx('chime', 7); bark('vo_u_sticker', 1);
+}
+function stickerCheck(quiet) {   // the stickers that can be worked out from saved progress (so old saves get theirs too)
+  const three = starsBest.filter(n => n >= 3).length, cheered = starsBest.filter(n => n > 0).length;
+  if (cheered) award('first', quiet); if (three) award('shine', quiet); if (three >= 10) award('stars10', quiet); if (cheered >= 10) award('pals', quiet);
+  if (stk.rings >= 1000) award('rings', quiet); if (stk.stomps >= 25) award('stomp', quiet);
+  if (shoes.some(m => shoeBits(m || 0) === 3)) award('shoe', quiet); if (owned.includes('rainbow')) award('rainbow', quiet);
+}
+stickerCheck(true);
+const GIFTS = [5, 5, 10, 10, 15, 15, 30];
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+const giftReady = () => gift.d !== today();
+function openGift() {
+  if (!giftReady()) return;
+  const n = GIFTS[gift.n % GIFTS.length]; gift.n++; gift.d = today(); wallet += n; saveShop(); saveOpt('pinkUnicornGift', JSON.stringify(gift));
+  toast('pick_ring', `Day ${gift.n} gift!`, `+${n} rings`); audio(); sfx('golden'); bark('vo_u_gift', 1); buzz([20, 40, 20]);
+}
+function openStickers() { state = 'stickers'; stkMsg = ''; audio(); sfx('click'); STICKERS.forEach(s => loadArt(s[3])); }
+const stickerX = i => W / 2 + (i % 8 - 3.5) * 114, stickerY = i => 170 + (i >> 3) * 166;
+function stickerArt(n, x, y, box) { const im = IMG[n]; if (!im) return false; return spr(n, x, y, box * Math.min(1, im.height / im.width)); }
+function stickerTap(x, y) {
+  if (y > 456) { state = 'title'; sfx('click'); return; }   // back
+  STICKERS.forEach((s, i) => { if (Math.abs(x - stickerX(i)) < 56 && Math.abs(y - stickerY(i)) < 80) { stkMsg = (stk.got[s[0]] ? s[1] + ': ' : 'To earn it: ') + s[2]; sfx('click'); } });
+}
+function drawStickers() {
+  g.fillStyle = 'rgba(42,15,61,.5)'; g.fillRect(0, 0, W, H);
+  fancyText('Sticker Book', W / 2, 62, 44);
+  txt(`${stickerCount()} of ${STICKERS.length}`, W / 2, 86, 16, '#fff36b');
+  STICKERS.forEach((s, i) => {
+    const has = stk.got[s[0]], x = stickerX(i), y = stickerY(i);
+    panel(x - 54, y - 78, 108, 156, 18, has ? 'rgba(255,245,252,.95)' : 'rgba(122,26,99,.4)', has ? '#ffd84a' : 'rgba(255,255,255,.35)');
+    g.save(); g.translate(x, y - 22); g.rotate(has ? ((i * 37) % 9 - 4) * .018 : 0);
+    g.fillStyle = 'rgba(122,26,99,.22)'; g.beginPath(); g.arc(1, 3, 44, 0, 7); g.fill();
+    g.fillStyle = has ? '#fff' : 'rgba(255,255,255,.14)'; g.beginPath(); g.arc(0, 0, 43, 0, 7); g.fill();
+    if (has) { if (!stickerArt(s[3], 0, 0, 70)) star(0, 0, 24, 0, '#ffd84a'); } else txt('?', 0, 13, 38, 'rgba(255,255,255,.7)');
+    g.restore();
+    g.font = 'bold 13px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = has ? '#7a1a63' : 'rgba(255,255,255,.85)';
+    const words = s[1].split(' '), mid = Math.ceil(words.length / 2);
+    if (words.length > 1 && s[1].length > 13) { g.fillText(words.slice(0, mid).join(' '), x, y + 44); g.fillText(words.slice(mid).join(' '), x, y + 60); } else g.fillText(s[1], x, y + 50);
+  });
+  panel(W / 2 - 250, 422, 500, 30, 15, 'rgba(122,26,99,.6)'); txt(stkMsg || 'Tap a sticker to see how to earn it', W / 2, 441, 16, '#fff');
+  panel(W / 2 - 70, 462, 140, 38, 19, lg(0, 462, 0, 500, '#ff8fd0', '#e8279a'), '#fff'); txt('Back', W / 2, 488, 18, '#fff');
+}
+function drawGiftBox(x, y) {
+  g.save(); g.translate(x, y); g.rotate(Math.sin(t / 7) * .14);
+  g.fillStyle = '#e8279a'; rr(-11, -6, 22, 17, 3); g.fill(); g.fillStyle = '#ff8fd0'; rr(-13, -11, 26, 7, 2); g.fill();
+  g.fillStyle = '#ffd84a'; g.fillRect(-2.5, -11, 5, 22); g.beginPath(); g.ellipse(-5, -14, 5, 3, .5, 0, 7); g.ellipse(5, -14, 5, 3, -.5, 0, 7); g.fill();
+  g.restore();
+}
+function drawToasts() {
+  const q = toasts[0]; if (!q) return;
+  const k = Math.min(1, Math.min(200 - q.l, q.l) / 16), y = 62 - (1 - k) * 110;
+  g.save(); g.globalAlpha = k;
+  panel(W / 2 - 170, y, 340, 68, 34, lg(0, y, 0, y + 68, '#ff5fb8', '#7d4fe0'), '#ffd84a');
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(W / 2 - 136, y + 34, 28, 0, 7); g.fill();
+  if (!stickerArt(q.art, W / 2 - 136, y + 34, 48)) star(W / 2 - 136, y + 34, 18, 0, '#ffd84a');
+  txt(q.title, W / 2 + 22, y + 27, 15, '#fff36b'); txt(q.sub, W / 2 + 22, y + 53, 22, '#fff');
+  g.restore();
 }
 // ---- Little Pegasus: a rare pickup; a baby pegasus flies with you for 12 seconds and shoots sparkles ----
 let pal = null;
@@ -793,7 +905,7 @@ function addMeter(n) { if (meter >= 100) return; meter = Math.min(100, meter + n
 function nova() {
   if (meter < 100 || state !== 'play' || paused || clear) return;
   if (mode === 'guest') { net.sendR('{"p":4}'); return; }
-  novaT = 60; shake = 26; sfx('nova'); voice('vo_u_nova'); buzz([30, 30, 120]);
+  award('nova'); novaT = 60; shake = 26; sfx('nova'); voice('vo_u_nova'); buzz([30, 30, 120]);
   setTimeout(() => bark('vo_m_nova', 1), 1700);
   for (const o of things) if (o.foe && !o.dead) hurtFoe(o, o.golden ? 6 : 99);
   for (const o of things) if (o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'rock') { o.dead = true; boom(o.x, o.y, '#fff', 10); }
@@ -806,7 +918,7 @@ function bark(name, chance = .5) { if (typeof voiceUntil !== 'undefined' && Date
 function stomp(p, o) {
   hurtFoe(o, o.golden ? 3 : 99);
   p.stompChain = t - (p.stompT || -999) < 100 ? (p.stompChain || 1) + 1 : 1; p.stompT = t; p.stompInv = 18; p.squash = 12;
-  p.vy = -10; p.ty = p.y - 130;
+  p.vy = -10; p.ty = p.y - 130; stk.stomps++; saveStk(); stickerCheck();
   score += 20 * p.stompChain; pop(p.x, p.y - 70, p.stompChain > 1 ? 'Stomp x' + p.stompChain + '!' : 'Stomp!', '#fff36b');
   sfx('boing', p.stompChain); boom(p.x, p.y + 30, '#fff', 12); buzz(20); addMeter(8); bark('vo_u_stomp' + (1 + (p.stompChain - 1) % 3), .45);
 }
@@ -817,11 +929,12 @@ function update() {
   if (warn > 0) warn--;
   if (novaT > 0) novaT--;
   stepPlayers();
-  mer.x += (Math.max(40, uni.x - 90) - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08;
+  if (tour()) { mer.x = uni.x - 8; mer.y = uni.y - 50; }   // reef ride: Mermaid sits on the unicorn's back
+  else { mer.x += (Math.max(40, uni.x - 90) - mer.x) * .1; mer.y += (uni.y + 30 - mer.y) * .08; }
 
   // auto-fire: pony-dust stars (or a picked-up weapon) from the horn; a playable mermaid blows bubbles
   for (const p of players) fire(p);
-  if (players.length === 1 && boss && ++mer.cd % 40 === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, vy: 0, m: 1 });
+  if (players.length === 1 && (boss || tour()) && ++mer.cd % (tour() ? 50 : 40) === 0) shots.push({ x: mer.x + 20, y: mer.y, vx: 10, vy: 0, m: 1 });
 
   if (!boss && !clear && t > segTime() * 60 && run && runSeg % 3 !== 2) nextRun();
   else if (!boss && !clear && t > segTime() * 60) {
@@ -846,8 +959,8 @@ function update() {
   for (const o of things) {
     o.x += o.vx;
     if (o.vy) { o.y += o.vy; if (o.y > H + 60) { o.dead = true; continue; } }
-    if (o.foe) { moveFoe(o); if (o.hit > 0) o.hit--;
-      for (const p of players) if (!o.dead && hit(o, p, o.r + 20)) { if (p.vy > 1.2 && p.y < o.y - o.r * .25) stomp(p, o); else hurt(p); }
+    if (o.foe) { if (tour()) tourFoe(o); moveFoe(o); if (o.hit > 0) o.hit--;
+      for (const p of players) if (!o.dead && hit(o, p, o.r + 20)) { if (p.vy > 1.2 && p.y < o.y - o.r * .25) stomp(p, o); else { hurt(p); if (tour()) { o.dead = true; boom(o.x, o.y, '#bfefff', 12); } } }
       if (o.x < -60) o.dead = true; continue; }
     if (o.kind === 'bat') o.y = o.y0 + Math.sin(t / 15 + o.ph) * 70;
     const mg = players.find(p => p.magnet > 0 && Math.hypot(o.x - p.x, o.y - p.y) < 260);
@@ -860,13 +973,13 @@ function update() {
       else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); bark('vo_u_heart', .7); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'shoe') getShoe(o);
-      else if (o.kind === 'friend') { pal = { t: 720, x: pp.x, y: pp.y - 60 }; sfx('friend'); voice('vo_u_friend'); setTimeout(() => bark('vo_m_friend', 1), 2200); boom(o.x, o.y, '#bfe6ff', 20); }
+      else if (o.kind === 'friend') { award('friend'); pal = { t: 720, x: pp.x, y: pp.y - 60 }; sfx('friend'); voice('vo_u_friend'); setTimeout(() => bark('vo_m_friend', 1), 2200); boom(o.x, o.y, '#bfe6ff', 20); }
       else if (o.kind.startsWith('w_')) { pp.weapon = o.kind.slice(2); pp.weaponT = 600; sfx('power'); bark(pp === uni ? 'vo_u_' + pp.weapon : 'vo_m_bubble', 1); pop(o.x, o.y - 30, WEAPONS[pp.weapon] + '!', '#fff36b'); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
     }
     if (o.x < -60) { o.dead = true; if (o.kind === 'ring') combo = 0; }
-    if (o.dead && o.kind === 'ring' && pp) { stat.rings++; if (mode !== 'guest') { wallet++; if (wallet % 10 === 0) saveShop(); } }
+    if (o.dead && o.kind === 'ring' && pp) { stat.rings++; if (mode !== 'guest') { wallet++; stk.rings++; if (wallet % 10 === 0) { saveShop(); saveStk(); stickerCheck(); } } }
   }
   things = things.filter(o => !o.dead);
 
@@ -912,6 +1025,7 @@ function update() {
 function showResults() {
   stat.stars = 1 + (stat.hits <= 1 ? 1 : 0) + (stat.rings >= Math.max(1, stat.ringsAll) * .7 ? 1 : 0);
   if (stat.stars > (starsBest[ch] || 0)) { starsBest[ch] = stat.stars; saveOpt('pinkUnicornStars', JSON.stringify(starsBest)); }
+  if (players.length > 1) award('team'); stickerCheck();
   state = 'results'; t = 0;
 }
 // ---- isometric bonus round after every third chapter: fly over the chapter's island diorama and grab the gems ----
@@ -938,7 +1052,7 @@ function bonusUpdate() {
   }
   things = things.filter(o => !o.dead);
   if (!bonusEnd && (t >= 20 * 60 || !things.length)) {
-    bonusEnd = t; if (!things.length) { score += 500; pop(W / 2, 200, 'Perfect! +500', '#ffe45c'); sfx('win'); voice('vo_ev_wow'); } saveShop();
+    bonusEnd = t; if (!things.length) { award('island'); score += 500; pop(W / 2, 200, 'Perfect! +500', '#ffe45c'); sfx('win'); voice('vo_ev_wow'); } saveShop();
   }
   if (bonusEnd && t - bonusEnd > 100) nextChapter();
 }
@@ -969,9 +1083,9 @@ function drawBonus() {
 }
 function nextChapter() {
   if (!run && (ch + 1) % 3 === 0 && bonusDone !== ch && ch < NCH - 1 && state === 'results') { startBonus(); return; }
-  ch + 1 >= CHAPTERS.length ? startEnding() : start(ch + 1);
+  ch + 1 >= CHAPTERS.length ? (run ? startEnding() : startWalk()) : start(ch + 1);   // the Castle Garden walk (stages.js) leads into the ending
 }
-function startEnding() { go(() => { state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
+function startEnding() { award('end'); go(() => { for (let i = 0; i < NCH; i++) loadArt('happy_' + i); state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
 
 // ---- drawing ----
 function star(x, y, r, rot, col) {
@@ -1255,7 +1369,7 @@ function bgFx(i) {   // light particles over the painted backgrounds
   if (i === 13 && t % 70 === 0) boom(150 + (t * 37) % (W - 300), 60 + (t * 13) % 140, RAINBOW[(t / 70 | 0) % 6], 24);   // carnival fireworks
   if (i === 12) { g.fillStyle = 'rgba(255,255,255,.55)'; for (let k = 0; k < 30; k++) { g.beginPath(); g.arc(sx(k, 1.4, 34), H - ((k * 71 + t * (2 + k % 3)) % 260), 1.5 + k % 3, 0, 7); g.fill(); } }   // waterfall spray
   if (i === 3 || i === 21) { g.fillStyle = '#fff'; g.globalAlpha = .75; for (let k = 0; k < 40; k++) { g.beginPath(); g.arc(sx(k, 1.2, 24) + Math.sin(t / 30 + k) * 10, (k * 61 + t * (1 + k % 3 * .4)) % H, 1.5 + k % 3, 0, 7); g.fill(); } g.globalAlpha = 1; }
-  if (i === 1 || i === 5) for (let k = 0; k < 14; k++) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(sx(k, .6, 70) + Math.sin(t / 20 + k) * 6, ((k * 83 - t * (1 + k % 3)) % H + H) % H, 3 + k % 4 * 2, 0, 7); g.stroke(); }
+  if (i === 1 || i === 5) for (let k = 0; k < 14; k++) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(sx(k, .6, 70) + Math.sin(t / 20 + k) * 6, ((k * 83 - t * (1 + k % 3)) % H + H) % H, i === 5 ? 1.5 + k % 3 * .8 : 3 + k % 4 * 2, 0, 7); g.stroke(); }   // reef bubbles stay tiny so they never look like rings
   if (i === 6 || i === 8 || i === 10 || i === 24) fireflies(22, i === 6 ? '#b8fff2' : '#fff7a0');
   if (i === 7) { g.strokeStyle = 'rgba(180,190,230,.35)'; g.lineWidth = 1.5; g.beginPath(); for (let k = 0; k < 60; k++) { const x = (k * 53 + t * 9) % (W + 100) - 50, y = (k * 97 + t * 14) % (H + 40) - 20; g.moveTo(x, y); g.lineTo(x - 6, y + 16); } g.stroke(); if (t % 240 < 8) { g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(0, 0, W, H); } }
   if (i === 9 || i === 22) { const cols = ['#ff5fa8', '#ffb347', '#7ee8e0', '#b48cff']; for (let k = 0; k < 30; k++) { g.fillStyle = cols[k % 4]; g.fillRect(sx(k, .5, 32), (k * 47 + t * (1 + k % 3)) % H, 7, 3); } }
@@ -1785,7 +1899,7 @@ function resultsCard() {
     g.restore();
   }
   g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63';
-  const lines = [`Rings  ${stat.rings} / ${stat.ringsAll}   ·   Horseshoes  ${shoeBits(shoes[ch] || 0)} / 3`, `Enemies cheered up  ${stat.foes}`, stat.hits ? `Hits taken  ${stat.hits}` : 'No hits. Perfect flying!', `Score  ${score}`];
+  const lines = [`Rings  ${stat.rings} / ${stat.ringsAll}   ·   Horseshoes  ${shoeBits(shoes[ch] || 0)} / 3`, CHAPTERS[ch].tour ? `Sea friends met  ${stat.sights} / ${sightCount()}   ·   Grumpy fish cheered up  ${stat.foes}` : `Enemies cheered up  ${stat.foes}`, stat.hits ? `Hits taken  ${stat.hits}` : 'No hits. Perfect flying!', `Score  ${score}`];
   lines.forEach((l, i) => g.fillText(l, W / 2, y + 222 + i * 30));
   if (t > 60 && t % 50 < 36) { g.fillStyle = '#e8279a'; g.fillText('Tap to continue', W / 2, y + 356); }
   g.globalAlpha = 1;
@@ -1805,7 +1919,7 @@ function chapterCard() {
   if (t > 100 && t % 50 < 36) { panel(W / 2 - 90, H - 62, 180, 40, 20, lg(0, H - 62, 0, H - 22, '#ff8fd0', '#e8279a'), '#fff'); txt('Tap to fly!', W / 2, H - 34, 20, '#fff'); }
 }
 function happySaucer(x, y, hull, s, n = 0) {   // a cheered-up boss waving goodbye
-  const hs = ['happy_0', 'happy_1', 'happy_9'][n % 3];
+  const hs = IMG['happy_' + n] ? 'happy_' + n : ['happy_0', 'happy_1', 'happy_9'][n % 3];   // each boss has its own cheered-up portrait
   if (IMG[hs]) { g.save(); g.translate(x, y); g.rotate(Math.sin(t / 12 + x) * .08); spr(hs, 0, 0, 150 * s); g.restore(); return; }
   g.save(); g.translate(x, y); g.scale(s, s); g.rotate(Math.sin(t / 12 + x) * .08);
   g.fillStyle = 'rgba(190,240,255,.6)'; g.beginPath(); g.ellipse(0, -6, 30, 26, 0, Math.PI, 0); g.fill();
@@ -1847,7 +1961,7 @@ function drawEnding() {
 }
 function endingActors(e) {
   // cheered-up saucers float away waving
-  if (e > 60 && e < 560) for (let i = 0; i < 6; i++) { const x = W + 120 - (e - 60 - i * 40) * 2.6, y = 120 + (i * 53) % 180 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55, i); }
+  if (e > 60) for (let i = 0; i < NCH; i++) { const x = W + 120 - (e - 60 - i * 22) * 2.6, y = 100 + (i * 53) % 200 + Math.sin(e / 20 + i) * 10; if (x > -120 && x < W + 120) happySaucer(x, y, HULLS[(i * 3) % 8], .55, i); }   // the whole boss parade, one per chapter
   // the friends
   const fx = e < 380 ? Math.min(e * 2.5 - 100, 300) : 300 + (e - 380) * .5, hy = H / 2 + 20 + Math.sin(e / 20) * 12;
   if (fx < W - 120) { drawMermaid(fx - 120, hy + 30); drawUnicorn(fx, hy); }
@@ -1962,10 +2076,12 @@ function draw() {
   g.save();
   if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   if (state === 'ending') drawEnding();
+  else if (state === 'walk') drawWalk();
   else {
-    drawBg(state === 'title' || state === 'shop' || state === 'map' ? 0 : ch);
+    drawBg(state === 'title' || state === 'shop' || state === 'stickers' || state === 'map' ? 0 : ch);
     if (state === 'bonus') drawBonus();
     else if (state === 'shop') drawShop();
+    else if (state === 'stickers') drawStickers();
     else if (state === 'map') drawMap();
     else if (state === 'title') {
       drawMermaid(W / 2 - 150, 228 + Math.sin(t / 18 + 1) * 8);
@@ -1988,10 +2104,14 @@ function draw() {
         g.font = 'bold 19px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.fillText('Shop', 34, 47);
         g.strokeStyle = '#ffd84a'; g.lineWidth = 4; g.beginPath(); g.arc(102, 40, 8, 0, 7); g.stroke(); g.fillText(wallet, 116, 47);
         g.textAlign = 'right'; g.fillText((bestRun ? 'Best run ' + bestRun + '   ·   ' : '') + 'Horseshoes ' + shoeCount() + '/' + NCH * 3, W - 72, 46);
+        if (mode !== 'guest') {
+          panel(16, 68, 168, 36, 18, lg(0, 68, 0, 104, '#c4a2ff', '#7d4fe0'), '#fff'); star(38, 86, 11, t / 40, '#ffd84a'); txt(`Stickers ${stickerCount()}/${STICKERS.length}`, 110, 92, 16, '#fff');
+          if (giftReady()) { panel(16, 110, 168, 36, 18, lg(0, 110, 0, 146, '#ffe27a', '#ffb300'), '#fff'); drawGiftBox(38, 129); txt('Daily gift!', 110, 134, 17, '#fff'); }
+        }
       }
     } else {
       stageBack();
-      if (state === 'play') { for (const o of things) if (o.foe) groundShadow(o.x, o.y, FOE_H[o.kind] * .45); if (boss) groundShadow(boss.x, boss.y, 90); for (const p of players) groundShadow(p.x, p.y, 48); if (players.length === 1) groundShadow(mer.x, mer.y, 36); }
+      if (state === 'play') { for (const o of things) if (o.foe) groundShadow(o.x, o.y, FOE_H[o.kind] * .45); if (boss) groundShadow(boss.x, boss.y, 90); for (const p of players) groundShadow(p.x, p.y, 48); if (players.length === 1 && !tour()) groundShadow(mer.x, mer.y, 36); }
       if (state === 'play') polishBack();
       for (const o of things) drawThing(o);
       if (boss) drawBoss(boss);
@@ -2007,10 +2127,10 @@ function draw() {
       }
       for (const p of players) if (p.weapon === 'beam' && state === 'play') drawBeam(p);
       if (pal) { g.save(); g.translate(pal.x, pal.y); g.rotate(Math.sin(t / 15) * .1); if (!spr('friend_pegasus', 0, 0, 62)) { g.scale(.5, .5); drawUnicorn(0, 0); } g.restore(); if (pal.t < 120 && t % 10 < 5) sparkle(pal.x, pal.y - 30, 6, .9); }
-      if (players.length === 1 && state !== 'chapter') drawMermaid(mer.x, mer.y);
+      if (players.length === 1 && state !== 'chapter' && !tour()) drawMermaid(mer.x, mer.y);
       for (const p of state === 'chapter' ? [] : players) {
         if (p.flash > 0 && t % 8 < 4) continue;
-        const one = (ox, a) => { g.save(); g.globalAlpha = a; g.translate(p.x + ox * p.vx, p.y + ox * p.vy); g.rotate(p.tilt || 0); const sq = p.squash > 0 ? Math.sin(p.squash / 12 * Math.PI) * .22 : 0; g.scale(1.15 * (1 + sq), 1.15 * (1 - sq)); p === uni ? drawUnicorn(0, 0, p.shield > 0, p.fp) : drawMermaid(0, 0, p.shield > 0); g.restore(); g.globalAlpha = 1; };
+        const one = (ox, a) => { g.save(); g.globalAlpha = a; g.translate(p.x + ox * p.vx, p.y + ox * p.vy); g.rotate(p.tilt || 0); const sq = p.squash > 0 ? Math.sin(p.squash / 12 * Math.PI) * .22 : 0; g.scale(1.15 * (1 + sq), 1.15 * (1 - sq)); p === uni ? drawUnicorn(0, 0, p.shield > 0, p.fp) : drawMermaid(0, 0, p.shield > 0); if (p === uni && players.length === 1 && tour()) drawRider(); g.restore(); g.globalAlpha = 1; };
         if (p.dash > 0) { one(-4, .2); one(-2, .35); }   // dash after-images
         if (p.hornFx > 0 && p === uni) { const [hx, hy] = muzzle(p); g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = `rgba(255,240,200,${p.hornFx / 10})`; g.beginPath(); g.arc(hx, hy, 10 + p.hornFx * 2, 0, 7); g.fill(); g.restore(); }
         one(0, 1);
@@ -2026,8 +2146,8 @@ function draw() {
       }
       polishFront();
       if (state !== 'chapter' && state !== 'results') hud();
-      if (state === 'play' && ch === 0 && !boss && t < 600) {   // first-time tips
-        const tip = t < 300 ? 'Drag, or use the arrows, to fly anywhere' : 'Double-tap, Space or B to dash through danger!';
+      if (state === 'play' && (ch === 0 || tour()) && !boss && t < 600) {   // first-time tips
+        const tip = tour() ? (t < 300 ? 'Fly close to the sea friends to say hi!' : 'Your stars find the grumpy fish by themselves') : t < 300 ? 'Drag, or use the arrows, to fly anywhere' : 'Double-tap, Space or B to dash through danger!';
         g.globalAlpha = Math.min(1, Math.min(t % 300, 300 - t % 300) / 30); panel(W / 2 - 230, 64, 460, 36, 18, 'rgba(122,26,99,.6)'); txt(tip, W / 2, 89, 17, '#fff'); g.globalAlpha = 1;
       }
       const c = CHAPTERS[ch];
@@ -2049,15 +2169,18 @@ function draw() {
     }
   }
   g.restore();
+  drawToasts();
   if (trans) drawTrans();
 }
 
 function loop() {
+  if (toasts.length && --toasts[0].l <= 0) toasts.shift();
   if (cv.style) { const c = (state === 'play' || state === 'bonus') && !paused ? 'none' : 'default'; if (cv.style.cursor !== c) cv.style.cursor = c; }
   pollPads();
   music();
   if (mode === 'guest') { guestTick(); return; }
   if (state === 'bonus') { if (!paused) bonusUpdate(); for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; } sparks = sparks.filter(p => p.l > 0); for (const q of pops) { q.y -= .9; q.l--; } pops = pops.filter(q => q.l > 0); if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; } if (mode === 'host' && net.open && ++net.ntk % 2 === 0) netSnap(); return; }
+  if (state === 'walk') { if (!paused) walkUpdate(); for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.l--; } sparks = sparks.filter(p => p.l > 0); for (const q of pops) { q.y -= .9; q.l--; } pops = pops.filter(q => q.l > 0); if (trans) { if (++trans.t === 35) trans.fn(); if (trans.t >= 70) trans = null; } if (mode === 'host' && net.open && ++net.ntk % 2 === 0) netSnap(); return; }
   if (state === 'loading') { t++; const need = CORE_ART.length + 2, have = Object.keys(IMG).length; if (have >= need || t > 360) { state = 'title'; t = 0; } return; }
   if (state === 'play') { if (!paused) update(); }
   else {

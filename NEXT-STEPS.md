@@ -1,10 +1,12 @@
 # Pink Unicorn - next steps and handoff notes
 
-## Getting it onto GitHub (needed before the iPad can load it)
-This repo has **no GitHub remote yet**. On the Mac that pushes: create an empty repo on GitHub (for example `pink-unicorn`), then
-`git remote add origin https://github.com/<you>/pink-unicorn.git` and `git push -u origin main`.
-The repo is about 60 MB (art and audio), well within GitHub limits. To play on the iPad, turn on GitHub Pages
-(Settings > Pages > deploy from `main`) and open the Pages URL in Safari, then Share > Add to Home Screen.
+## GitHub and the iPad
+Repo: https://github.com/Dan8NOD/flying-unicorn (default branch `more-levels`). GitHub Pages serves `more-levels` at
+https://dan8nod.github.io/flying-unicorn/ - open it in Safari on the iPad, then Share > Add to Home Screen.
+Only the iMac / MacBook Pro pushes. From an editing Mac, hand over new commits with
+`git bundle create pink-unicorn-update.bundle origin/more-levels..more-levels`; on the pushing Mac run
+`git pull origin more-levels`, `git pull <bundle> more-levels`, `tools/check.sh`, `git push origin more-levels`.
+After a push, `sw.js` on the live site should show the new `CACHE` version within 1-2 minutes.
 Agents sharing this repo: read `LANES.md`; every commit must pass `tools/check.sh`.
 
 Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `index.html`, `game.js` (game), `net.js` (two-device lobby/WebRTC), `sw.js` + `manifest.json` + icons (installable/offline app for Android).
@@ -52,6 +54,24 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 ## Safety
 - No API keys are in this repo and none should be. The Meshy and ElevenLabs keys were pasted into chat sessions several times: rotate them, then update `~/.config/pink-unicorn/keys.env`.
 
+## Boss parade (done)
+- Every boss now has its own cheered-up portrait (`assets/img/happy_0..26.png`, made with `gen.py edit` from each `boss_N`, gpt-image-2, transparent bg).
+  The ending shows all 27 waving as they fly away. About 380 Meshy credits were used (the later calls cost 16 each, not 12). Raw files: `~/.cache/pink-unicorn-raw/happy_N.png`.
+
+## Reef ride and Castle Garden (done, branch claude/reef-ride-garden)
+- **Coral Reef (chapter 6) is now a gentle sightseeing ride** (`tour: 1` in CHAPTERS, helpers under "Reef ride" in `stages.js`):
+  Mermaid rides on the unicorn's back, five big sea friends swim past (turtle, dolphins, whale, seahorse, manta: fly close to "say hi"),
+  stars and bubbles steer themselves toward the few slow grumpy fish, bumps never cost a heart, no spikes or clouds, tiny bubbles
+  (so they don't look like rings), a softer boss. Results show "Sea friends met". Any other chapter can become a ride by adding `tour: 1`
+  and `sight` events to its STAGES entry (e.g. Mermaid Bay).
+- **Castle Garden: new last stage after the castle** (`state === 'walk'`, "Castle Garden" section in `stages.js`): no flying. Walk (drag,
+  arrows, mouse), hop (tap, Space, Up; again in the air to flutter), munch apples (bump the tree), cupcakes and carrots, play the music
+  flowers, splash in the pond where Mermaid sits, bounce on mushrooms up to cloud platforms, say hi to bunnies (they follow you) and five
+  cheered-up bosses, stomp two grumpy rain clouds into rainbows, open the treasure chest, then walk through the castle gate into the ending.
+  It also has its own island (28) on the world map once unlocked. Music borrows `music_ch14`; new synth sounds `munch` and `chime`.
+- Credits: Meshy 3803 -> 3503 (I used 153 for 16 images; about 147 went elsewhere before my batch started). ElevenLabs: 12 voice lines,
+  about 206 characters (`vo_s_*`, `vo_w_*`). Not made: a painted map island for the garden (it is drawn from the garden sprites instead).
+
 ## iOS App Store (2026-11-02, branch `ios/capacitor-wrap`)
 - The Capacitor 8 wrap is in `ios/`, copied from Bible Story Pals. **Nothing has been built yet:** the first `npm install && npm run ios` and archive happen on the MacBook Pro.
 - Fixed for the app: Web Audio routing and the SFX files were switched off on `capacitor://` (iOS). Edge swipes are deferred so dragging near the bottom doesn't go home. 2 Devices and the fullscreen row are hidden in the app.
@@ -63,3 +83,8 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - The raw 1024 px art is outside the repo, in `/Volumes/T9/apps/pink-unicorn-art/`. Sprites are cropped to one shared box per character so the body doesn't jump between frames, then scaled to 300 px tall.
 - Weapon art is drawn in code in `drawWeaponShot`.
 - All four characters still use the unicorn's voice lines (`vo_u_*`).
+
+## Sticker Book and Daily Gift (done, `claude/stickers`)
+- 16 stickers (`STICKERS` in `game.js`), saved in `pinkUnicornStickers`, with a pop-up (`toast`) and `vo_u_sticker`. Art reuses existing sprites, so no Meshy credits. `stickerCheck` awards what old saves already earned, silently.
+- Daily gift: one per calendar day, `GIFTS` rings on a 7-day cycle. The day count deliberately never resets, because this is a kids' game and shouldn't punish a missed day. Keys: B book, G gift, Esc back from book and shop.
+

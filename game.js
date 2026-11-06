@@ -33,7 +33,7 @@ function useChapterArt(c) {
   for (const n of Object.keys(loadedArt)) if (/^(bg|fg|boss|fx)_/.test(n) && !keep.has(n)) dropArt(n);
   for (const n of keep) loadArt(n);
 }
-function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
+function loadAllArt() { for (let c = 0; c < NCH; c++) chapterArt(c).forEach(loadArt); for (const k of ['mint', 'snow', 'galaxy', 'golden', 'rainbow', 'moonbeam', 'coral', 'ember', 'whiskerwing']) ['up', 'down'].forEach(f => loadArt('skin_' + k + '_' + f)); for (let i = 0; i < NCH; i++) loadArt('isle_' + i); }   // tools/screenshots only
 CORE_ART.push('pick_shoe', 'friend_pegasus'); CORE_ART.forEach(loadArt); ['bg_0', 'fg_0'].forEach(loadArt);
 try { const sk0 = localStorage.getItem('pinkUnicornSkin'); if (sk0) ['up', 'down'].forEach(f => loadArt('skin_' + sk0 + '_' + f)); } catch (e) {}
 // Draw a loaded sprite centred on (x, y) at height h. Returns false if it isn't loaded (caller draws the fallback).
@@ -108,6 +108,84 @@ const shopCardX = i => W / 2 + (i - (SKINS.length - 1) / 2) * 152;
 let wallet = 0, owned = [''], skin = '', hostSkin = '', shopMsg = '', shopMsgT = 0;
 try { wallet = +localStorage.getItem('pinkUnicornWallet') || 0; owned = JSON.parse(localStorage.getItem('pinkUnicornOwned') || '[""]'); skin = localStorage.getItem('pinkUnicornSkin') || ''; } catch (e) {}
 function saveShop() { saveOpt('pinkUnicornWallet', wallet); saveOpt('pinkUnicornOwned', JSON.stringify(owned)); saveOpt('pinkUnicornSkin', skin); }
+// Characters for sale: one-time App Store purchases. Apple is the source of truth for what is owned; `paid` only caches it.
+const HEROES = [
+  { id: 'moonbeam', name: 'Moonbeam', pid: 'com.dancruz.pinkunicorn.hero.moonbeam' },
+  { id: 'coral', name: 'Coral', pid: 'com.dancruz.pinkunicorn.hero.coral' },
+  { id: 'ember', name: 'Ember', pid: 'com.dancruz.pinkunicorn.hero.ember' },
+  { id: 'whiskerwing', name: 'Whiskerwing', pid: 'com.dancruz.pinkunicorn.hero.whiskerwing' },
+];
+const heroCardX = i => W / 2 + (i - (HEROES.length - 1) / 2) * 190;
+let shopPage = 'looks', paid = [], storePrices = {}, storeTest = false, storeBusy = false, storeReady = false, gate = null;
+try { paid = JSON.parse(localStorage.getItem('pinkUnicornPaid') || '[]'); } catch (e) {}
+const storeCall = (method, args) => window.Capacitor.nativePromise ? window.Capacitor.nativePromise('PinkStore', method, args || {}) : { then(ok, no) { no && no(); } };
+function storeOwned(pids) {   // pids: every product Apple says this family owns
+  paid = HEROES.filter(h => pids.includes(h.pid)).map(h => h.id); saveOpt('pinkUnicornPaid', JSON.stringify(paid));
+  if (HEROES.some(h => h.id === skin) && !paid.includes(skin)) { skin = ''; saveShop(); }   // refunded
+}
+function storeRefresh() {
+  if (!NATIVE_APP) return;
+  storeCall('products', { ids: HEROES.map(h => h.pid) }).then(r => { storePrices = r.prices || {}; storeTest = !!r.testMode; storeReady = true; }, () => { storeReady = true; });
+  storeCall('owned').then(r => storeOwned(r.ids || []), () => {});   // no answer (offline): keep the cached list
+}
+function storeBuy(h) {
+  storeBusy = true; shopMsg = 'Asking the App Store...'; shopMsgT = 600;
+  storeCall('buy', { id: h.pid }).then(r => {
+    storeBusy = false; shopMsgT = 150;
+    if (r.status === 'purchased') { if (!paid.includes(h.id)) paid.push(h.id); saveOpt('pinkUnicornPaid', JSON.stringify(paid)); skin = h.id; saveShop(); sfx('power'); voice('vo_u_power'); shopMsg = h.name + (r.test ? ' unlocked (test, no charge)!' : ' is yours!'); }
+    else if (r.status === 'pending') shopMsg = 'Waiting for a grown-up to approve';
+    else if (r.status === 'cancelled') shopMsgT = 0;
+    else shopMsg = 'The store is not available yet';
+  }, () => { storeBusy = false; shopMsg = 'The store is not available yet'; shopMsgT = 150; });
+}
+function storeRestore() {
+  storeBusy = true; shopMsg = 'Restoring purchases...'; shopMsgT = 600;
+  storeCall('restore').then(r => { storeBusy = false; storeOwned(r.ids || []); shopMsg = paid.length ? 'Purchases restored!' : 'No purchases to restore'; shopMsgT = 150; }, () => { storeBusy = false; shopMsg = 'Could not reach the App Store'; shopMsgT = 150; });
+}
+const heroPrice = h => storePrices[h.pid] || (NATIVE_APP && !storeTest ? '' : '$4.99');
+function openGate(h) {   // grown-ups only: a small times table before any purchase
+  const a = 6 + (Math.random() * 4 | 0), b = 6 + (Math.random() * 4 | 0), good = a * b;
+  const wrong = [good + 7, good - 6]; const at = Math.random() * 3 | 0; const choices = [...wrong]; choices.splice(at, 0, good);
+  gate = { h, a, b, good, choices };
+}
+const gateX = i => W / 2 + (i - 1) * 130;
+function gateTap(x, y) {
+  const g0 = gate; gate = null;
+  if (y < 280 || y > 350) return;   // tapped away: closed
+  g0.choices.forEach((c, i) => { if (Math.abs(x - gateX(i)) < 56 && c === g0.good) storeBuy(g0.h); });
+}
+function heroesTap(x, y) {
+  HEROES.forEach((h, i) => {
+    if (Math.abs(x - heroCardX(i)) > 88 || y < 130 || y > 420) return;
+    if (paid.includes(h.id)) { skin = skin === h.id ? '' : h.id; sfx('click'); saveShop(); return; }
+    if (!NATIVE_APP) { shopMsg = 'Characters are sold in the iPhone and iPad app'; shopMsgT = 150; sfx('click'); return; }
+    if (!storeBusy) { sfx('click'); openGate(h); }
+  });
+}
+function drawHeroes() {
+  HEROES.forEach((h, i) => {
+    const cx = heroCardX(i), on = skin === h.id, has = paid.includes(h.id);
+    panel(cx - 88, 136, 176, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
+    g.save(); g.translate(cx, 245 + Math.sin(t / 20 + i) * 5);
+    if (!spr('skin_' + h.id + '_' + (Math.sin(t / 5) > 0 ? 'up' : 'down'), 0, 0, 110)) { g.scale(.7, .7); drawUnicorn(0, 10); }
+    g.restore();
+    g.font = 'bold 21px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(h.name, cx, 345);
+    g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.fillStyle = on ? '#e8279a' : has ? '#7a1a63' : '#2a9d5c';
+    g.fillText(on ? 'Flying' : has ? 'Tap to fly' : NATIVE_APP ? heroPrice(h) || 'Loading...' : 'In the app', cx, 378);
+    g.font = '13px "Trebuchet MS", sans-serif'; g.fillStyle = '#a07090'; g.fillText('Preview art', cx, 402);
+  });
+  panel(W / 2 + 90, 460, 190, 38, 19, 'rgba(122,26,99,.75)', '#fff'); txt('Restore Purchases', W / 2 + 185, 485, 16, '#fff');
+  if (storeTest) txt('Test build: no real charges', W / 2 - 185, 485, 15, '#fff');
+}
+function plainText(str, x, y, size) { g.font = `bold ${size}px "Trebuchet MS", sans-serif`; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(str, x, y); }
+function drawGate() {
+  g.fillStyle = 'rgba(42,15,61,.75)'; g.fillRect(0, 0, W, H);
+  panel(W / 2 - 240, 150, 480, 240, 28, 'rgba(255,245,252,.98)', '#fff');
+  plainText('Grown-ups only', W / 2, 195, 28);
+  plainText(`${gate.h.name}: what is ${gate.a} x ${gate.b}?`, W / 2, 245, 22);
+  gate.choices.forEach((c, i) => { panel(gateX(i) - 56, 285, 112, 60, 20, lg(0, 285, 0, 345, '#ff8fd0', '#e8279a'), '#fff'); txt(String(c), gateX(i), 325, 26, '#fff'); });
+  plainText('Tap outside to close', W / 2, 375, 14);
+}
 // Rainbow Run: endless mode through random chapters that get harder; a boss every third stretch.
 let run = false, runSeg = 0, bestRun = 0;
 try { bestRun = +localStorage.getItem('pinkUnicornBestRun') || 0; } catch (e) {}
@@ -187,7 +265,11 @@ function drawMap() {
   for (const q of pops) { g.globalAlpha = Math.min(1, q.l / 20); txt(q.str, q.x, q.y, 18, q.col); } g.globalAlpha = 1;
 }
 function shopTap(x, y) {
-  if (y > 452) { state = 'title'; sfx('click'); return; }   // back
+  if (gate) { gateTap(x, y); return; }
+  if (y > 80 && y < 125 && x > W - 240) { shopPage = shopPage === 'looks' ? 'heroes' : 'looks'; sfx('click'); if (shopPage === 'heroes') { storeRefresh(); HEROES.forEach(h => ['up', 'down'].forEach(f => loadArt('skin_' + h.id + '_' + f))); } return; }
+  if (shopPage === 'heroes' && y > 452 && x > W / 2 + 80 && NATIVE_APP) { if (!storeBusy) { sfx('click'); storeRestore(); } return; }
+  if (y > 452) { state = 'title'; shopPage = 'looks'; sfx('click'); return; }   // back
+  if (shopPage === 'heroes') { heroesTap(x, y); return; }
   SKINS.forEach((k, i) => {
     const cx = shopCardX(i);
     if (Math.abs(x - cx) > 70 || y < 130 || y > 420) return;
@@ -203,7 +285,9 @@ function drawShop() {
   fancyText('Sparkle Shop', W / 2, 70, 46);
   panel(W / 2 - 90, 86, 180, 34, 17, 'rgba(122,26,99,.55)'); g.save(); g.translate(W / 2 - 62, 103); g.strokeStyle = '#ffc94a'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.stroke(); g.restore();
   g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(wallet + ' rings', W / 2 + 12, 110);
-  SKINS.forEach((k, i) => {
+  panel(W - 232, 84, 202, 38, 19, lg(0, 84, 0, 122, '#ffd36b', '#ff8fd0'), '#fff'); plainText(shopPage === 'looks' ? 'New Characters >' : '< Ring Looks', W - 131, 110, 18);
+  if (shopPage === 'heroes') drawHeroes();
+  else SKINS.forEach((k, i) => {
     const cx = shopCardX(i), on = skin === k.id, has = owned.includes(k.id);
     panel(cx - 70, 136, 140, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
     g.save(); g.translate(cx, 250 + Math.sin(t / 20 + i) * 5);
@@ -218,6 +302,7 @@ function drawShop() {
   });
   if (shopMsgT > 0) { shopMsgT--; panel(W / 2 - 170, 420, 340, 30, 15, 'rgba(255,179,0,.9)', '#fff'); txt(shopMsg, W / 2, 441, 16, '#fff'); }
   else { panel(W / 2 - 70, 460, 140, 38, 19, lg(0, 460, 0, 498, '#ff8fd0', '#e8279a'), '#fff'); txt('Back', W / 2, 486, 18, '#fff'); }
+  if (gate) drawGate();
 }
 function drawSettings(title) {
   g.fillStyle = 'rgba(42,15,61,.5)'; g.fillRect(0, 0, W, H);
@@ -285,7 +370,7 @@ addEventListener('blur', () => { if (state === 'play' || state === 'bonus') paus
 // iOS only unlocks sound on touchend / click, so try again on those too; resume audio when coming back to the app.
 addEventListener('touchend', () => audio(), { passive: true });
 addEventListener('click', () => audio());
-if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden && typeof ac !== 'undefined' && ac && ac.state !== 'running') ac.resume(); if (document.hidden) saveShop(); });
+if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden && typeof ac !== 'undefined' && ac && ac.state !== 'running') ac.resume(); if (document.hidden) saveShop(); else storeRefresh(); });
 cv.addEventListener('mousemove', pointer);
 cv.addEventListener('touchmove', e => { pointer(e); e.preventDefault(); }, { passive: false });
 const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online', 'Rainbow Run · endless'].filter(s => !(NATIVE_APP && s.startsWith('2 Devices')));
@@ -1925,3 +2010,4 @@ function frame(now) {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') paused = true; });
 requestAnimationFrame(frame);
+storeRefresh();

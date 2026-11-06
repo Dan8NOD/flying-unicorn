@@ -89,6 +89,21 @@ const tests = {
     lives = 9; t = 30 * 60; step(80); const seg2 = runSeg === 1 && state === 'play';
     lives = 9; t = 30 * 60; step(80); lives = 9; t = 30 * 60; step(5); const bossCame = runSeg === 2 && !!boss;
     return [direct, seg2, bossCame];`, 3],
+  'characters for sale: grown-ups gate, buying, cancelling, restoring, refunds': [`
+    const calls = []; let buyStatus = 'purchased', ownedIds = [];
+    window.Capacitor.nativePromise = (pl, m, a) => { calls.push(m); const res = m === 'products' ? { prices: { [HEROES[0].pid]: '$4.99' } } : m === 'buy' ? { status: buyStatus } : { ids: ownedIds }; return { then(ok) { ok(res); } }; };
+    state = 'shop'; shopPage = 'heroes'; storeRefresh();
+    const price = heroPrice(HEROES[0]) === '$4.99';
+    heroesTap(heroCardX(0), 250); const gated = !!gate && !calls.includes('buy');
+    const wrong = gate.choices.findIndex(c => c !== gate.good); gateTap(gateX(wrong), 310); const refused = !calls.includes('buy') && !gate;
+    heroesTap(heroCardX(0), 250); buyStatus = 'cancelled'; gateTap(gateX(gate.choices.indexOf(gate.good)), 310); const cancelled = calls.includes('buy') && !paid.includes('moonbeam');
+    heroesTap(heroCardX(0), 250); buyStatus = 'purchased'; gateTap(gateX(gate.choices.indexOf(gate.good)), 310); const bought = paid.includes('moonbeam') && skin === 'moonbeam';
+    ownedIds = [HEROES[1].pid]; storeRestore(); const restored = paid.includes('coral');
+    const refunded = !paid.includes('moonbeam') && skin === '';
+    return [price, gated, refused, cancelled, bought, restored, refunded];`, 7, { Capacitor: { isNativePlatform: () => true, nativePromise: () => ({ then() {} }) } }],
+  'characters for sale: the website offers no purchase and rings cannot buy them': [`
+    wallet = 99999; state = 'shop'; shopPage = 'heroes'; heroesTap(heroCardX(0), 250);
+    return [!gate, !paid.length, shopMsg.includes('app'), wallet === 99999];`, 4],
   'sparkle shop: buy, wear, and refuse when short': [`
     wallet = 200; owned = ['']; skin = ''; state = 'shop';
     shopTap(shopCardX(1), 250); const bought = owned.includes('mint') && skin === 'mint' && wallet === 50;

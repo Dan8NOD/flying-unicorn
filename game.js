@@ -195,7 +195,6 @@ function drawHeroes() {
     g.font = '13px "Trebuchet MS", sans-serif'; g.fillStyle = '#7a1a63'; g.fillText(h.line, cx, 358);
     g.font = 'bold 18px "Trebuchet MS", sans-serif'; g.fillStyle = on ? '#e8279a' : has ? '#7a1a63' : '#2a9d5c';
     g.fillText(on ? (weapon ? 'Using' : 'Flying') : has ? (weapon ? 'Tap to use' : 'Tap to fly') : NATIVE_APP ? heroPrice(h) || 'Loading...' : 'In the app', cx, 386);
-    if (!weapon) { g.font = '12px "Trebuchet MS", sans-serif'; g.fillStyle = '#a07090'; g.fillText('Preview art', cx, 406); }
   });
   if (!NATIVE_APP) return;
   panel(W / 2 + 90, 460, 190, 38, 19, 'rgba(122,26,99,.75)', '#fff'); txt('Restore Purchases', W / 2 + 185, 485, 16, '#fff');
@@ -700,7 +699,8 @@ function hurtBoss(dmg, x, y) {
 
 // ---- weapons: picked up for 10 seconds; the unicorn and the mermaid can both use them ----
 const WEAPONS = { beam: 'Rainbow Beam', boom: 'Heart Boomerang', seek: 'Butterfly Seekers', lob: 'Cupcake Bombs' };
-function muzzle(p) { return p === uni ? [p.x + (IMG.uni_up ? 55 : 46), p.y - (IMG.uni_up ? 64 : 74)] : [p.x + 30, p.y - 25]; }
+const HERO_MUZZLE = { coral: [37, -7], ember: [49, -3], whiskerwing: [39, -12] };   // these three shoot from the mouth, not a horn
+function muzzle(p) { const hm = p === uni && mode !== 'guest' && IMG['skin_' + skin + '_up'] && HERO_MUZZLE[skin]; if (hm) return [p.x + hm[0], p.y + hm[1]]; return p === uni ? [p.x + (IMG.uni_up ? 55 : 46), p.y - (IMG.uni_up ? 64 : 74)] : [p.x + 30, p.y - 25]; }
 function fire(p) {
   const star = p === uni, w = p.weapon, [x, y] = muzzle(p);
   if (star && skin === 'moonbeam' && p.dash > 0 && t % 2 === 0) shots.push({ x: p.x, y: p.y, vx: 3, vy: (Math.random() - .5) * 2, w: 'trail', age: 0, dmg: 2 });
@@ -997,7 +997,8 @@ function drawUnicorn(x, y, glow, phase) {
   if (IMG.uni_up && IMG.uni_down) {   // generated sprite: two wing frames + a little squash on each beat
     const sk = mode === 'guest' ? hostSkin : skin, fr = fl > 0 ? 'up' : 'down';
     g.scale(1, 1 + fl * .025); if (!(sk && spr('skin_' + sk + '_' + fr, 0, -6, 112))) spr(fl > 0 ? 'uni_up' : 'uni_down', 0, -6, 112);
-    sparkle(48, -57, 5 + 2 * Math.sin(t / 5), .9); g.restore(); return;
+    if (!(sk in HERO_MUZZLE)) sparkle(48, -57, 5 + 2 * Math.sin(t / 5), .9);   // the horn's twinkle
+    g.restore(); return;
   }
   g.lineJoin = g.lineCap = 'round';
   // flowing rainbow tail

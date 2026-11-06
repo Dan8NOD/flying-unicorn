@@ -20,7 +20,6 @@ log it under **Crossings** below.
 ## Who is on what right now (update when you start or finish; check GitHub branches first)
 Agents meet through GitHub: fetch before you start, branch per topic, say what you took here.
 - **iOS/App Store and store purchases:** branches `ios/*`, `shop/*` (`ios/store-preview` touches the shop in `game.js`, `PinkStorePlugin.swift`). Other agents stay out of the shop's paid pages.
-- **Stickers and daily gift:** `claude/stickers` (`game.js`: new sticker book screen, new save keys; does not touch shop code).
 
 ## Rules
 1. Work on a branch named after your lane: `claude/<topic>` or `codex/<topic>`. Merge into `main` only when the toll booth passes.

@@ -267,6 +267,9 @@ addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
   if (e.key === 'f' && !NATIVE_APP) toggleFullscreen();
+  if ((state === 'stickers' || state === 'shop') && e.key === 'Escape') { state = 'title'; return; }
+  if (state === 'title' && !trans && !settingsOpen && mode !== 'guest' && e.key === 'b') openStickers();
+  if (state === 'title' && !trans && !settingsOpen && mode !== 'guest' && e.key === 'g') openGift();
   if (state === 'map') {
     if (e.key === 'ArrowLeft') { startCh = Math.max(0, startCh - 1); centerMap(); }
     if (e.key === 'ArrowRight') { startCh = Math.min(reached, startCh + 1); centerMap(); }
@@ -325,9 +328,12 @@ cv.addEventListener('pointerdown', e => {
     if (y > 452 && y < 484) { if (x < W / 2 - 150) startCh = Math.max(0, startCh - 1); else if (x > W / 2 + 150) startCh = Math.min(reached, startCh + 1); else { openMap(); return; } }
     if (x < 220 && y > 488) { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); return; }
     if (x < 190 && y < 66) { state = 'shop'; audio(); sfx('click'); SKINS.forEach(k => k.id && ['up', 'down'].forEach(f => loadArt('skin_' + k.id + '_' + f))); return; }
+    if (mode !== 'guest' && x < 190 && y < 110) { openStickers(); return; }
+    if (mode !== 'guest' && x < 190 && y < 154 && giftReady()) { openGift(); return; }
     if (y > 452 && y < 484) return;
     MENU.forEach((_, i) => { if (Math.abs(x - W / 2) < 200 && y > 276 + i * 44 && y < 314 + i * 44) sel = i; }); }
   if (state === 'shop') { shopTap(x, y); return; }
+  if (state === 'stickers') { stickerTap(x, y); return; }
   if (state === 'map') { mapDrag = { x, mx: mapX, moved: false }; return; }
   if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
   if (state === 'over' && Math.abs(x - W / 2) < 80 && y > H - 74 && y < H - 22) { toTitle(); return; }   // Menu button
@@ -458,7 +464,7 @@ function hurt(p = uni) {
   if (p.flash > 0 || p.shield > 0 || p.dash > 0 || p.stompInv > 0) return;
   if (tour() && state === 'play') { bump(p); return; }   // reef ride: bumps never cost a heart (stages.js)
   lives--; stat.hits++; combo = 0; p.flash = 90; buzz(70); shake = 12; sfx('hurt'); if (lives === 1) voice('vo_u_low'); else bark(lives % 2 ? 'vo_u_hurt' : 'vo_m_look', .8);
-  if (lives <= 0) { state = 'over'; t = 0; saveBest(); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
+  if (lives <= 0) { state = 'over'; t = 0; saveBest(); if (run && score >= 5000) award('run'); if (run && score > bestRun) { bestRun = score; saveOpt('pinkUnicornBestRun', bestRun); } sfx('over'); voice('vo_u_over'); }
 }
 function boom(x, y, col, n = 12) { netEv(['b', x | 0, y | 0, col, n]); if (!fx) n >>= 1; for (let i = 0; i < n; i++) sparks.push({ x, y, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 30, col }); }
 const hit = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y) < r;
@@ -665,6 +671,85 @@ function getShoe(o) {
   score += 100; sfx('shoe'); boom(o.x, o.y, '#ffd84a', 24); pop(o.x, o.y - 30, 'Golden horseshoe!', '#ffe45c');
   if (shoeBits(shoes[ch]) === 3) voice('vo_u_shoe3'); else bark('vo_u_shoe', 1);
   if (shoeCount() >= 50 && !owned.includes('rainbow')) { owned.push('rainbow'); saveShop(); setTimeout(() => voice('vo_u_rainbow'), 1600); pop(W / 2, 160, 'Rainbow look unlocked in the shop!', '#fff36b'); }
+  stickerCheck();
+}
+// ---- Sticker Book and Daily Gift: 16 stickers to earn, and a present every day you play (the day count never resets) ----
+const STICKERS = [
+  ['first', 'First Flight', 'Finish any chapter', 'uni_up'], ['shine', 'Three Stars', 'Get 3 stars in a chapter', 'pick_star'],
+  ['stars10', 'Star Collector', 'Get 3 stars in 10 chapters', 'fx_comet'], ['pals', 'Cheer Squad', 'Cheer up 10 bosses', 'happy_0'],
+  ['rings', 'Ring Master', 'Collect 1000 rings', 'pick_ring'], ['stomp', 'Bouncy Hooves', 'Stomp 25 enemies', 'foe_pig'],
+  ['nova', 'Rainbow Blast', 'Set off a Rainbow Nova', 'fx_phoenix'], ['shoe', 'Lucky Shoes', 'Find all 3 horseshoes in a chapter', 'pick_shoe'],
+  ['friend', 'New Friend', 'Meet the Little Pegasus', 'friend_pegasus'], ['rainbow', 'Rainbow Look', 'Find 50 golden horseshoes', 'skin_rainbow_up'],
+  ['sea', 'Sea Friends', 'Say hi to all the Coral Reef friends', 'fx_turtle'], ['island', 'Island Sweep', 'Grab every gem in a Sky Island', 'fx_airship'],
+  ['run', 'Rainbow Runner', 'Score 5000 in Rainbow Run', 'fx_dragon'], ['team', 'Better Together', 'Finish a chapter with 2 players', 'mermaid'],
+  ['chest', 'Treasure!', 'Open the Castle Garden treasure', 'fx_fairy'], ['end', 'Happily Ever After', 'See the ending', 'happy_9'],
+];
+let stk = { got: {}, rings: 0, stomps: 0 }, gift = { d: '', n: 0 }, toasts = [], stkMsg = '';
+try { Object.assign(stk, JSON.parse(localStorage.getItem('pinkUnicornStickers') || '{}')); Object.assign(gift, JSON.parse(localStorage.getItem('pinkUnicornGift') || '{}')); } catch (e) {}
+const saveStk = () => saveOpt('pinkUnicornStickers', JSON.stringify(stk));
+const stickerCount = () => STICKERS.filter(s => stk.got[s[0]]).length;
+function toast(art, title, sub) { loadArt(art); if (toasts.length < 4) toasts.push({ art, title, sub, l: 200 }); }
+function award(id, quiet) {
+  if (stk.got[id]) return;
+  stk.got[id] = 1; saveStk(); if (quiet) return;
+  const s = STICKERS.find(k => k[0] === id); toast(s[3], 'New sticker!', s[1]); sfx('chime', 7); bark('vo_u_sticker', 1);
+}
+function stickerCheck(quiet) {   // the stickers that can be worked out from saved progress (so old saves get theirs too)
+  const three = starsBest.filter(n => n >= 3).length, cheered = starsBest.filter(n => n > 0).length;
+  if (cheered) award('first', quiet); if (three) award('shine', quiet); if (three >= 10) award('stars10', quiet); if (cheered >= 10) award('pals', quiet);
+  if (stk.rings >= 1000) award('rings', quiet); if (stk.stomps >= 25) award('stomp', quiet);
+  if (shoes.some(m => shoeBits(m || 0) === 3)) award('shoe', quiet); if (owned.includes('rainbow')) award('rainbow', quiet);
+}
+stickerCheck(true);
+const GIFTS = [5, 5, 10, 10, 15, 15, 30];
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+const giftReady = () => gift.d !== today();
+function openGift() {
+  if (!giftReady()) return;
+  const n = GIFTS[gift.n % GIFTS.length]; gift.n++; gift.d = today(); wallet += n; saveShop(); saveOpt('pinkUnicornGift', JSON.stringify(gift));
+  toast('pick_ring', `Day ${gift.n} gift!`, `+${n} rings`); audio(); sfx('golden'); bark('vo_u_gift', 1); buzz([20, 40, 20]);
+}
+function openStickers() { state = 'stickers'; stkMsg = ''; audio(); sfx('click'); STICKERS.forEach(s => loadArt(s[3])); }
+const stickerX = i => W / 2 + (i % 8 - 3.5) * 114, stickerY = i => 170 + (i >> 3) * 166;
+function stickerArt(n, x, y, box) { const im = IMG[n]; if (!im) return false; return spr(n, x, y, box * Math.min(1, im.height / im.width)); }
+function stickerTap(x, y) {
+  if (y > 456) { state = 'title'; sfx('click'); return; }   // back
+  STICKERS.forEach((s, i) => { if (Math.abs(x - stickerX(i)) < 56 && Math.abs(y - stickerY(i)) < 80) { stkMsg = (stk.got[s[0]] ? s[1] + ': ' : 'To earn it: ') + s[2]; sfx('click'); } });
+}
+function drawStickers() {
+  g.fillStyle = 'rgba(42,15,61,.5)'; g.fillRect(0, 0, W, H);
+  fancyText('Sticker Book', W / 2, 62, 44);
+  txt(`${stickerCount()} of ${STICKERS.length}`, W / 2, 86, 16, '#fff36b');
+  STICKERS.forEach((s, i) => {
+    const has = stk.got[s[0]], x = stickerX(i), y = stickerY(i);
+    panel(x - 54, y - 78, 108, 156, 18, has ? 'rgba(255,245,252,.95)' : 'rgba(122,26,99,.4)', has ? '#ffd84a' : 'rgba(255,255,255,.35)');
+    g.save(); g.translate(x, y - 22); g.rotate(has ? ((i * 37) % 9 - 4) * .018 : 0);
+    g.fillStyle = 'rgba(122,26,99,.22)'; g.beginPath(); g.arc(1, 3, 44, 0, 7); g.fill();
+    g.fillStyle = has ? '#fff' : 'rgba(255,255,255,.14)'; g.beginPath(); g.arc(0, 0, 43, 0, 7); g.fill();
+    if (has) { if (!stickerArt(s[3], 0, 0, 70)) star(0, 0, 24, 0, '#ffd84a'); } else txt('?', 0, 13, 38, 'rgba(255,255,255,.7)');
+    g.restore();
+    g.font = 'bold 13px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = has ? '#7a1a63' : 'rgba(255,255,255,.85)';
+    const words = s[1].split(' '), mid = Math.ceil(words.length / 2);
+    if (words.length > 1 && s[1].length > 13) { g.fillText(words.slice(0, mid).join(' '), x, y + 44); g.fillText(words.slice(mid).join(' '), x, y + 60); } else g.fillText(s[1], x, y + 50);
+  });
+  panel(W / 2 - 250, 422, 500, 30, 15, 'rgba(122,26,99,.6)'); txt(stkMsg || 'Tap a sticker to see how to earn it', W / 2, 441, 16, '#fff');
+  panel(W / 2 - 70, 462, 140, 38, 19, lg(0, 462, 0, 500, '#ff8fd0', '#e8279a'), '#fff'); txt('Back', W / 2, 488, 18, '#fff');
+}
+function drawGiftBox(x, y) {
+  g.save(); g.translate(x, y); g.rotate(Math.sin(t / 7) * .14);
+  g.fillStyle = '#e8279a'; rr(-11, -6, 22, 17, 3); g.fill(); g.fillStyle = '#ff8fd0'; rr(-13, -11, 26, 7, 2); g.fill();
+  g.fillStyle = '#ffd84a'; g.fillRect(-2.5, -11, 5, 22); g.beginPath(); g.ellipse(-5, -14, 5, 3, .5, 0, 7); g.ellipse(5, -14, 5, 3, -.5, 0, 7); g.fill();
+  g.restore();
+}
+function drawToasts() {
+  const q = toasts[0]; if (!q) return;
+  const k = Math.min(1, Math.min(200 - q.l, q.l) / 16), y = 62 - (1 - k) * 110;
+  g.save(); g.globalAlpha = k;
+  panel(W / 2 - 170, y, 340, 68, 34, lg(0, y, 0, y + 68, '#ff5fb8', '#7d4fe0'), '#ffd84a');
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(W / 2 - 136, y + 34, 28, 0, 7); g.fill();
+  if (!stickerArt(q.art, W / 2 - 136, y + 34, 48)) star(W / 2 - 136, y + 34, 18, 0, '#ffd84a');
+  txt(q.title, W / 2 + 22, y + 27, 15, '#fff36b'); txt(q.sub, W / 2 + 22, y + 53, 22, '#fff');
+  g.restore();
 }
 // ---- Little Pegasus: a rare pickup; a baby pegasus flies with you for 12 seconds and shoots sparkles ----
 let pal = null;
@@ -672,7 +757,7 @@ function addMeter(n) { if (meter >= 100) return; meter = Math.min(100, meter + n
 function nova() {
   if (meter < 100 || state !== 'play' || paused || clear) return;
   if (mode === 'guest') { net.sendR('{"p":4}'); return; }
-  novaT = 60; shake = 26; sfx('nova'); voice('vo_u_nova'); buzz([30, 30, 120]);
+  award('nova'); novaT = 60; shake = 26; sfx('nova'); voice('vo_u_nova'); buzz([30, 30, 120]);
   setTimeout(() => bark('vo_m_nova', 1), 1700);
   for (const o of things) if (o.foe && !o.dead) hurtFoe(o, o.golden ? 6 : 99);
   for (const o of things) if (o.kind === 'cloud' || o.kind === 'bat' || o.kind === 'rock') { o.dead = true; boom(o.x, o.y, '#fff', 10); }
@@ -685,7 +770,7 @@ function bark(name, chance = .5) { if (typeof voiceUntil !== 'undefined' && Date
 function stomp(p, o) {
   hurtFoe(o, o.golden ? 3 : 99);
   p.stompChain = t - (p.stompT || -999) < 100 ? (p.stompChain || 1) + 1 : 1; p.stompT = t; p.stompInv = 18; p.squash = 12;
-  p.vy = -10; p.ty = p.y - 130;
+  p.vy = -10; p.ty = p.y - 130; stk.stomps++; saveStk(); stickerCheck();
   score += 20 * p.stompChain; pop(p.x, p.y - 70, p.stompChain > 1 ? 'Stomp x' + p.stompChain + '!' : 'Stomp!', '#fff36b');
   sfx('boing', p.stompChain); boom(p.x, p.y + 30, '#fff', 12); buzz(20); addMeter(8); bark('vo_u_stomp' + (1 + (p.stompChain - 1) % 3), .45);
 }
@@ -740,13 +825,13 @@ function update() {
       else if (o.kind === 'heart') { lives = Math.min(maxLives(), lives + 1); sfx('heart'); bark('vo_u_heart', .7); boom(o.x, o.y, '#ff4d8d'); pop(o.x, o.y - 10, '+1 heart', '#ff8fc2'); }
       else if (POW.includes(o.kind)) { applyPower(pp, o.kind); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'shoe') getShoe(o);
-      else if (o.kind === 'friend') { pal = { t: 720, x: pp.x, y: pp.y - 60 }; sfx('friend'); voice('vo_u_friend'); setTimeout(() => bark('vo_m_friend', 1), 2200); boom(o.x, o.y, '#bfe6ff', 20); }
+      else if (o.kind === 'friend') { award('friend'); pal = { t: 720, x: pp.x, y: pp.y - 60 }; sfx('friend'); voice('vo_u_friend'); setTimeout(() => bark('vo_m_friend', 1), 2200); boom(o.x, o.y, '#bfe6ff', 20); }
       else if (o.kind.startsWith('w_')) { pp.weapon = o.kind.slice(2); pp.weaponT = 600; sfx('power'); bark(pp === uni ? 'vo_u_' + pp.weapon : 'vo_m_bubble', 1); pop(o.x, o.y - 30, WEAPONS[pp.weapon] + '!', '#fff36b'); boom(o.x, o.y, '#fff', 14); }
       else if (o.kind === 'star') { pp.shield = 360; score += 50; sfx('shield'); boom(o.x, o.y, '#fff', 20); }
       else hurt(pp);
     }
     if (o.x < -60) { o.dead = true; if (o.kind === 'ring') combo = 0; }
-    if (o.dead && o.kind === 'ring' && pp) { stat.rings++; if (mode !== 'guest') { wallet++; if (wallet % 10 === 0) saveShop(); } }
+    if (o.dead && o.kind === 'ring' && pp) { stat.rings++; if (mode !== 'guest') { wallet++; stk.rings++; if (wallet % 10 === 0) { saveShop(); saveStk(); stickerCheck(); } } }
   }
   things = things.filter(o => !o.dead);
 
@@ -789,6 +874,7 @@ function update() {
 function showResults() {
   stat.stars = 1 + (stat.hits <= 1 ? 1 : 0) + (stat.rings >= Math.max(1, stat.ringsAll) * .7 ? 1 : 0);
   if (stat.stars > (starsBest[ch] || 0)) { starsBest[ch] = stat.stars; saveOpt('pinkUnicornStars', JSON.stringify(starsBest)); }
+  if (players.length > 1) award('team'); stickerCheck();
   state = 'results'; t = 0;
 }
 // ---- isometric bonus round after every third chapter: fly over the chapter's island diorama and grab the gems ----
@@ -815,7 +901,7 @@ function bonusUpdate() {
   }
   things = things.filter(o => !o.dead);
   if (!bonusEnd && (t >= 20 * 60 || !things.length)) {
-    bonusEnd = t; if (!things.length) { score += 500; pop(W / 2, 200, 'Perfect! +500', '#ffe45c'); sfx('win'); voice('vo_ev_wow'); } saveShop();
+    bonusEnd = t; if (!things.length) { award('island'); score += 500; pop(W / 2, 200, 'Perfect! +500', '#ffe45c'); sfx('win'); voice('vo_ev_wow'); } saveShop();
   }
   if (bonusEnd && t - bonusEnd > 100) nextChapter();
 }
@@ -848,7 +934,7 @@ function nextChapter() {
   if (!run && (ch + 1) % 3 === 0 && bonusDone !== ch && ch < NCH - 1 && state === 'results') { startBonus(); return; }
   ch + 1 >= CHAPTERS.length ? (run ? startEnding() : startWalk()) : start(ch + 1);   // the Castle Garden walk (stages.js) leads into the ending
 }
-function startEnding() { go(() => { for (let i = 0; i < NCH; i++) loadArt('happy_' + i); state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
+function startEnding() { award('end'); go(() => { for (let i = 0; i < NCH; i++) loadArt('happy_' + i); state = 'ending'; ending = 0; things = []; shots = []; bolts = []; boss = null; sparks = []; saveBest(); }, 'The sky is safe again...'); }
 
 // ---- drawing ----
 function star(x, y, r, rot, col) {
@@ -1820,9 +1906,10 @@ function draw() {
   if (state === 'ending') drawEnding();
   else if (state === 'walk') drawWalk();
   else {
-    drawBg(state === 'title' || state === 'shop' || state === 'map' ? 0 : ch);
+    drawBg(state === 'title' || state === 'shop' || state === 'stickers' || state === 'map' ? 0 : ch);
     if (state === 'bonus') drawBonus();
     else if (state === 'shop') drawShop();
+    else if (state === 'stickers') drawStickers();
     else if (state === 'map') drawMap();
     else if (state === 'title') {
       drawMermaid(W / 2 - 150, 228 + Math.sin(t / 18 + 1) * 8);
@@ -1845,6 +1932,10 @@ function draw() {
         g.font = 'bold 19px "Trebuchet MS", sans-serif'; g.textAlign = 'left'; g.fillStyle = '#fff'; g.fillText('Shop', 34, 47);
         g.strokeStyle = '#ffd84a'; g.lineWidth = 4; g.beginPath(); g.arc(102, 40, 8, 0, 7); g.stroke(); g.fillText(wallet, 116, 47);
         g.textAlign = 'right'; g.fillText((bestRun ? 'Best run ' + bestRun + '   ·   ' : '') + 'Horseshoes ' + shoeCount() + '/' + NCH * 3, W - 72, 46);
+        if (mode !== 'guest') {
+          panel(16, 68, 168, 36, 18, lg(0, 68, 0, 104, '#c4a2ff', '#7d4fe0'), '#fff'); star(38, 86, 11, t / 40, '#ffd84a'); txt(`Stickers ${stickerCount()}/${STICKERS.length}`, 110, 92, 16, '#fff');
+          if (giftReady()) { panel(16, 110, 168, 36, 18, lg(0, 110, 0, 146, '#ffe27a', '#ffb300'), '#fff'); drawGiftBox(38, 129); txt('Daily gift!', 110, 134, 17, '#fff'); }
+        }
       }
     } else {
       stageBack();
@@ -1906,10 +1997,12 @@ function draw() {
     }
   }
   g.restore();
+  drawToasts();
   if (trans) drawTrans();
 }
 
 function loop() {
+  if (toasts.length && --toasts[0].l <= 0) toasts.shift();
   if (cv.style) { const c = (state === 'play' || state === 'bonus') && !paused ? 'none' : 'default'; if (cv.style.cursor !== c) cv.style.cursor = c; }
   pollPads();
   music();

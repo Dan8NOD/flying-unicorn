@@ -161,6 +161,17 @@ const tests = {
     wk.x = CHEST_X - 40; step(10); const treasure = !!wk.chestOpen;
     keys.ArrowRight = true; for (let k = 0; k < 600 && state === 'walk'; k++) step(1); keys.ArrowRight = false; step(80);
     return [there, hopped, ate, friend, treasure, state === 'ending'];`, 6],
+  'stickers: earned once, saved, old saves catch up, book opens and closes': [`
+    const before = stickerCount(); award('nova'); award('nova'); const once = stickerCount() === before + 1 && toasts.length === 1;
+    starsBest = [3]; stickerCheck(); const three = !!(stk.got.first && stk.got.shine);
+    const saved = JSON.parse(localStorage.getItem('pinkUnicornStickers')).got.shine === 1;
+    openStickers(); const open = state === 'stickers'; stickerTap(stickerX(9), stickerY(9)); const hint = stkMsg.startsWith('To earn it'); step(5);
+    stickerTap(W / 2, 480); step(250);
+    return [once, three, saved, open, hint, state === 'title' && toasts.length < 3];`, 6],
+  'daily gift: once a day, more rings each day, the count never resets': [`
+    wallet = 0; gift = { d: '', n: 0 }; const ready = giftReady(); openGift(); const first = wallet === GIFTS[0]; openGift(); const onlyOnce = wallet === GIFTS[0];
+    gift.d = '2000-1-1'; gift.n = 6; openGift();
+    return [ready, first, onlyOnce, wallet === GIFTS[0] + 30 && gift.n === 7 && !giftReady()];`, 4],
   'App Store app (Capacitor): no 2 Devices, no fullscreen row, Rainbow Run still starts': [`
     const noNet = !MENU.some(s => s.startsWith('2 Devices')) && MENU.length === 3, noFull = !SETTING_ROWS.some(r => r[0] === 'full');
     sel = 2; press(); return [noNet, noFull, run === true && mode === 'solo'];`, 3, { Capacitor: { isNativePlatform: () => true } }],

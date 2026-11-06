@@ -254,7 +254,7 @@ function sightPos(e) {
 function meetSight(i, e, q) {
   sightMet[i] = t; stat.sights++; score += 100; addMeter(10);
   sfx('heart'); boom(q.x, q.y, '#ff8fc2', 24); boom(q.x, q.y, '#fff', 14); pop(q.x, q.y - e[4] * .5, 'Hi, ' + e[9] + '!  +100', '#fff36b');
-  if (stat.sights === sightCount()) { pop(W / 2, 150, 'You met all the sea friends!', '#fff36b'); sfx('win'); bark('vo_ev_wow', 1); }
+  if (stat.sights === sightCount()) { award('sea'); pop(W / 2, 150, 'You met all the sea friends!', '#fff36b'); sfx('win'); bark('vo_ev_wow', 1); }
 }
 function drawSight(e, i) {
   const im = IMG[e[2]], q = sightPos(e); if (!im || !q) return;
@@ -393,7 +393,7 @@ function walkUpdate() {
   }
   // the treasure chest
   if (!w.chestOpen && Math.abs(w.x - CHEST_X) < 60) {
-    w.chestOpen = t; score += 300; sfx('golden'); voice('vo_w_treasure'); boom(CHEST_X, GY - 50, '#ffe45c', 30); pop(CHEST_X, GY - 150, 'Treasure!  +300', '#fff36b');
+    award('chest'); w.chestOpen = t; score += 300; sfx('golden'); voice('vo_w_treasure'); boom(CHEST_X, GY - 50, '#ffe45c', 30); pop(CHEST_X, GY - 150, 'Treasure!  +300', '#fff36b');
     for (let i = 0; i < 12; i++) w.rings.push({ x: CHEST_X, y: GY - 60, vx: (Math.random() - .5) * 9, vy: -8 - Math.random() * 5 });
   }
   // walk through the castle gate to go home

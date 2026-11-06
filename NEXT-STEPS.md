@@ -77,3 +77,8 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - Fixed for the app: Web Audio routing and the SFX files were switched off on `capacitor://` (iOS). Edge swipes are deferred so dragging near the bottom doesn't go home. 2 Devices and the fullscreen row are hidden in the app.
 - The 1024 icon is the 512 icon upscaled. A sharper one needs the raw Meshy art or a new render (after the Meshy key is rotated).
 - Still needs real devices: play all 27 chapters on an iPad and an iPhone, check frame rate and volume balance, and check that progress survives force-quitting the app.
+
+## Sticker Book and Daily Gift (done, `claude/stickers`)
+- 16 stickers (`STICKERS` in `game.js`), saved in `pinkUnicornStickers`, with a pop-up (`toast`) and `vo_u_sticker`. Art reuses existing sprites, so no Meshy credits. `stickerCheck` awards what old saves already earned, silently.
+- Daily gift: one per calendar day, `GIFTS` rings on a 7-day cycle. The day count deliberately never resets, because this is a kids' game and shouldn't punish a missed day. Keys: B book, G gift, Esc back from book and shop.
+

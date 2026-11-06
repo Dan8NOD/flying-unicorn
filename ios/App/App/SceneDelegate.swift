@@ -27,5 +27,4 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 // trigger the home or app-switcher gesture on the first swipe (the system asks for a second one).
 class GameViewController: CAPBridgeViewController {
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
-    override var prefersHomeIndicatorAutoHidden: Bool { true }
 }

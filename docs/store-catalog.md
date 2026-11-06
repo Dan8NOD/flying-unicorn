@@ -27,16 +27,17 @@ Families asked for more characters and more weapons. This draft covers what to s
 
 | # | Item | Type | Price | Product ID | What it is |
 |---|---|---|---|---|---|
-| 1 | **Whiskerwing** | Character | $0.99 | `com.dancruz.pinkunicorn.hero.whiskerwing` | A winged kitten. Shoots yarn-ball stars that bounce once. |
-| 2 | **Moonbeam Alicorn** | Character | $0.99 | `com.dancruz.pinkunicorn.hero.moonbeam` | A silver-blue night unicorn. Her dash leaves a trail of stars. |
-| 3 | **Coral the Sea-Pegasus** | Character | $0.99 | `com.dancruz.pinkunicorn.hero.coral` | A seahorse-tailed pegasus. Shoots bubbles that slow foes. |
-| 4 | **Ember the Baby Dragon** | Character | $1.99 | `com.dancruz.pinkunicorn.hero.ember` | A friendly pink dragon. Shoots short warm sparkle-flames. |
+| 1 | **Whiskerwing** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.whiskerwing` | A winged kitten. Shoots yarn-ball stars that bounce once. |
+| 2 | **Moonbeam Alicorn** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.moonbeam` | A silver-blue night unicorn. Her dash leaves a trail of stars. |
+| 3 | **Coral the Sea-Pegasus** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.coral` | A seahorse-tailed pegasus. Shoots bubbles that slow foes. |
+| 4 | **Ember the Baby Dragon** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.ember` | A friendly pink dragon. Shoots short warm sparkle-flames. |
 | 5 | **Star Wand** | Weapon | $0.99 | `com.dancruz.pinkunicorn.weapon.starwand` | Fires 3 homing mini-stars. |
 | 6 | **Snowflake Spinners** | Weapon | $0.99 | `com.dancruz.pinkunicorn.weapon.snowflake` | Spinning flakes that pass through a row of foes. |
 | 7 | **Music Note Harp** | Weapon | $0.99 | `com.dancruz.pinkunicorn.weapon.harp` | Notes fly in a wave; every 8th note is a big chord. |
 | 8 | **Thunder Horn** | Weapon | $1.99 | `com.dancruz.pinkunicorn.weapon.thunder` | A charged horn bolt that chains to 3 foes. |
 | 9 | **Sparkle Bundle** | Bundle | $5.99 | `com.dancruz.pinkunicorn.bundle.all` | All 8 above (a $9.92 value) plus everything added later in 1.x. |
 
+- **Character prices:** Dan set about $5 each on 2026-11-06, so they are $4.99. Weapon and bundle prices were set before that and still need his decision: the $5.99 bundle now costs about the same as one character.
 - **Prices** are Apple price tiers (US). Apple fills in other countries automatically.
 - **Product IDs can never be reused** once created, so Dan confirms the names before they go into App Store Connect.
 - **The bundle** must be a non-consumable that unlocks the other IDs in code. Apple has no native "bundle" type for non-consumables.

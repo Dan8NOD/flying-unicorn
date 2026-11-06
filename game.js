@@ -81,6 +81,8 @@ const HULLS = ['#d6199a', '#2d9cdb', '#6c3fb5', '#3aa7a0', '#e8743b', '#ff7a6b',
 
 let state = typeof Image !== 'undefined' ? 'loading' : 'title', ch = 0, t = 0, score = 0, lives = 3, combo = 0, muted = false, best = 0;
 let things = [], shots = [], bolts = [], sparks = [], boss = null, clear = 0;
+// Inside the App Store app (Capacitor): no online 2-device mode, and the app is already fullscreen.
+const NATIVE_APP = typeof window !== 'undefined' && !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 let mode = 'solo', sel = 0, reached = 0, startCh = 0, easy = false;   // solo | local (2 players, one screen) | host / guest (two devices)
 let pops = [], kills = 0;
 const stat = { rings: 0, ringsAll: 0, foes: 0, hits: 0, stars: 0 };   // this chapter's numbers for the results card
@@ -118,7 +120,7 @@ function nextRun() {
   go(() => { ch = c; t = 0; pops = []; stageReset(); things = []; shots = []; bolts = []; boss = null; clear = 0; state = 'play'; sfx('start'); }, `Rainbow Run · stretch ${runSeg + 1} · ${CHAPTERS[c].name}`);
 }
 function buzz(ms) { try { if (opts.buzz && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
-const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']], ['buzz', 'Vibration', ['Off', 'On']], ['full', 'Fullscreen (F)', ['Off', 'On']]];
+const SETTING_ROWS = [['music', 'Music', ['Off', 'Low', 'On']], ['sfx', 'Sound effects', ['Off', 'On']], ['voice', 'Voices', ['Off', 'On']], ['buzz', 'Vibration', ['Off', 'On']], ['full', 'Fullscreen (F)', ['Off', 'On']]].filter(r => !(NATIVE_APP && r[0] === 'full'));
 function settingsTap(x, y) {   // rows of the settings panel; returns true if the tap changed a setting
   for (let i = 0; i < SETTING_ROWS.length; i++) {
     if (Math.abs(x - W / 2) < 210 && Math.abs(y - (206 + i * 46)) < 20) {
@@ -264,7 +266,7 @@ addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;   // typing in the lobby
   keys[e.key] = true;
   if (e.key === 'm') toggleMute();
-  if (e.key === 'f') toggleFullscreen();
+  if (e.key === 'f' && !NATIVE_APP) toggleFullscreen();
   if (state === 'map') {
     if (e.key === 'ArrowLeft') { startCh = Math.max(0, startCh - 1); centerMap(); }
     if (e.key === 'ArrowRight') { startCh = Math.min(reached, startCh + 1); centerMap(); }
@@ -278,7 +280,7 @@ addEventListener('keydown', e => {
     if (e.key === 'ArrowLeft') startCh = Math.max(0, startCh - 1);
     if (e.key === 'ArrowRight') startCh = Math.min(reached, startCh + 1);
     if (e.key === 'e') { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); }
-    if (e.key >= '1' && e.key <= '4') { sel = +e.key - 1; press(); }
+    if (e.key >= '1' && e.key <= String(MENU.length)) { sel = +e.key - 1; press(); }
   }
   if (e.key === 'p' || e.key === 'Escape') paused = !paused && (state === 'play' || state === 'walk');
   if (state === 'walk' && !paused && (e.key === 'ArrowUp' || e.key === 'w')) { if (!e.repeat) walkJump(); return; }
@@ -307,7 +309,7 @@ addEventListener('click', () => audio());
 if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden && typeof ac !== 'undefined' && ac && ac.state !== 'running') ac.resume(); if (document.hidden) saveShop(); });
 cv.addEventListener('mousemove', pointer);
 cv.addEventListener('touchmove', e => { pointer(e); e.preventDefault(); }, { passive: false });
-const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online', 'Rainbow Run · endless'];
+const MENU = ['1 Player', '2 Players · one screen', '2 Devices · online', 'Rainbow Run · endless'].filter(s => !(NATIVE_APP && s.startsWith('2 Devices')));
 cv.addEventListener('pointerdown', e => {
   const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   pointer(e);
@@ -353,8 +355,8 @@ function press() {
 
 function chooseMode() {
   run = false;
-  if (sel === 3) { mode = 'solo'; run = true; runSeg = 0; start(runPick(0), true); return; }
-  if (sel === 2) { netMenu(); return; }
+  if (MENU[sel].startsWith('Rainbow Run')) { mode = 'solo'; run = true; runSeg = 0; start(runPick(0), true); return; }
+  if (MENU[sel].startsWith('2 Devices')) { netMenu(); return; }
   mode = sel === 0 ? 'solo' : 'local'; start(startCh, true);
 }
 let lobbyMsg = '', lobbyT = 0;
@@ -1831,7 +1833,7 @@ function draw() {
       if (mode !== 'guest') { panel(W / 2 - 200, 452, 400, 30, 15, 'rgba(122,26,99,.35)'); txt(`◀   Map · ${startCh + 1}. ${CHAPTERS[startCh].name}  ${'★'.repeat(starsBest[startCh] || 0)}${'☆'.repeat(3 - (starsBest[startCh] || 0))}   ▶`, W / 2, 473, 16, '#fff'); }
       panel(10, 488, 196, 30, 15, easy ? 'rgba(80,200,120,.55)' : 'rgba(122,26,99,.35)'); txt(`Easy mode: ${easy ? 'ON' : 'off'} (E)`, 108, 509, 15, '#fff');
       txt(touchUI ? 'Drag to fly · double-tap to dash · two players: one half of the screen each' : 'Fly: mouse, arrows or WASD · Dash: Space or right-click · 2P: arrows + WASD (Q dash) or gamepads', W / 2 + 60, 500, 13);
-      txt((touchUI ? '' : 'P pause · M mute · F fullscreen') + (best ? `${touchUI ? '' : '   ·   '}Best ${best}` : ''), W / 2 + 60, 521, 13);
+      txt((touchUI ? '' : NATIVE_APP ? 'P pause · M mute' : 'P pause · M mute · F fullscreen') + (best ? `${touchUI ? '' : '   ·   '}Best ${best}` : ''), W / 2 + 60, 521, 13);
       if (lobbyT > 0) { lobbyT--; txt(lobbyMsg, W / 2, 274, 20, '#fff36b'); }
       if (mode !== 'guest') {   // settings gear
         g.fillStyle = 'rgba(122,26,99,.45)'; g.beginPath(); g.arc(W - 40, 40, 22, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.stroke();

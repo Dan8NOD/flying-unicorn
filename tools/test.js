@@ -9,13 +9,13 @@ function readFile(p) {
 }
 const src = readFile('audio.js') + '\n' + readFile('game.js') + '\n' + readFile('stages.js');
 
-function makeGame(testBody) {
+function makeGame(testBody, win) {
   const ctx = new Proxy({}, { get: (o, p) => p === 'createLinearGradient' || p === 'createRadialGradient' ? () => ({ addColorStop() {} }) : (o[p] !== undefined ? o[p] : () => {}), set: (o, p, v) => { o[p] = v; return true; } });
   const cv = { width: 960, height: 540, getContext: () => ctx, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 960, height: 540 }) };
   const store = {};
   const fn = new Function('document', 'addEventListener', 'requestAnimationFrame', 'window', 'localStorage', 'setTimeout',
     src + '\nfunction step(n) { for (let i = 0; i < n; i++) loop(); }\n' + testBody);
-  return fn({ getElementById: () => cv, addEventListener() {}, hidden: false }, () => {}, () => {}, {},
+  return fn({ getElementById: () => cv, addEventListener() {}, hidden: false }, () => {}, () => {}, win || {},
     { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = String(v); } }, f => f());
 }
 
@@ -161,12 +161,17 @@ const tests = {
     wk.x = CHEST_X - 40; step(10); const treasure = !!wk.chestOpen;
     keys.ArrowRight = true; for (let k = 0; k < 600 && state === 'walk'; k++) step(1); keys.ArrowRight = false; step(80);
     return [there, hopped, ate, friend, treasure, state === 'ending'];`, 6],
+  'App Store app (Capacitor): no 2 Devices, no fullscreen row, Rainbow Run still starts': [`
+    const noNet = !MENU.some(s => s.startsWith('2 Devices')) && MENU.length === 3, noFull = !SETTING_ROWS.some(r => r[0] === 'full');
+    sel = 2; press(); return [noNet, noFull, run === true && mode === 'solo'];`, 3, { Capacitor: { isNativePlatform: () => true } }],
+  'web: 2 Devices and Rainbow Run keep their menu rows': [`
+    return [MENU.length === 4 && MENU[2].startsWith('2 Devices'), SETTING_ROWS.some(r => r[0] === 'full')];`, 2],
 };
 
 let failed = 0;
 for (const name of Object.keys(tests)) {
   let res;
-  try { res = makeGame(tests[name][0]); } catch (e) { res = ['ERROR ' + e]; }
+  try { res = makeGame(tests[name][0], tests[name][2]); } catch (e) { res = ['ERROR ' + e]; }
   const ok = Array.isArray(res) && res.length === tests[name][1] && res.every(x => x === true);
   console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '  ' + JSON.stringify(res)));
   if (!ok) failed++;

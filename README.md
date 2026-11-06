@@ -16,6 +16,16 @@ Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / right
 - Every sprite and sound also has a code-drawn / synthesised fallback, so the game still works if an asset is missing.
 - `previews/` screenshots. `tools/` test and art tools (see `NEXT-STEPS.md`).
 
+**iOS (App Store):** the Capacitor 8 project lives in `ios/` (bundle ID `com.dancruz.pinkunicorn`, iPad and iPhone, landscape only), set up the same way as Bible Story Pals. After changing the game, on the Mac that builds:
+
+```bash
+npm install
+npm run ios        # copies the game into www/ and syncs it into ios/
+npm run ios:open   # opens Xcode: pick your team under Signing, Any iOS Device, Product → Archive
+```
+
+Inside the app (`NATIVE_APP` in `game.js`) the online "2 Devices" mode and the fullscreen setting are hidden and the service worker is off. Edge swipes go to the game first (`GameViewController` in `ios/App/App/SceneDelegate.swift`). Store text, privacy answers and screenshot sizes: `docs/app-store-listing.md`. Privacy and support pages: `privacy.html`, `support.html`.
+
 Tests: `osascript -l JavaScript tools/test.js` (any Mac) or `node tools/test.js`. Before committing: `tools/check.sh` (the toll booth; also runs as a pre-commit hook). Several AI agents share this repo: see `LANES.md`.
 
 **New:** Coral Reef is a gentle sightseeing ride for small players (Mermaid rides along, say hi to five sea friends, no hearts lost), and the adventure now ends with the Castle Garden, a walking stage where the unicorn eats treats, hops on mushrooms, makes friends and walks home through the castle gate.

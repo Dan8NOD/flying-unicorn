@@ -17,6 +17,11 @@ log it under **Crossings** below.
 ## Shared (append, don't rewrite)
 - `README.md`, `NEXT-STEPS.md`, `tools/test.js` (add tests; never delete someone else's), `index.html`
 
+## Who is on what right now (update when you start or finish; check GitHub branches first)
+Agents meet through GitHub: fetch before you start, branch per topic, say what you took here.
+- **iOS/App Store and store purchases:** branches `ios/*`, `shop/*` (`ios/store-preview` touches the shop in `game.js`, `PinkStorePlugin.swift`). Other agents stay out of the shop's paid pages.
+- **Stickers and daily gift:** `claude/stickers` (`game.js`: new sticker book screen, new save keys; does not touch shop code).
+
 ## Rules
 1. Work on a branch named after your lane: `claude/<topic>` or `codex/<topic>`. Merge into `main` only when the toll booth passes.
 2. **Toll booth:** `tools/check.sh` runs on every commit (git pre-commit hook). It checks that the JS parses,
@@ -27,5 +32,6 @@ log it under **Crossings** below.
 5. Leave a short note in `NEXT-STEPS.md` when you stop, so the next agent can pick up.
 
 ## Crossings
+- Claude added the iOS app (`ios/`, `package.json`, `capacitor.config.json`, `tools/stage-www.mjs`), `privacy.html` / `support.html` and the store listing, copied from Bible Story Pals (platform lane). `net.js` is untouched; 2 Devices is only hidden in the iOS app.
 - Claude added PC/itch.io support (fullscreen, desktop hints, `tools/package-itch.sh`, `ITCH.md`) and iOS home-screen tags in `index.html` / `manifest.json` (platform lane).
 - Claude prepared GitHub Actions CI in `tools/ci-workflow.yml` (node tests, key scan, file-size check); to enable, copy it to `.github/workflows/ci.yml` once the GitHub login has the `workflow` permission (platform lane).

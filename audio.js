@@ -191,7 +191,7 @@ const sbuf = {}; let sfxLoading = false, mEl = null, mCur = 0, mFile = '', mFail
 // vol(el) / setVol(el, v) work everywhere; without Web Audio they fall back to el.volume.
 function hookEl(el) {
   if (el._g !== undefined || !ac || !streamBus) return;
-  if (typeof location === 'undefined' || !/^https?:/.test(location.protocol)) return;   // opened as a local file: routing would be silent
+  if (typeof location === 'undefined' || !/^(https?|capacitor):/.test(location.protocol)) return;   // opened as a local file: routing would be silent (capacitor: = the iOS app)
   el._g = null;
   try { const src = ac.createMediaElementSource(el), gn = ac.createGain(); gn.gain.value = el._v || 0; src.connect(gn); gn.connect(streamBus); el._g = gn; el.volume = 1; } catch (e) {}
 }
@@ -204,7 +204,7 @@ function loadFiles() {
     for (const el of [...mEl, voiceEl, ambEl, wxEl]) { el.preload = 'auto'; el.src = 'assets/audio/sfx_click.mp3'; setVol(el, 0); hookEl(el); const p = el.play(); if (p) p.then(() => el.pause()).catch(() => {}); }
     [...mEl, ambEl, wxEl].forEach(el => { el.loop = true; });
   }
-  if (sfxLoading || !ac || typeof fetch === 'undefined' || !/^https?:/.test(location.protocol)) return;
+  if (sfxLoading || !ac || typeof fetch === 'undefined' || !/^(https?|capacitor):/.test(location.protocol)) return;
   sfxLoading = true;
   for (const n of FILE_SFX) fetch('assets/audio/sfx_' + n + '.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject()).then(b => ac.decodeAudioData(b)).then(buf => { sbuf[n] = buf; }).catch(() => {});
 }

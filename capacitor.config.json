@@ -1,0 +1,10 @@
+{
+  "appId": "com.dancruz.pinkunicorn",
+  "appName": "Pink Unicorn",
+  "webDir": "www",
+  "backgroundColor": "#2a0f3d",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false
+  }
+}

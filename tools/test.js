@@ -104,6 +104,28 @@ const tests = {
   'characters for sale: the website offers no purchase and rings cannot buy them': [`
     wallet = 99999; state = 'shop'; shopPage = 'heroes'; heroesTap(heroCardX(0), 250);
     return [!gate, !paid.length, shopMsg.includes('app'), wallet === 99999];`, 4],
+  'store: bundle unlocks everything, weapons equip and refunds clear them': [`
+    let ownedIds = [BUNDLE.pid]; window.Capacitor.nativePromise = (pl, m) => ({ then(ok) { ok(m === 'owned' || m === 'restore' ? { ids: ownedIds } : { prices: {}, status: 'purchased' }); } });
+    storeRefresh(); const all = STORE_ITEMS.every(k => paid.includes(k.id));
+    state = 'shop'; shopPage = 'gear'; heroesTap(heroCardX(3), 250); const equipped = gear === 'thunder';
+    ownedIds = []; storeRefresh(); const cleared = gear === '' && !paid.length;
+    ownedIds = [GEAR[0].pid]; storeRefresh(); const one = paid.length === 1 && paid[0] === 'starwand';
+    openGate(BUNDLE); gateTap(gateX(gate.choices.indexOf(gate.good)), 310); const bundleBuy = STORE_ITEMS.every(k => paid.includes(k.id));
+    return [all, equipped, cleared, one, bundleBuy];`, 5, { Capacitor: { isNativePlatform: () => true, nativePromise: () => ({ then() {} }) } }],
+  'store: every paid shot fires, flies, draws and hurts foes': [`
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    const res = {}; lives = 99; const kinds = [['gear', 'starwand', 'wand'], ['gear', 'snowflake', 'flake'], ['gear', 'harp', 'note'], ['gear', 'thunder', 'zap'], ['skin', 'whiskerwing', 'yarn'], ['skin', 'coral', 'bub'], ['skin', 'ember', 'flame']];
+    const out = [];
+    for (const [k, id, w] of kinds) {
+      gear = k === 'gear' ? id : ''; skin = k === 'skin' ? id : ''; uni.weapon = ''; shots = []; lives = 99;
+      let seen = false, hurt = false;
+      for (let f = 0; f < 45; f++) { fire(uni); seen = seen || shots.some(q => q.w === w); shots.forEach(q => moveShot(q)); t++; }
+      const foe = { kind: 'pig', foe: 1, hp: 50, x: 300, y: 200, y0: 200, ph: 0, vx: -2, r: 30, hit: 0 }; things = [foe];
+      shots = [{ x: 300, y: 200, vx: 1, vy: 0, w, dmg: w === 'flake' ? undefined : 2, age: 0 }]; const h0 = foe.hp; t += 20; step(1); lives = 99; hurt = foe.hp < h0;
+      out.push(seen && hurt && (w !== 'bub' || foe.slowed === 1));
+    }
+    gear = ''; skin = 'moonbeam'; shots = []; uni.dash = 5; t = t + (t % 2); fire(uni); out.push(shots.some(q => q.w === 'trail'));
+    return out;`, 8],
   'sparkle shop: buy, wear, and refuse when short': [`
     wallet = 200; owned = ['']; skin = ''; state = 'shop';
     shopTap(shopCardX(1), 250); const bought = owned.includes('mint') && skin === 'mint' && wallet === 50;

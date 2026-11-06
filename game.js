@@ -110,39 +110,57 @@ try { wallet = +localStorage.getItem('pinkUnicornWallet') || 0; owned = JSON.par
 function saveShop() { saveOpt('pinkUnicornWallet', wallet); saveOpt('pinkUnicornOwned', JSON.stringify(owned)); saveOpt('pinkUnicornSkin', skin); }
 // Characters for sale: one-time App Store purchases. Apple is the source of truth for what is owned; `paid` only caches it.
 const HEROES = [
-  { id: 'moonbeam', name: 'Moonbeam', pid: 'com.dancruz.pinkunicorn.hero.moonbeam' },
-  { id: 'coral', name: 'Coral', pid: 'com.dancruz.pinkunicorn.hero.coral' },
-  { id: 'ember', name: 'Ember', pid: 'com.dancruz.pinkunicorn.hero.ember' },
-  { id: 'whiskerwing', name: 'Whiskerwing', pid: 'com.dancruz.pinkunicorn.hero.whiskerwing' },
+  { id: 'moonbeam', name: 'Moonbeam', pid: 'com.dancruz.pinkunicorn.hero.moonbeam', price: '$4.99', line: 'Dash leaves a star trail' },
+  { id: 'coral', name: 'Coral', pid: 'com.dancruz.pinkunicorn.hero.coral', price: '$4.99', line: 'Bubbles slow foes down' },
+  { id: 'ember', name: 'Ember', pid: 'com.dancruz.pinkunicorn.hero.ember', price: '$4.99', line: 'Fast short sparkle-flames' },
+  { id: 'whiskerwing', name: 'Whiskerwing', pid: 'com.dancruz.pinkunicorn.hero.whiskerwing', price: '$4.99', line: 'Yarn stars bounce once' },
 ];
-const heroCardX = i => W / 2 + (i - (HEROES.length - 1) / 2) * 190;
+const GEAR = [
+  { id: 'starwand', name: 'Star Wand', pid: 'com.dancruz.pinkunicorn.weapon.starwand', price: '$1.99', shot: 'wand', line: 'Three homing mini-stars' },
+  { id: 'snowflake', name: 'Snowflakes', pid: 'com.dancruz.pinkunicorn.weapon.snowflake', price: '$1.99', shot: 'flake', line: 'Spin through a whole row' },
+  { id: 'harp', name: 'Music Harp', pid: 'com.dancruz.pinkunicorn.weapon.harp', price: '$1.99', shot: 'note', line: 'Wavy notes, big 8th chord' },
+  { id: 'thunder', name: 'Thunder Horn', pid: 'com.dancruz.pinkunicorn.weapon.thunder', price: '$1.99', shot: 'zap', line: 'A bolt that jumps to 3 foes' },
+];
+const BUNDLE = { id: 'bundle', name: 'Sparkle Bundle', pid: 'com.dancruz.pinkunicorn.bundle.all', price: '$19.99' };
+const STORE_ITEMS = [...HEROES, ...GEAR];
+const storeList = () => shopPage === 'gear' ? GEAR : HEROES;
+const heroCardX = i => W / 2 + (i - 1.5) * 190;
+let gear = '';   // the paid weapon in use: it replaces the starting shot; free pickups still take over for a while
+try { gear = localStorage.getItem('pinkUnicornGear') || ''; } catch (e) {}
 let shopPage = 'looks', paid = [], storePrices = {}, storeTest = false, storeBusy = false, storeReady = false, gate = null;
 try { paid = JSON.parse(localStorage.getItem('pinkUnicornPaid') || '[]'); } catch (e) {}
 const storeCall = (method, args) => window.Capacitor.nativePromise ? window.Capacitor.nativePromise('PinkStore', method, args || {}) : { then(ok, no) { no && no(); } };
 function storeOwned(pids) {   // pids: every product Apple says this family owns
-  paid = HEROES.filter(h => pids.includes(h.pid)).map(h => h.id); saveOpt('pinkUnicornPaid', JSON.stringify(paid));
+  const all = pids.includes(BUNDLE.pid);
+  paid = STORE_ITEMS.filter(h => all || pids.includes(h.pid)).map(h => h.id); saveOpt('pinkUnicornPaid', JSON.stringify(paid));
   if (HEROES.some(h => h.id === skin) && !paid.includes(skin)) { skin = ''; saveShop(); }   // refunded
+  if (gear && !paid.includes(gear)) { gear = ''; saveOpt('pinkUnicornGear', ''); }
 }
 function storeRefresh() {
   if (!NATIVE_APP) return;
-  storeCall('products', { ids: HEROES.map(h => h.pid) }).then(r => { storePrices = r.prices || {}; storeTest = !!r.testMode; storeReady = true; }, () => { storeReady = true; });
+  storeCall('products', { ids: [...STORE_ITEMS, BUNDLE].map(h => h.pid) }).then(r => { storePrices = r.prices || {}; storeTest = !!r.testMode; storeReady = true; }, () => { storeReady = true; });
   storeCall('owned').then(r => storeOwned(r.ids || []), () => {});   // no answer (offline): keep the cached list
 }
 function storeBuy(h) {
   storeBusy = true; shopMsg = 'Asking the App Store...'; shopMsgT = 600;
   storeCall('buy', { id: h.pid }).then(r => {
     storeBusy = false; shopMsgT = 150;
-    if (r.status === 'purchased') { if (!paid.includes(h.id)) paid.push(h.id); saveOpt('pinkUnicornPaid', JSON.stringify(paid)); skin = h.id; saveShop(); sfx('power'); voice('vo_u_power'); shopMsg = h.name + (r.test ? ' unlocked (test, no charge)!' : ' is yours!'); }
+    if (r.status === 'purchased') { storeGot(h); sfx('power'); voice('vo_u_power'); shopMsg = h.name + (r.test ? ' unlocked (test, no charge)!' : ' is yours!'); }
     else if (r.status === 'pending') shopMsg = 'Waiting for a grown-up to approve';
     else if (r.status === 'cancelled') shopMsgT = 0;
     else shopMsg = 'The store is not available yet';
   }, () => { storeBusy = false; shopMsg = 'The store is not available yet'; shopMsgT = 150; });
 }
+function storeGot(h) {   // a purchase went through: own it and start using it
+  if (h === BUNDLE) paid = STORE_ITEMS.map(k => k.id); else if (!paid.includes(h.id)) paid.push(h.id);
+  saveOpt('pinkUnicornPaid', JSON.stringify(paid));
+  if (HEROES.includes(h)) { skin = h.id; saveShop(); } else if (GEAR.includes(h)) { gear = h.id; saveOpt('pinkUnicornGear', gear); }
+}
 function storeRestore() {
   storeBusy = true; shopMsg = 'Restoring purchases...'; shopMsgT = 600;
   storeCall('restore').then(r => { storeBusy = false; storeOwned(r.ids || []); shopMsg = paid.length ? 'Purchases restored!' : 'No purchases to restore'; shopMsgT = 150; }, () => { storeBusy = false; shopMsg = 'Could not reach the App Store'; shopMsgT = 150; });
 }
-const heroPrice = h => storePrices[h.pid] || (NATIVE_APP && !storeTest ? '' : '$4.99');
+const heroPrice = h => storePrices[h.pid] || (NATIVE_APP && !storeTest ? '' : h.price);
 function openGate(h) {   // grown-ups only: a small times table before any purchase
   const a = 6 + (Math.random() * 4 | 0), b = 6 + (Math.random() * 4 | 0), good = a * b;
   const wrong = [good + 7, good - 6]; const at = Math.random() * 3 | 0; const choices = [...wrong]; choices.splice(at, 0, good);
@@ -155,27 +173,39 @@ function gateTap(x, y) {
   g0.choices.forEach((c, i) => { if (Math.abs(x - gateX(i)) < 56 && c === g0.good) storeBuy(g0.h); });
 }
 function heroesTap(x, y) {
-  HEROES.forEach((h, i) => {
+  storeList().forEach((h, i) => {
     if (Math.abs(x - heroCardX(i)) > 88 || y < 130 || y > 420) return;
-    if (paid.includes(h.id)) { skin = skin === h.id ? '' : h.id; sfx('click'); saveShop(); return; }
-    if (!NATIVE_APP) { shopMsg = 'Characters are sold in the iPhone and iPad app'; shopMsgT = 150; sfx('click'); return; }
+    if (paid.includes(h.id)) {
+      if (shopPage === 'gear') { gear = gear === h.id ? '' : h.id; saveOpt('pinkUnicornGear', gear); } else { skin = skin === h.id ? '' : h.id; saveShop(); }
+      sfx('click'); return;
+    }
+    if (!NATIVE_APP) { shopMsg = 'Sold in the iPhone and iPad app'; shopMsgT = 150; sfx('click'); return; }
     if (!storeBusy) { sfx('click'); openGate(h); }
   });
 }
 function drawHeroes() {
-  HEROES.forEach((h, i) => {
-    const cx = heroCardX(i), on = skin === h.id, has = paid.includes(h.id);
+  storeList().forEach((h, i) => {
+    const cx = heroCardX(i), weapon = shopPage === 'gear', on = weapon ? gear === h.id : skin === h.id, has = paid.includes(h.id);
     panel(cx - 88, 136, 176, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
-    g.save(); g.translate(cx, 245 + Math.sin(t / 20 + i) * 5);
-    if (!spr('skin_' + h.id + '_' + (Math.sin(t / 5) > 0 ? 'up' : 'down'), 0, 0, 110)) { g.scale(.7, .7); drawUnicorn(0, 10); }
+    g.save(); g.translate(cx, 240 + Math.sin(t / 20 + i) * 5);
+    if (weapon) { g.fillStyle = 'rgba(122,26,99,.8)'; g.beginPath(); g.arc(0, 0, 54, 0, 7); g.fill(); g.scale(2.4, 2.4); drawWeaponShot({ x: 0, y: 0, vx: 1, vy: 0, w: h.shot, age: 4, big: 1 }); }
+    else if (!spr('skin_' + h.id + '_' + (Math.sin(t / 5) > 0 ? 'up' : 'down'), 0, 0, 110)) { g.scale(.7, .7); drawUnicorn(0, 10); }
     g.restore();
-    g.font = 'bold 21px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(h.name, cx, 345);
-    g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.fillStyle = on ? '#e8279a' : has ? '#7a1a63' : '#2a9d5c';
-    g.fillText(on ? 'Flying' : has ? 'Tap to fly' : NATIVE_APP ? heroPrice(h) || 'Loading...' : 'In the app', cx, 378);
-    g.font = '13px "Trebuchet MS", sans-serif'; g.fillStyle = '#a07090'; g.fillText('Preview art', cx, 402);
+    plainText(h.name, cx, 335, 20);
+    g.font = '13px "Trebuchet MS", sans-serif'; g.fillStyle = '#7a1a63'; g.fillText(h.line, cx, 358);
+    g.font = 'bold 18px "Trebuchet MS", sans-serif'; g.fillStyle = on ? '#e8279a' : has ? '#7a1a63' : '#2a9d5c';
+    g.fillText(on ? (weapon ? 'Using' : 'Flying') : has ? (weapon ? 'Tap to use' : 'Tap to fly') : NATIVE_APP ? heroPrice(h) || 'Loading...' : 'In the app', cx, 386);
+    if (!weapon) { g.font = '12px "Trebuchet MS", sans-serif'; g.fillStyle = '#a07090'; g.fillText('Preview art', cx, 406); }
   });
+  if (!NATIVE_APP) return;
   panel(W / 2 + 90, 460, 190, 38, 19, 'rgba(122,26,99,.75)', '#fff'); txt('Restore Purchases', W / 2 + 185, 485, 16, '#fff');
-  if (storeTest) txt('Test build: no real charges', W / 2 - 185, 485, 15, '#fff');
+  if (STORE_ITEMS.some(k => !paid.includes(k.id))) { panel(W / 2 - 330, 460, 250, 38, 19, lg(0, 460, 0, 498, '#ffd36b', '#ff8fd0'), '#fff'); plainText(`Everything ${heroPrice(BUNDLE)}`, W / 2 - 205, 485, 18); }
+  if (storeTest) txt('Test build: no real charges', W / 2, 24, 15, '#fff');
+}
+function drawShopTabs() {
+  [['looks', 'Ring Looks', 30, 175], ['heroes', 'Characters', 585, 175], ['gear', 'Weapons', 770, 175]].forEach(([id, name, x, w]) => {
+    panel(x, 84, w, 38, 19, shopPage === id ? lg(0, 84, 0, 122, '#ffd36b', '#ff8fd0') : 'rgba(255,240,250,.85)', '#fff'); plainText(name, x + w / 2, 110, 18);
+  });
 }
 function plainText(str, x, y, size) { g.font = `bold ${size}px "Trebuchet MS", sans-serif`; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText(str, x, y); }
 function drawGate() {
@@ -266,10 +296,18 @@ function drawMap() {
 }
 function shopTap(x, y) {
   if (gate) { gateTap(x, y); return; }
-  if (y > 80 && y < 125 && x > W - 240) { shopPage = shopPage === 'looks' ? 'heroes' : 'looks'; sfx('click'); if (shopPage === 'heroes') { storeRefresh(); HEROES.forEach(h => ['up', 'down'].forEach(f => loadArt('skin_' + h.id + '_' + f))); } return; }
-  if (shopPage === 'heroes' && y > 452 && x > W / 2 + 80 && NATIVE_APP) { if (!storeBusy) { sfx('click'); storeRestore(); } return; }
+  if (y > 80 && y < 125 && (x < 205 || x > 585)) {
+    shopPage = x < 205 ? 'looks' : x < 760 ? 'heroes' : 'gear'; sfx('click');
+    if (shopPage !== 'looks') storeRefresh();
+    if (shopPage === 'heroes') HEROES.forEach(h => ['up', 'down'].forEach(f => loadArt('skin_' + h.id + '_' + f)));
+    return;
+  }
+  if (shopPage !== 'looks' && y > 452 && NATIVE_APP && !storeBusy) {
+    if (x > W / 2 + 80) { sfx('click'); storeRestore(); return; }
+    if (x < W / 2 - 80 && STORE_ITEMS.some(k => !paid.includes(k.id))) { sfx('click'); openGate(BUNDLE); return; }
+  }
   if (y > 452) { state = 'title'; shopPage = 'looks'; sfx('click'); return; }   // back
-  if (shopPage === 'heroes') { heroesTap(x, y); return; }
+  if (shopPage !== 'looks') { heroesTap(x, y); return; }
   SKINS.forEach((k, i) => {
     const cx = shopCardX(i);
     if (Math.abs(x - cx) > 70 || y < 130 || y > 420) return;
@@ -285,8 +323,8 @@ function drawShop() {
   fancyText('Sparkle Shop', W / 2, 70, 46);
   panel(W / 2 - 90, 86, 180, 34, 17, 'rgba(122,26,99,.55)'); g.save(); g.translate(W / 2 - 62, 103); g.strokeStyle = '#ffc94a'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.stroke(); g.restore();
   g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText(wallet + ' rings', W / 2 + 12, 110);
-  panel(W - 232, 84, 202, 38, 19, lg(0, 84, 0, 122, '#ffd36b', '#ff8fd0'), '#fff'); plainText(shopPage === 'looks' ? 'New Characters >' : '< Ring Looks', W - 131, 110, 18);
-  if (shopPage === 'heroes') drawHeroes();
+  drawShopTabs();
+  if (shopPage !== 'looks') drawHeroes();
   else SKINS.forEach((k, i) => {
     const cx = shopCardX(i), on = skin === k.id, has = owned.includes(k.id);
     panel(cx - 70, 136, 140, 280, 24, on ? lg(0, 136, 0, 416, '#fff3a0', '#ffc8e6') : 'rgba(255,240,250,.9)', on ? '#ffb300' : '#fff');
@@ -665,6 +703,7 @@ const WEAPONS = { beam: 'Rainbow Beam', boom: 'Heart Boomerang', seek: 'Butterfl
 function muzzle(p) { return p === uni ? [p.x + (IMG.uni_up ? 55 : 46), p.y - (IMG.uni_up ? 64 : 74)] : [p.x + 30, p.y - 25]; }
 function fire(p) {
   const star = p === uni, w = p.weapon, [x, y] = muzzle(p);
+  if (star && skin === 'moonbeam' && p.dash > 0 && t % 2 === 0) shots.push({ x: p.x, y: p.y, vx: 3, vy: (Math.random() - .5) * 2, w: 'trail', age: 0, dmg: 2 });
   if (w === 'beam') { if (t % 8 === 0) beamHit(p); if (t % 16 === 0) sfx('beam'); return; }
   if (w === 'seek') { if (t % 18 === 0) { for (const vy of [-3, 3]) shots.push({ x, y, vx: 6, vy, w: 'seek' }); sfx('fairy'); } return; }
   if (w === 'boom') { if (t % 30 === 0 && shots.filter(q => q.w === 'boom' && q.own === p.i).length < 2) { shots.push({ x, y, vx: 11, vy: 0, w: 'boom', age: 0, own: p.i }); sfx('boomerang'); } return; }
@@ -677,18 +716,42 @@ function fire(p) {
     }
     return;
   }
+  if (star && paidShot(p, x, y)) return;
   const gap = star ? (p.rapid > 0 ? 7 : 14) : (p.rapid > 0 ? 8 : 16);
   if (t % gap === (star ? 0 : 8 % gap)) {
     for (const vy of p.triple > 0 ? [-2.2, 0, 2.2] : [0]) shots.push({ x, y, vx: star ? 12 : 10, vy, m: star ? 0 : 1 });
     if (star) { boom(x, y, '#fff', 6); boom(x, y, RAINBOW[(t / gap | 0) % 6], 4); p.hornFx = 6; sfx('shot'); } else sfx('bubble');
   }
 }
+// Paid shots replace the starting stars. A weapon in use wins over a character's own shot. Returns true if it handled firing.
+function paidShot(p, x, y) {
+  const every = n => t % (p.rapid > 0 ? n >> 1 : n) === 0, spread = p.triple > 0 ? [-2.2, 0, 2.2] : [0];
+  const put = (o, sound) => { shots.push(Object.assign({ x, y, vy: 0 }, o)); if (sound) sfx(sound); };
+  if (gear === 'starwand') { if (every(20)) { [-3, 0, 3].forEach(vy => put({ vx: 7, vy, w: 'wand' })); sfx('fairy'); } return true; }
+  if (gear === 'snowflake') { if (every(22)) { spread.forEach(vy => put({ vx: 9, vy, w: 'flake' })); sfx('bubble'); } return true; }
+  if (gear === 'harp') { if (every(10)) { p.notes = (p.notes || 0) + 1; const big = p.notes % 8 === 0; put({ vx: 9, w: 'note', big, dmg: big ? 3 : 1, ph: p.notes }, big ? 'golden' : 'shot'); } return true; }
+  if (gear === 'thunder') { if (every(30)) put({ vx: 16, w: 'zap', dmg: 3 }, 'beam'); return true; }
+  if (gear) return false;
+  if (skin === 'whiskerwing') { if (every(14)) { spread.forEach(vy => put({ vx: 12, vy, w: 'yarn', dmg: 2 })); sfx('shot'); } return true; }
+  if (skin === 'coral') { if (every(16)) { spread.forEach(vy => put({ vx: 10, vy, w: 'bub', dmg: 2 })); sfx('bubble'); } return true; }
+  if (skin === 'ember') { if (every(9)) { spread.forEach(vy => put({ vx: 11, vy: vy + (Math.random() - .5), w: 'flame', dmg: 2, age: 0 })); sfx('shot'); } return true; }
+  return false;
+}
+function chainZap(from) {   // Thunder Horn: jumps to the 3 nearest foes
+  things.filter(o => o.foe && !o.dead).map(o => [Math.hypot(o.x - from.x, o.y - from.y), o]).filter(q => q[0] < 320).sort((a, b) => a[0] - b[0]).slice(0, 3).forEach(([, o]) => {
+    for (let i = 0; i < 8; i++) sparks.push({ x: from.x + (o.x - from.x) * i / 8, y: from.y + (o.y - from.y) * i / 8 + (Math.random() - .5) * 16, vx: 0, vy: 0, l: 12, col: '#fff36b' });
+    hurtFoe(o, 2);
+  });
+}
 function moveShot(s) {
-  if (s.w === 'seek') {   // turn toward the nearest enemy or boss
+  if (s.w === 'note') s.vy = Math.sin(s.x / 38 + (s.ph || 0)) * 5;
+  else if (s.w === 'flame') { if (++s.age > 26) s.dead = true; }
+  else if (s.w === 'trail') { if (++s.age > 70) s.dead = true; }
+  if (s.w === 'seek' || s.w === 'wand') {   // turn toward the nearest enemy or boss
     let best = null, bd = 520;
     for (const o of things) if (o.foe && !o.dead) { const d = Math.hypot(o.x - s.x, o.y - s.y); if (d < bd && o.x > s.x - 40) { bd = d; best = o; } }
     if (!best && boss && !clear) best = boss;
-    const sp = 9;
+    const sp = s.w === 'wand' ? 8 : 9;
     if (best) { const a = Math.atan2(best.y - s.y, best.x - s.x), c = Math.atan2(s.vy, s.vx); let d = a - c; while (d > Math.PI) d -= 6.283; while (d < -Math.PI) d += 6.283; const n = c + Math.max(-.12, Math.min(.12, d)); s.vx = Math.cos(n) * sp; s.vy = Math.sin(n) * sp; }
   } else if (s.w === 'boom') {   // out, slow down, then back to whoever threw it
     s.age++;
@@ -811,16 +874,19 @@ function update() {
     moveShot(s);
     for (const o of things) {
       if (!o.foe || o.dead || !hit(s, o, o.r + (s.w === 'lob' ? 14 : 8))) continue;
-      if (s.w === 'boom') { if ((o.boomT || 0) <= t) { o.boomT = t + 12; hurtFoe(o, 2); } continue; }   // hearts pass through
+      if (s.w === 'boom' || s.w === 'flake') { if ((o.boomT || 0) <= t) { o.boomT = t + 12; hurtFoe(o, 2); } continue; }   // hearts and snowflakes pass through
+      if (s.w === 'yarn' && !s.bounced) { s.bounced = 1; s.vy = s.y > H / 2 ? -6 : 6; hurtFoe(o, 2); break; }
+      if (s.w === 'bub' && !o.slowed) { o.slowed = 1; o.vx *= .6; }
+      if (s.w === 'zap') { s.dead = true; hurtFoe(o, s.dmg); chainZap(s); break; }
       if (s.w === 'lob') { explode(s); break; }
-      s.dead = true; hurtFoe(o, !s.m && !s.w ? 2 : 1); break;   // pony-dust stars hit twice as hard
+      s.dead = true; hurtFoe(o, s.dmg || (!s.m && !s.w ? 2 : 1)); break;   // pony-dust stars hit twice as hard
     }
     if (s.dead) continue;
     if (!s.w && !s.m && t % 2 === 0) sparks.push({ x: s.x, y: s.y + (Math.random() - .5) * 10, vx: -1 - Math.random(), vy: (Math.random() - .5) * 1.5, l: 18, col: `hsl(${(t * 15 + s.x) % 360},90%,75%)` });
     if (boss && !clear && hit(s, boss, 60)) {
-      if (s.w === 'boom') { if ((boss.boomT || 0) <= t) { boss.boomT = t + 12; hurtBoss(2, s.x, s.y); } }
+      if (s.w === 'boom' || s.w === 'flake') { if ((boss.boomT || 0) <= t) { boss.boomT = t + 12; hurtBoss(2, s.x, s.y); } }
       else if (s.w === 'lob') explode(s);
-      else { s.dead = true; hurtBoss(!s.m && !s.w ? 2 : 1, s.x, s.y); }
+      else { s.dead = true; hurtBoss(s.dmg || (!s.m && !s.w ? 2 : 1), s.x, s.y); if (s.w === 'zap') chainZap(s); }
     }
     if (s.w === 'lob' && s.y > H - 26) explode(s);
     if (s.w !== 'boom' && (s.x > W + 20 || s.x < -40 || s.y < -60 || s.y > H + 20)) s.dead = true;
@@ -1515,6 +1581,26 @@ function drawWeaponShot(s) {
     g.fillStyle = '#c98a5a'; g.beginPath(); g.moveTo(-10, 2); g.lineTo(10, 2); g.lineTo(7, 14); g.lineTo(-7, 14); g.closePath(); g.fill();
     g.fillStyle = '#ffb3d6'; g.beginPath(); g.arc(0, 2, 12, Math.PI, 0); g.fill(); g.fillStyle = '#ff2f7d'; g.beginPath(); g.arc(0, -10, 4, 0, 7); g.fill();
     g.fillStyle = '#fff'; [[-5, -2], [4, -4], [0, -7]].forEach(([a, b]) => g.fillRect(a, b, 3, 2));
+  } else if (s.w === 'wand' || s.w === 'trail') {   // gold mini-star / Moonbeam's silver star
+    if (!s.big) { g.fillStyle = s.w === 'wand' ? 'rgba(255,220,90,.45)' : 'rgba(190,210,255,.45)'; g.beginPath(); g.arc(0, 0, 11, 0, 7); g.fill(); } g.rotate(t / 8); sparkle(0, 0, s.big ? 17 : 12, 1);
+  } else if (s.w === 'flake') {   // spinning snowflake
+    g.rotate(t / 7); g.strokeStyle = '#dff6ff'; g.lineWidth = 3; g.lineCap = 'round'; g.shadowColor = '#7fd4ff'; g.shadowBlur = 8;
+    for (let i = 0; i < 6; i++) { g.rotate(Math.PI / 3); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -14); g.moveTo(0, -9); g.lineTo(4, -13); g.moveTo(0, -9); g.lineTo(-4, -13); g.stroke(); }
+    g.shadowBlur = 0;
+  } else if (s.w === 'note') {   // music note; every 8th is a big chord
+    const k = s.big ? 1.7 : 1; g.scale(k, k); g.fillStyle = g.strokeStyle = s.big ? '#ffd36b' : '#ff9ee0'; g.lineWidth = 2.5;
+    g.beginPath(); g.ellipse(-3, 7, 5, 4, -.4, 0, 7); g.fill(); g.beginPath(); g.moveTo(1.5, 6); g.lineTo(1.5, -10); g.quadraticCurveTo(7, -7, 8, -2); g.stroke();
+  } else if (s.w === 'zap') {   // horn bolt
+    if (!s.big) { g.fillStyle = 'rgba(255,240,120,.4)'; g.beginPath(); g.arc(0, 0, 16, 0, 7); g.fill(); } g.fillStyle = '#fff36b'; g.strokeStyle = '#fff'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(5, -15); g.lineTo(-7, 2); g.lineTo(0, 2); g.lineTo(-4, 15); g.lineTo(8, -3); g.lineTo(1, -3); g.closePath(); g.fill(); g.stroke();
+  } else if (s.w === 'yarn') {   // yarn ball
+    g.rotate(t / 6); g.fillStyle = '#ff7fc4'; g.beginPath(); g.arc(0, 0, 10, 0, 7); g.fill(); g.strokeStyle = '#ffd6ee'; g.lineWidth = 1.5;
+    for (const r of [-.8, 0, .8]) { g.beginPath(); g.ellipse(0, 0, 9, 4, r, 0, 7); g.stroke(); }
+  } else if (s.w === 'bub') {   // sea bubble
+    g.fillStyle = 'rgba(120,235,215,.45)'; g.strokeStyle = '#d8fff6'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 11, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(-4, -4, 2.5, 0, 7); g.fill();
+  } else if (s.w === 'flame') {   // short sparkle-flame that fades
+    g.globalAlpha = Math.max(.2, 1 - (s.age || 0) / 30); g.rotate(Math.PI / 2); g.fillStyle = lg(0, -12, 0, 12, '#fff3a0', '#ff6b3d');
+    g.beginPath(); g.moveTo(0, -14); g.quadraticCurveTo(11, 4, 0, 11); g.quadraticCurveTo(-11, 4, 0, -14); g.fill(); g.globalAlpha = 1;
   }
   g.restore();
 }

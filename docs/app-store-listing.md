@@ -1,7 +1,7 @@
 # App Store listing: Pink Winged Unicorn 1.0 (draft for Dan to check)
 
 Paste these into App Store Connect. Character counts are checked against Apple's limits (name and subtitle 30, keywords 100, promotional text 170).
-Version 1.0 is **free with no in-app purchases**. The Sparkle Shop spends in-game rings only.
+Version 1.0 is **free to download with optional one-time in-app purchases** (decided by Dan on 2026-11-06). All 27 chapters are free, and the ring looks are still earned with rings.
 
 ## App information
 
@@ -14,7 +14,7 @@ Version 1.0 is **free with no in-app purchases**. The Sparkle Shop spends in-gam
 | Primary category | Games, then the Action subcategory |
 | Secondary category | Games, then the Family subcategory |
 | Kids Category | **None.** Leave it off for 1.0, because it brings stricter review. |
-| Price | Free |
+| Price | Free, with in-app purchases |
 | Privacy Policy URL | https://dan8nod.github.io/flying-unicorn/privacy.html |
 | Support URL | https://dan8nod.github.io/flying-unicorn/support.html |
 | Marketing URL | https://dan8nod.github.io/flying-unicorn/ |
@@ -69,8 +69,8 @@ The Privacy and Support URLs go live only after this PR is merged into `more-lev
 > PLAY TOGETHER
 > Two players on one screen: one flies the unicorn and the other flies her mermaid best friend. You can share a touch screen or use two game controllers.
 >
-> NO ADS, NO PURCHASES
-> No ads, no in-app purchases, no accounts and no tracking. The whole game works offline.
+> NO ADS, NO SUBSCRIPTIONS
+> All 27 chapters are free. Optional new characters and weapons are one-time purchases behind a grown-ups check, and Restore Purchases brings them back. No ads, no accounts and no tracking. The whole game works offline.
 
 ## Screenshots (the MacBook Pro makes these)
 - **Sizes:** **iPhone 6.9"** 2868 × 1320 and **iPad 13"** 2752 × 2064, landscape only. 3 to 10 per size, 5 recommended.
@@ -83,7 +83,25 @@ The Privacy and Support URLs go live only after this PR is merged into `more-lev
   5. The Sparkle Shop or a 2-player game
 - No device frames with real people, and no other companies' names or characters in the captions.
 
+## In-app purchases (all non-consumable; Dan creates them in App Store Connect)
+| Reference name | Product ID | Price |
+|---|---|---|
+| Moonbeam | `com.dancruz.pinkunicorn.hero.moonbeam` | $4.99 |
+| Coral | `com.dancruz.pinkunicorn.hero.coral` | $4.99 |
+| Ember | `com.dancruz.pinkunicorn.hero.ember` | $4.99 |
+| Whiskerwing | `com.dancruz.pinkunicorn.hero.whiskerwing` | $4.99 |
+| Star Wand | `com.dancruz.pinkunicorn.weapon.starwand` | $1.99 |
+| Snowflake Spinners | `com.dancruz.pinkunicorn.weapon.snowflake` | $1.99 |
+| Music Harp | `com.dancruz.pinkunicorn.weapon.harp` | $1.99 |
+| Thunder Horn | `com.dancruz.pinkunicorn.weapon.thunder` | $1.99 |
+| Sparkle Bundle | `com.dancruz.pinkunicorn.bundle.all` | $19.99 |
+
+- Each product needs a display name, a description and a review screenshot of its shop page.
+- Selling needs Apple's Paid Apps agreement. Dan enters the banking and tax details himself.
+- Attach all nine products to the version before submitting. A first in-app purchase is reviewed together with the app.
+- Privacy label stays **Data Not Collected**: Apple handles payment, and we receive nothing about the buyer.
+
 ## App Review notes (paste into "Notes")
-> Pink Winged Unicorn is a free, offline side-scrolling flying game. There is no sign-in, no network use, no ads, no purchases and no data collection. Controls: drag anywhere to fly, double-tap to dash, and tap the Sparkle Meter when it is full to clear the screen. Easy mode (title screen, bottom left) gives extra lives. To jump to any unlocked chapter, tap the "Map" bar on the title screen. Game controllers are supported.
+> Pink Winged Unicorn is a free, offline side-scrolling flying game with optional one-time in-app purchases. There is no sign-in, no ads and no data collection; the only network use is StoreKit. To test purchases: tap Shop at the top left of the title screen, then Characters or Weapons. Tap an item and answer the grown-ups times-table question to reach the Apple purchase sheet. Restore Purchases is at the bottom right of those pages. Controls: drag anywhere to fly, double-tap to dash, and tap the Sparkle Meter when it is full to clear the screen. Easy mode (title screen, bottom left) gives extra lives. To jump to any unlocked chapter, tap the "Map" bar on the title screen. Game controllers are supported.
 
 **Sign-in required: No.** Leave the demo account empty.

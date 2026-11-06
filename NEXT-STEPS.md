@@ -78,6 +78,12 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - The 1024 icon is the 512 icon upscaled. A sharper one needs the raw Meshy art or a new render (after the Meshy key is rotated).
 - Still needs real devices: play all 27 chapters on an iPad and an iPhone, check frame rate and volume balance, and check that progress survives force-quitting the app.
 
+## Store characters (2026-11-06)
+- Moonbeam, Coral, Ember and Whiskerwing were made with Meshy: `gpt-image-2` for the wings-up frame, then `nano-banana-pro` image-to-image for wings-down, with transparent backgrounds. 72 credits in total, no retries.
+- The raw 1024 px art is outside the repo, in `/Volumes/T9/apps/pink-unicorn-art/`. Sprites are cropped to one shared box per character so the body doesn't jump between frames, then scaled to 300 px tall.
+- Weapon art is drawn in code in `drawWeaponShot`.
+- All four characters still use the unicorn's voice lines (`vo_u_*`).
+
 ## Sticker Book and Daily Gift (done, `claude/stickers`)
 - 16 stickers (`STICKERS` in `game.js`), saved in `pinkUnicornStickers`, with a pop-up (`toast`) and `vo_u_sticker`. Art reuses existing sprites, so no Meshy credits. `stickerCheck` awards what old saves already earned, silently.
 - Daily gift: one per calendar day, `GIFTS` rings on a 7-day cycle. The day count deliberately never resets, because this is a kids' game and shouldn't punish a missed day. Keys: B book, G gift, Esc back from book and shop.

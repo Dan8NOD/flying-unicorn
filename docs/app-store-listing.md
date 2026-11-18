@@ -12,8 +12,8 @@ Version 1.0 is **free to download with optional one-time in-app purchases** (dec
 | Bundle ID | `com.dancruz.pinkunicorn` |
 | Version / build | 1.0.0 (1) |
 | Primary category | Games, then the Action subcategory |
-| Secondary category | Games, then the Family subcategory |
-| Kids Category | **None.** Leave it off for 1.0, because it brings stricter review. |
+| Secondary category | Games, then the Casual subcategory |
+| Kids Category | **None.** Dan decided on 2026-11-17 that this is not a kids' app: it is sold to ages 13 and up, like Fat Cat Cruz. |
 | Price | Free, with in-app purchases |
 | Privacy Policy URL | https://dan8nod.github.io/flying-unicorn/privacy.html |
 | Support URL | https://dan8nod.github.io/flying-unicorn/support.html |
@@ -39,14 +39,14 @@ The Privacy and Support URLs go live only after this PR is merged into `more-lev
   - Gambling or contests: No.
   - Loot boxes: No.
 - **Made for Kids:** No.
-- **Expected rating:** 4+.
+- **Rating: 13+** (Dan, 2026-11-17: same audience as Fat Cat Cruz and the other games). The answers above would give 4+ on their own, so pick 13+ with the questionnaire's "Age Rating Override" (raise to a higher rating) instead of changing the honest answers.
 
 ## English (U.S.)
 
 - **Name** (19): `Pink Winged Unicorn`
 - **Subtitle** (27): `Magic unicorn sky adventure`
 - **Promotional text** (156): `Fly a pink unicorn through 27 magical chapters, throw pony-dust stars and cheer up grumpy saucer bosses. Play alone or with a friend. No ads, works offline.`
-- **Keywords** (96): `pegasus,mermaid,rainbow,flying,shooter,kids,cute,magic,fairy,pony,family,2 player,offline,arcade`
+- **Keywords** (97): `pegasus,mermaid,rainbow,flying,shooter,wings,cute,magic,fairy,pony,family,2 player,offline,arcade`
 
 **Description:**
 

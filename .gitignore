@@ -6,3 +6,10 @@ previews/*.wav
 dist/
 www/
 ._*
+
+# Android signing: the upload key and its password never go in this repo
+*.jks
+*.keystore
+keystore.properties
+*.aab
+*.apk

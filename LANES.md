@@ -35,3 +35,4 @@ Agents meet through GitHub: fetch before you start, branch per topic, say what y
 - Claude added PC/itch.io support (fullscreen, desktop hints, `tools/package-itch.sh`, `ITCH.md`) and iOS home-screen tags in `index.html` / `manifest.json` (platform lane).
 - Claude added the character store: `ios/App/App/PinkStorePlugin.swift` (StoreKit) and its project entry, on branch `ios/store-preview` (platform lane).
 - Claude enabled GitHub Actions CI: `.github/workflows/ci.yml` (node tests, key scan, file-size check) (platform lane).
+- Claude added the Android app (`android/`, `tools/android-bundle.mjs`, `docs/google-play.md`, the `android` scripts) (platform lane), and in the shop only a gate: `STORE_NATIVE` / `SHOP_PAID` in `game.js` hide the paid pages where the `PinkStore` plugin is missing. The paid pages themselves are untouched.

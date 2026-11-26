@@ -214,6 +214,24 @@ const tests = {
     sel = 2; press(); return [noNet, noFull, run === true && mode === 'solo'];`, 3, { Capacitor: { isNativePlatform: () => true } }],
   'web: 2 Devices and Rainbow Run keep their menu rows': [`
     return [MENU.length === 4 && MENU[2].startsWith('2 Devices'), SETTING_ROWS.some(r => r[0] === 'full')];`, 2],
+  'Android app (no PinkStore plugin): no paid pages, no 2 Devices, Ring Looks still work': [`
+    state = 'shop'; shopTap(650, 100); const noHeroes = shopPage === 'looks'; shopTap(850, 100); const noGear = shopPage === 'looks';
+    drawShop(); wallet = 200; owned = ['']; skin = ''; shopTap(shopCardX(1), 250); const looks = owned.includes('mint') && wallet === 50;
+    return [!SHOP_PAID && !STORE_NATIVE, noHeroes, noGear, !gate && !paid.length, looks, state === 'shop', !MENU.some(m => m.startsWith('2 Devices'))];`, 7, { Capacitor: { isNativePlatform: () => true, PluginHeaders: [{ name: 'App' }] } }],
+  'iPhone and iPad app (PinkStore plugin present): the paid pages open': [`
+    state = 'shop'; shopTap(650, 100); const heroes = shopPage === 'heroes'; shopTap(850, 100);
+    return [STORE_NATIVE && SHOP_PAID, heroes, shopPage === 'gear'];`, 3, { Capacitor: { isNativePlatform: () => true, PluginHeaders: [{ name: 'PinkStore' }], nativePromise: () => ({ then() {} }) } }],
+  'web: the paid pages still open and say they are sold in the app': [`
+    state = 'shop'; shopTap(650, 100); return [SHOP_PAID && !STORE_NATIVE, shopPage === 'heroes'];`, 2],
+  'Back button: closes screens, pauses play, leaves only from the title': [`
+    const atTitle = backButton() === false && state === 'title';
+    settingsOpen = true; const s1 = backButton() && !settingsOpen && state === 'title';
+    state = 'shop'; const s2 = backButton() && state === 'title';
+    openStickers(); const s3 = backButton() && state === 'title';
+    openMap(); const s4 = backButton() && state === 'title';
+    sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
+    const b1 = backButton() && paused && state === 'play', b2 = backButton() && !paused;
+    return [atTitle, s1, s2, s3, s4, b1, b2];`, 7],
 };
 
 let failed = 0;

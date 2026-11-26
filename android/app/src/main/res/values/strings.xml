@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pink Unicorn</string>
+    <string name="title_activity_main">Pink Unicorn</string>
+    <string name="package_name">com.dancruz.pinkunicorn</string>
+    <string name="custom_url_scheme">com.dancruz.pinkunicorn</string>
+</resources>

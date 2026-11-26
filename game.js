@@ -130,6 +130,10 @@ let gear = '';   // the paid weapon in use: it replaces the starting shot; free 
 try { gear = localStorage.getItem('pinkUnicornGear') || ''; } catch (e) {}
 let shopPage = 'looks', paid = [], storePrices = {}, storeTest = false, storeBusy = false, storeReady = false, gate = null;
 try { paid = JSON.parse(localStorage.getItem('pinkUnicornPaid') || '[]'); } catch (e) {}
+// The paid pages need the native PinkStore plugin, which only the iPhone and iPad app has. An app without it
+// (Android, until it gets Google Play Billing) shows Ring Looks only: nothing is offered that cannot be bought.
+const STORE_NATIVE = NATIVE_APP && !!(window.Capacitor.PluginHeaders || []).some(h => h.name === 'PinkStore');
+const SHOP_PAID = !NATIVE_APP || STORE_NATIVE;   // the website still shows the paid pages as "In the app"
 const storeCall = (method, args) => window.Capacitor.nativePromise ? window.Capacitor.nativePromise('PinkStore', method, args || {}) : { then(ok, no) { no && no(); } };
 function storeOwned(pids) {   // pids: every product Apple says this family owns
   const all = pids.includes(BUNDLE.pid);
@@ -203,6 +207,7 @@ function drawHeroes() {
   if (storeTest) txt('Test build: no real charges', W / 2, 24, 15, '#fff');
 }
 function drawShopTabs() {
+  if (!SHOP_PAID) return;
   [['looks', 'Ring Looks', 30, 175], ['heroes', 'Characters', 585, 175], ['gear', 'Weapons', 770, 175]].forEach(([id, name, x, w]) => {
     panel(x, 84, w, 38, 19, shopPage === id ? lg(0, 84, 0, 122, '#ffd36b', '#ff8fd0') : 'rgba(255,240,250,.85)', '#fff'); plainText(name, x + w / 2, 110, 18);
   });
@@ -314,7 +319,7 @@ function drawMap() {
 }
 function shopTap(x, y) {
   if (gate) { gateTap(x, y); return; }
-  if (y > 80 && y < 125 && (x < 205 || x > 585)) {
+  if (SHOP_PAID && y > 80 && y < 125 && (x < 205 || x > 585)) {
     shopPage = x < 205 ? 'looks' : x < 760 ? 'heroes' : 'gear'; sfx('click');
     if (shopPage !== 'looks') storeRefresh();
     if (shopPage === 'heroes') HEROES.forEach(h => ['up', 'down'].forEach(f => loadArt('skin_' + h.id + '_' + f)));
@@ -382,6 +387,15 @@ function toggleFullscreen(onlyEnter) {
   } catch (e) {}
 }
 function toggleMute() { muted = !muted; saveOpt('pinkUnicornMute', muted ? 1 : 0); }
+
+// Android's Back button (index.html wires it up in the app). Returns false on the title screen, where Back leaves the app.
+function backButton() {
+  if (gate) { gate = null; return true; }
+  if (settingsOpen) { settingsOpen = false; return true; }
+  if (state === 'shop' || state === 'stickers' || state === 'map') { state = 'title'; shopPage = 'looks'; return true; }
+  if (state === 'play' || state === 'walk' || state === 'bonus') { paused = !paused; return true; }
+  return state !== 'title';
+}
 
 // ---- input ----
 addEventListener('keydown', e => {

@@ -88,3 +88,11 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - 16 stickers (`STICKERS` in `game.js`), saved in `pinkUnicornStickers`, with a pop-up (`toast`) and `vo_u_sticker`. Art reuses existing sprites, so no Meshy credits. `stickerCheck` awards what old saves already earned, silently.
 - Daily gift: one per calendar day, `GIFTS` rings on a 7-day cycle. The day count deliberately never resets, because this is a kids' game and shouldn't punish a missed day. Keys: B book, G gift, Esc back from book and shop.
 
+
+## Android app for Google Play (2026-11-26, branch `claude/android-play`)
+- The Capacitor Android project is in `android/` (`com.dancruz.pinkunicorn`, 1.0.0, versionCode 1). Build with `npm run android:bundle`; everything is in `docs/google-play.md`. This replaces the PWABuilder plan above.
+- **No purchases on Android yet.** The Characters and Weapons pages are hidden where the native `PinkStore` plugin is missing (`STORE_NATIVE` in `game.js`). `docs/google-play.md` lists what a Google Play Billing update needs.
+- 2 Devices stays hidden in the app, as on iOS, so the Android app makes no network connection.
+- The Back button closes screens, pauses a game and leaves from the title (`backButton` in `game.js`).
+- `tools/check.sh` now runs with Node where there is no `osascript` (Windows, Linux).
+- Signed bundle 1.0.0 (1) was uploaded to Google Play internal testing. **Nobody has run it on a device.**

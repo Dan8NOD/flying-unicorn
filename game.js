@@ -109,7 +109,8 @@ const shopCardX = i => W / 2 + (i - (SKINS.length - 1) / 2) * 152;
 let wallet = 0, owned = [''], skin = '', hostSkin = '', shopMsg = '', shopMsgT = 0;
 try { wallet = +localStorage.getItem('pinkUnicornWallet') || 0; owned = JSON.parse(localStorage.getItem('pinkUnicornOwned') || '[""]'); skin = localStorage.getItem('pinkUnicornSkin') || ''; } catch (e) {}
 function saveShop() { saveOpt('pinkUnicornWallet', wallet); saveOpt('pinkUnicornOwned', JSON.stringify(owned)); saveOpt('pinkUnicornSkin', skin); }
-// Characters for sale: one-time App Store purchases. Apple is the source of truth for what is owned; `paid` only caches it.
+// Characters and weapons for sale: one-time purchases through the App Store or Google Play. The store is the source of
+// truth for what is owned; `paid` only caches it. Product IDs and prices: docs/product-sheet.md (a test keeps them in step).
 const HEROES = [
   { id: 'moonbeam', name: 'Moonbeam', pid: 'com.dancruz.pinkunicorn.hero.moonbeam', price: '$4.99', line: 'Dash leaves a star trail' },
   { id: 'coral', name: 'Coral', pid: 'com.dancruz.pinkunicorn.hero.coral', price: '$4.99', line: 'Bubbles slow foes down' },
@@ -117,12 +118,12 @@ const HEROES = [
   { id: 'whiskerwing', name: 'Whiskerwing', pid: 'com.dancruz.pinkunicorn.hero.whiskerwing', price: '$4.99', line: 'Yarn stars bounce once' },
 ];
 const GEAR = [
-  { id: 'starwand', name: 'Star Wand', pid: 'com.dancruz.pinkunicorn.weapon.starwand', price: '$1.99', shot: 'wand', line: 'Three homing mini-stars' },
-  { id: 'snowflake', name: 'Snowflakes', pid: 'com.dancruz.pinkunicorn.weapon.snowflake', price: '$1.99', shot: 'flake', line: 'Spin through a whole row' },
-  { id: 'harp', name: 'Music Harp', pid: 'com.dancruz.pinkunicorn.weapon.harp', price: '$1.99', shot: 'note', line: 'Wavy notes, big 8th chord' },
-  { id: 'thunder', name: 'Thunder Horn', pid: 'com.dancruz.pinkunicorn.weapon.thunder', price: '$1.99', shot: 'zap', line: 'A bolt that jumps to 3 foes' },
+  { id: 'starwand', name: 'Star Wand', pid: 'com.dancruz.pinkunicorn.weapon.starwand', price: '$2.99', shot: 'wand', line: 'Three homing mini-stars' },
+  { id: 'snowflake', name: 'Snowflakes', pid: 'com.dancruz.pinkunicorn.weapon.snowflake', price: '$2.99', shot: 'flake', line: 'Spin through a whole row' },
+  { id: 'harp', name: 'Music Harp', pid: 'com.dancruz.pinkunicorn.weapon.harp', price: '$2.99', shot: 'note', line: 'Wavy notes, big 8th chord' },
+  { id: 'thunder', name: 'Thunder Horn', pid: 'com.dancruz.pinkunicorn.weapon.thunder', price: '$2.99', shot: 'zap', line: 'A bolt that jumps to 3 foes' },
 ];
-const BUNDLE = { id: 'bundle', name: 'Sparkle Bundle', pid: 'com.dancruz.pinkunicorn.bundle.all', price: '$19.99' };
+const BUNDLE = { id: 'bundle', name: 'Sparkle Bundle', pid: 'com.dancruz.pinkunicorn.bundle.all', price: '$9.99' };
 const STORE_ITEMS = [...HEROES, ...GEAR];
 const storeList = () => shopPage === 'gear' ? GEAR : HEROES;
 const heroCardX = i => W / 2 + (i - 1.5) * 190;
@@ -130,16 +131,22 @@ let gear = '';   // the paid weapon in use: it replaces the starting shot; free 
 try { gear = localStorage.getItem('pinkUnicornGear') || ''; } catch (e) {}
 let shopPage = 'looks', paid = [], storePrices = {}, storeTest = false, storeBusy = false, storeReady = false, gate = null;
 try { paid = JSON.parse(localStorage.getItem('pinkUnicornPaid') || '[]'); } catch (e) {}
-// The paid pages need the native PinkStore plugin, which only the iPhone and iPad app has. An app without it
-// (Android, until it gets Google Play Billing) shows Ring Looks only: nothing is offered that cannot be bought.
+// The paid pages need the native PinkStore plugin: StoreKit in the iPhone and iPad app, Google Play Billing in the Android
+// app. An app built without it (Android with billing switched off) shows Ring Looks only: nothing is offered that cannot be bought.
 const STORE_NATIVE = NATIVE_APP && !!(window.Capacitor.PluginHeaders || []).some(h => h.name === 'PinkStore');
 const SHOP_PAID = !NATIVE_APP || STORE_NATIVE;   // the website still shows the paid pages as "In the app"
+const ANDROID_APP = NATIVE_APP && !!window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'android';
+const STORE_NAME = ANDROID_APP ? 'Google Play' : 'the App Store';
 const storeCall = (method, args) => window.Capacitor.nativePromise ? window.Capacitor.nativePromise('PinkStore', method, args || {}) : { then(ok, no) { no && no(); } };
-function storeOwned(pids) {   // pids: every product Apple says this family owns
+// Google refunds a purchase the app has not acknowledged within three days. The app acknowledges only after the unlock is
+// saved here, so `finish` always comes after the grant. On iPhone and iPad the plugin has already finished the transaction.
+function storeFinish(pids) { if (pids.length) storeCall('finish', { ids: pids }).then(() => {}, () => {}); }
+function storeOwned(pids) {   // pids: every product the store says this family owns (paid for and verified; never a pending one)
   const all = pids.includes(BUNDLE.pid);
   paid = STORE_ITEMS.filter(h => all || pids.includes(h.pid)).map(h => h.id); saveOpt('pinkUnicornPaid', JSON.stringify(paid));
   if (HEROES.some(h => h.id === skin) && !paid.includes(skin)) { skin = ''; saveShop(); }   // refunded
   if (gear && !paid.includes(gear)) { gear = ''; saveOpt('pinkUnicornGear', ''); }
+  storeFinish(pids);
 }
 function storeRefresh() {
   if (!NATIVE_APP) return;
@@ -147,11 +154,11 @@ function storeRefresh() {
   storeCall('owned').then(r => storeOwned(r.ids || []), () => {});   // no answer (offline): keep the cached list
 }
 function storeBuy(h) {
-  storeBusy = true; shopMsg = 'Asking the App Store...'; shopMsgT = 600;
+  storeBusy = true; shopMsg = `Asking ${STORE_NAME}...`; shopMsgT = 600;
   storeCall('buy', { id: h.pid }).then(r => {
     storeBusy = false; shopMsgT = 150;
-    if (r.status === 'purchased') { storeGot(h); sfx('power'); voice('vo_u_power'); shopMsg = h.name + (r.test ? ' unlocked (test, no charge)!' : ' is yours!'); }
-    else if (r.status === 'pending') shopMsg = 'Waiting for a grown-up to approve';
+    if (r.status === 'purchased') { storeGot(h); storeFinish([h.pid]); sfx('power'); voice('vo_u_power'); shopMsg = h.name + (r.test ? ' unlocked (test, no charge)!' : ' is yours!'); }
+    else if (r.status === 'pending') shopMsg = ANDROID_APP ? 'Payment pending: it unlocks when the payment clears' : 'Waiting for a grown-up to approve';
     else if (r.status === 'cancelled') shopMsgT = 0;
     else shopMsg = 'The store is not available yet';
   }, () => { storeBusy = false; shopMsg = 'The store is not available yet'; shopMsgT = 150; });
@@ -163,8 +170,11 @@ function storeGot(h) {   // a purchase went through: own it and start using it
 }
 function storeRestore() {
   storeBusy = true; shopMsg = 'Restoring purchases...'; shopMsgT = 600;
-  storeCall('restore').then(r => { storeBusy = false; storeOwned(r.ids || []); shopMsg = paid.length ? 'Purchases restored!' : 'No purchases to restore'; shopMsgT = 150; }, () => { storeBusy = false; shopMsg = 'Could not reach the App Store'; shopMsgT = 150; });
+  storeCall('restore').then(r => { storeBusy = false; storeOwned(r.ids || []); shopMsg = paid.length ? 'Purchases restored!' : 'No purchases to restore'; shopMsgT = 150; }, () => { storeBusy = false; shopMsg = `Could not reach ${STORE_NAME}`; shopMsgT = 150; });
 }
+// Every launch: ask the store what is owned. This is how a purchase the app missed arrives (the app was closed during the
+// purchase, a pending payment cleared later, or the app was reinstalled), and how it gets acknowledged in time.
+if (STORE_NATIVE) storeRefresh();
 const heroPrice = h => storePrices[h.pid] || (NATIVE_APP && !storeTest ? '' : h.price);
 function openGate(h) {   // grown-ups only: a small times table before any purchase
   const a = 6 + (Math.random() * 4 | 0), b = 6 + (Math.random() * 4 | 0), good = a * b;
@@ -375,7 +385,14 @@ function drawSettings(title) {
     g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.fillStyle = '#fff'; g.textAlign = 'left'; g.fillText(label, W / 2 - 186, y + 7);
     g.textAlign = 'right'; g.fillText(vals[k === 'full' ? +isFull() : opts[k]], W / 2 + 186, y + 7);
   });
-  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, 456);
+  const quit = title === 'Paused' && mode !== 'guest';   // a way back to the title screen without losing every heart
+  if (quit) { panel(W / 2 - 80, 414, 160, 34, 17, lg(0, 414, 0, 448, '#c27ab0', '#7a1a63'), '#fff'); txt('Menu', W / 2, 437, 17, '#fff'); }
+  g.font = 'bold 17px "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#7a1a63'; g.fillText('Tap a row to change it · tap outside to close', W / 2, quit ? 468 : 456);
+}
+const playing = () => state === 'play' || state === 'walk' || state === 'bonus';
+function pauseQuit() {   // the Menu button on the pause panel (also Backspace, and B or Back on a gamepad)
+  if (!paused || !playing() || mode === 'guest' || trans) return false;
+  paused = false; saveBest(); saveShop(); toTitle(); return true;
 }
 const touchUI = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;   // phones/tablets vs computers
 function isFull() { return typeof document !== 'undefined' && !!(document.fullscreenElement || document.webkitFullscreenElement); }
@@ -393,7 +410,8 @@ function backButton() {
   if (gate) { gate = null; return true; }
   if (settingsOpen) { settingsOpen = false; return true; }
   if (state === 'shop' || state === 'stickers' || state === 'map') { state = 'title'; shopPage = 'looks'; return true; }
-  if (state === 'play' || state === 'walk' || state === 'bonus') { paused = !paused; return true; }
+  if (playing()) { paused = !paused; return true; }
+  if (state === 'over' && !trans) { toTitle(); return true; }
   return state !== 'title';
 }
 
@@ -421,7 +439,8 @@ addEventListener('keydown', e => {
     if (e.key === 'e') { easy = !easy; saveOpt('pinkUnicornEasy', easy ? 1 : 0); }
     if (e.key >= '1' && e.key <= String(MENU.length)) { sel = +e.key - 1; press(); }
   }
-  if (e.key === 'p' || e.key === 'Escape') paused = !paused && (state === 'play' || state === 'walk');
+  if (e.key === 'Backspace' && pauseQuit()) return;
+  if (e.key === 'p' || e.key === 'Escape') paused = !paused && playing();
   if (state === 'walk' && !paused && (e.key === 'ArrowUp' || e.key === 'w')) { if (!e.repeat) walkJump(); return; }
   if (state === 'play' && !paused && (e.key === 'z' || e.key === 'Enter')) { nova(); return; }
   if (state === 'play' && !paused && (e.key === ' ' || e.key === 'Shift' || e.key === 'x' || e.key === 'q')) {   // dash (local 2P: Q dashes player 2)
@@ -471,10 +490,11 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'shop') { shopTap(x, y); return; }
   if (state === 'stickers') { stickerTap(x, y); return; }
   if (state === 'map') { mapDrag = { x, mx: mapX, moved: false }; return; }
+  if (paused && Math.abs(x - W / 2) < 80 && y > 412 && y < 450 && pauseQuit()) return;   // Menu button on the pause panel
   if (state === 'play' && paused && mode !== 'guest' && settingsTap(x, y)) return;
   if (state === 'over' && Math.abs(x - W / 2) < 80 && y > H - 74 && y < H - 22) { toTitle(); return; }   // Menu button
   if ((state === 'bonus' || state === 'walk') && Math.hypot(x - (W - 40), y - (H - 34)) < 24) { paused = !paused; return; }
-  if (state === 'walk' && paused && settingsTap(x, y)) return;
+  if ((state === 'walk' || state === 'bonus') && paused && settingsTap(x, y)) return;
   if (state === 'play') {   // on-screen pause / mute buttons for touch screens
     if (Math.hypot(x - (W - 40), y - (H - 34)) < 24) { if (mode === 'guest') net.sendR('{"p":2}'); else paused = !paused; return; }
     if (Math.hypot(x - (W - 94), y - (H - 34)) < 24) { toggleMute(); return; }
@@ -553,7 +573,8 @@ function netMenu() {
   if (net.open && net.role === 'host') { mode = 'host'; start(startCh, true); return; }
   if (typeof showLobby === 'function') showLobby(); else { lobbyMsg = 'Online play is not available here'; lobbyT = 180; }
 }
-// ---- gamepads: first pad steers player 1, second pad player 2; A = start/tap, Start = pause ----
+// ---- gamepads: first pad steers player 1, second pad player 2; A = start/tap, Start = pause, B or Back = go back ----
+// Title: up/down picks the mode, left/right the chapter, Y opens the map. Map: left/right, A flies there, B goes back.
 let padPrev = {}, padDir = [0, 0], padX = [0, 0];
 function pollPads() {
   padDir = [0, 0]; padX = [0, 0];
@@ -565,12 +586,20 @@ function pollPads() {
     padDir[i] = d;
     let dx = Math.abs(gp.axes[0] || 0) > .25 ? gp.axes[0] : 0; if (b(14)) dx = -1; if (b(15)) dx = 1;
     padX[i] = dx;
-    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0, dash: b(1) || b(2), nova: b(3) };
-    if (state === 'title' && !trans) { if (cur.up && !prev.up) sel = (sel + MENU.length - 1) % MENU.length; if (cur.down && !prev.down) sel = (sel + 1) % MENU.length; }
+    const prev = padPrev[gp.index] || {}, cur = { a: b(0), s: b(9), up: d < 0, down: d > 0, left: dx < 0, right: dx > 0, dash: b(1) || b(2), nova: b(3), b: b(1), back: b(8) };
+    if (state === 'title' && !trans && !settingsOpen) {
+      if (cur.up && !prev.up) sel = (sel + MENU.length - 1) % MENU.length; if (cur.down && !prev.down) sel = (sel + 1) % MENU.length;
+      if (cur.left && !prev.left) startCh = Math.max(0, startCh - 1); if (cur.right && !prev.right) startCh = Math.min(reached, startCh + 1);
+      if (cur.nova && !prev.nova && mode !== 'guest') { openMap(); padPrev[gp.index] = cur; return; }
+    } else if (state === 'map') {
+      if (cur.left && !prev.left) { startCh = Math.max(0, startCh - 1); centerMap(); } if (cur.right && !prev.right) { startCh = Math.min(reached, startCh + 1); centerMap(); }
+      if (cur.a && !prev.a) { mapPlay(startCh); padPrev[gp.index] = cur; return; }
+    }
+    if (mode !== 'guest' && ((cur.back && !prev.back) || (cur.b && !prev.b && (paused || !playing())))) { if (!pauseQuit()) backButton(); padPrev[gp.index] = cur; return; }
     if (cur.a && !prev.a) press();
     if (cur.nova && !prev.nova && state === 'play') nova();
     if (cur.dash && !prev.dash && state === 'play') { const p = mode === 'guest' ? null : players[i]; if (p) dash(p); else net.sendR('{"p":3}'); }
-    if (cur.s && !prev.s) { if (state === 'play') paused = !paused; else press(); }
+    if (cur.s && !prev.s) { if (playing()) paused = !paused; else press(); }
     padPrev[gp.index] = cur;
   });
 }
@@ -2232,6 +2261,6 @@ function frame(now) {
   if (acc > STEP * 2) acc = 0;
   if (n) draw();
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') paused = true; });
+document.addEventListener('visibilitychange', () => { if (document.hidden && playing()) paused = true; });
 requestAnimationFrame(frame);
 storeRefresh();

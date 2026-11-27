@@ -232,6 +232,55 @@ const tests = {
     sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); }
     const b1 = backButton() && paused && state === 'play', b2 = backButton() && !paused;
     return [atTitle, s1, s2, s3, s4, b1, b2];`, 7],
+  'pause: Menu goes back to the title from a chapter, the bonus round and the garden; Back leaves Game Over': [`
+    const toPlay = () => { sel = 0; press(); for (let q = 0; q < 400 && state !== 'play'; q++) { step(1); if (state === 'chapter') press(); } };
+    toPlay(); const running = pauseQuit() === false && state === 'play';
+    paused = true; drawSettings('Paused'); score = best + 50; const q1 = pauseQuit(); step(80); const fromPlay = q1 && state === 'title' && !paused && best === score;
+    toPlay(); state = 'bonus'; paused = true; const q2 = pauseQuit(); step(80); const fromBonus = q2 && state === 'title';
+    toPlay(); state = 'walk'; paused = true; const q3 = pauseQuit(); step(80); const fromWalk = q3 && state === 'title';
+    toPlay(); const again = state === 'play' && !paused;
+    state = 'over'; t = 0; const b = backButton(); step(80);
+    return [running, fromPlay, fromBonus, fromWalk, again, b && state === 'title'];`, 6],
+  'Google Play app: owned at launch, saved before it is acknowledged, pending unlocks nothing, offline keeps the list': [`
+    const C = window.Capacitor, launch = C.calls.map(c => c[0]);
+    const atLaunch = launch.includes('owned') && paid.length === 1 && paid[0] === 'harp';
+    const fin = C.calls.find(c => c[0] === 'finish'), acked = !!fin && fin[1].ids.join() === GEAR[2].pid && launch.indexOf('owned') < launch.indexOf('finish');
+    let status = 'pending', savedAtFinish = ''; const seen = [];
+    C.nativePromise = (pl, m, a) => { seen.push(m); if (m === 'finish') savedAtFinish = localStorage.getItem('pinkUnicornPaid') + '|' + a.ids.join(); return { then(ok) { ok(m === 'buy' ? { status } : {}); } }; };
+    state = 'shop'; shopPage = 'heroes'; storeBuy(HEROES[0]);
+    const pending = !paid.includes('moonbeam') && !seen.includes('finish') && shopMsg.startsWith('Payment pending') && skin === '';
+    status = 'unavailable'; storeBuy(HEROES[0]); const refused = !paid.includes('moonbeam') && !seen.includes('finish');
+    status = 'purchased'; storeBuy(HEROES[0]);
+    const bought = paid.includes('moonbeam') && savedAtFinish.split('|')[0].includes('moonbeam') && savedAtFinish.split('|')[1] === HEROES[0].pid;
+    C.nativePromise = () => ({ then(ok, no) { no(); } }); storeRefresh(); storeRestore(); const kept = paid.includes('moonbeam') && paid.includes('harp') && shopMsg === 'Could not reach Google Play';
+    return [ANDROID_APP && STORE_NATIVE && STORE_NAME === 'Google Play', atLaunch, acked, pending, refused, bought, kept];`, 7,
+    { Capacitor: (() => { const c = { calls: [], isNativePlatform: () => true, getPlatform: () => 'android', PluginHeaders: [{ name: 'PinkStore' }] };
+      c.nativePromise = (pl, m, a) => { c.calls.push([m, a]); return { then(ok) { ok(m === 'products' ? { prices: {} } : m === 'owned' ? { ids: ['com.dancruz.pinkunicorn.weapon.harp'] } : {}); } }; }; return c; })() }],
+  'product sheet: free game, nine products at $2 to $10, same IDs and prices in the game and both listings': [`
+    const D = window.DOCS, rows = [...D.sheet.matchAll(/^\\| \`(com[^\`]+)\` \\| ([^|]+) \\| ([^|]+) \\| \\$([0-9.]+) \\| ([^|]+) \\| ([^|]+) \\|$/gm)].map(m => ({ pid: m[1], name: m[2].trim(), usd: m[4], play: m[5].trim(), apple: m[6].trim() }));
+    const items = [...STORE_ITEMS, BUNDLE];
+    const sameIds = rows.length === 9 && items.length === 9 && items.every(h => rows.some(r => r.pid === h.pid && '$' + r.usd === h.price));
+    const inRange = rows.every(r => +r.usd >= 2 && +r.usd <= 10);
+    const playText = rows.every(r => r.play.length >= 50 && r.play.length <= 200 && r.name.length <= 55), appleText = rows.every(r => r.name.length <= 30 && r.apple.length <= 45);
+    const listed = doc => rows.every(r => doc.includes('\`' + r.pid + '\` | $' + r.usd + ' |'));
+    return [sameIds, inRange, playText, appleText, listed(D.apple), listed(D.play), !/19\\.99|\\$1\\.99/.test(D.apple + D.play)];`, 7,
+    { DOCS: { sheet: readFile('docs/product-sheet.md'), apple: readFile('docs/app-store-listing.md'), play: readFile('docs/google-play-listing.md') } }],
+  'Google Play Billing source: paid means PURCHASED and signed, one acknowledge after the grant, shop gated by the build switch': [`
+    const A = window.ANDROID, between = (text, from, to) => text.slice(text.indexOf(from), text.indexOf(to, text.indexOf(from) + 1));
+    const paidFn = between(A.plugin, 'private boolean paid(', 'private static List<String> idList');
+    const strict = paidFn.includes('!= Purchase.PurchaseState.PURCHASED) return false') && paidFn.includes('getPackageName().equals(purchase.getPackageName())') && paidFn.includes('PlayReceipt.genuine(') && paidFn.includes('BuildConfig.PLAY_LICENSE_KEY');
+    const finishFn = between(A.plugin, 'public void finish(', 'private static void status(');
+    const oneAck = A.plugin.split('acknowledgePurchase(').length === 2 && finishFn.includes('acknowledgePurchase(') && finishFn.includes('!paid(purchase)');
+    const ownedFn = between(A.plugin, 'private void ownedIds(', 'public void owned(');
+    const ownedStrict = ownedFn.includes('if (paid(purchase))') && ownedFn.includes('call.reject(');
+    const outcomeFn = A.plugin.slice(A.plugin.indexOf('private String outcome('));
+    const noPendingGrant = outcomeFn.includes('if (paid(purchase)) return "purchased"') && outcomeFn.split('"purchased"').length === 2 && A.plugin.includes('enablePendingPurchases(');
+    const failClosed = A.receipt.includes('key.length == 0') && A.receipt.includes('catch (Exception e)') && A.receipt.split('return false').length >= 3;
+    const gated = A.main.includes('if (BuildConfig.PINK_STORE_BILLING) registerPlugin(PinkStorePlugin.class);') && /^pinkStoreBilling=false$/m.test(A.props) && A.gradle.includes('pinkStoreBilling=true needs pinkPlayLicenseKey');
+    const code = +(A.gradle.match(/versionCode\\s+(\\d+)/) || [])[1];
+    return [strict, oneAck, ownedStrict, noPendingGrant, failClosed, gated, code >= 2, A.gradle.includes('com.android.billingclient:billing:')];`, 8,
+    { ANDROID: { plugin: readFile('android/app/src/main/java/com/dancruz/pinkunicorn/PinkStorePlugin.java'), receipt: readFile('android/app/src/main/java/com/dancruz/pinkunicorn/PlayReceipt.java'),
+      main: readFile('android/app/src/main/java/com/dancruz/pinkunicorn/MainActivity.java'), props: readFile('android/gradle.properties'), gradle: readFile('android/app/build.gradle') } }],
 };
 
 let failed = 0;

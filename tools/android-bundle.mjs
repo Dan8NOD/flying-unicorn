@@ -19,7 +19,9 @@ function run(command, cwd) {
 }
 
 run('npm run android', root);
-run(`${windows ? '.\\gradlew.bat' : './gradlew'} bundleRelease`, android);
+// PINK_STORE_BILLING=1 builds with the paid shop pages on (docs/google-play.md, "Turning purchases on").
+const billing = process.env.PINK_STORE_BILLING === '1';
+run(`${windows ? '.\\gradlew.bat' : './gradlew'} bundleRelease${billing ? ' -PpinkStoreBilling=true' : ''}`, android);
 
 const bundle = join(android, 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab');
 const gradle = await readFile(join(android, 'app', 'build.gradle'), 'utf8');
@@ -32,6 +34,7 @@ const signed = /META-INF\/[\w.-]+\.(RSA|EC|DSA)/.test((await readFile(bundle)).t
 
 console.log(`\nBundle: ${bundle}`);
 console.log(`Version ${versionName} (versionCode ${versionCode}), ${megabytes} MB.`);
+console.log(billing ? 'Purchases: ON (Google Play Billing). For internal testing until a test purchase has passed.' : 'Purchases: off. The shop shows Ring Looks only.');
 if (signed) {
   console.log('Signed. Google Play takes each versionCode once: raise it in android/app/build.gradle before the next upload.');
 } else {

@@ -10,10 +10,10 @@ Version 1.0 is **free to download with optional one-time in-app purchases** (dec
 | Name on the App Store | **Pink Winged Unicorn** (Dan reserves it when he creates the app record) |
 | Name under the home-screen icon | Pink Unicorn |
 | Bundle ID | `com.dancruz.pinkunicorn` |
-| Version / build | 1.0.0 (1) |
+| Version / build | 1.0.0 (2). Build 1 was already uploaded (PR #5); build 2 has the 2026-11-26 prices and asks the App Store what is owned at every launch. |
 | Primary category | Games, then the Action subcategory |
-| Secondary category | Games, then the Family subcategory |
-| Kids Category | **None.** Leave it off for 1.0, because it brings stricter review. |
+| Secondary category | Games, then the Casual subcategory |
+| Kids Category | **None.** Dan decided on 2026-11-17 that this is not a kids' app: it is sold to ages 13 and up, like Fat Cat Cruz. |
 | Price | Free, with in-app purchases |
 | Privacy Policy URL | https://dan8nod.github.io/flying-unicorn/privacy.html |
 | Support URL | https://dan8nod.github.io/flying-unicorn/support.html |
@@ -39,14 +39,14 @@ The Privacy and Support URLs go live only after this PR is merged into `more-lev
   - Gambling or contests: No.
   - Loot boxes: No.
 - **Made for Kids:** No.
-- **Expected rating:** 4+.
+- **Rating: 13+** (Dan, 2026-11-17: same audience as Fat Cat Cruz and the other games). The answers above would give 4+ on their own, so pick 13+ with the questionnaire's "Age Rating Override" (raise to a higher rating) instead of changing the honest answers.
 
 ## English (U.S.)
 
 - **Name** (19): `Pink Winged Unicorn`
 - **Subtitle** (27): `Magic unicorn sky adventure`
 - **Promotional text** (156): `Fly a pink unicorn through 27 magical chapters, throw pony-dust stars and cheer up grumpy saucer bosses. Play alone or with a friend. No ads, works offline.`
-- **Keywords** (96): `pegasus,mermaid,rainbow,flying,shooter,kids,cute,magic,fairy,pony,family,2 player,offline,arcade`
+- **Keywords** (97): `pegasus,mermaid,rainbow,flying,shooter,wings,cute,magic,fairy,pony,family,2 player,offline,arcade`
 
 **Description:**
 
@@ -84,19 +84,21 @@ The Privacy and Support URLs go live only after this PR is merged into `more-lev
 - No device frames with real people, and no other companies' names or characters in the captions.
 
 ## In-app purchases (all non-consumable; Dan creates them in App Store Connect)
+Prices follow `docs/product-sheet.md` (2026-11-26: every product between $2 and $10). That sheet also has each product's display name and description. If the products already exist in App Store Connect at the 2026-11-06 prices, change the weapon and bundle prices there; the IDs stay.
+
 | Reference name | Product ID | Price |
 |---|---|---|
 | Moonbeam | `com.dancruz.pinkunicorn.hero.moonbeam` | $4.99 |
 | Coral | `com.dancruz.pinkunicorn.hero.coral` | $4.99 |
 | Ember | `com.dancruz.pinkunicorn.hero.ember` | $4.99 |
 | Whiskerwing | `com.dancruz.pinkunicorn.hero.whiskerwing` | $4.99 |
-| Star Wand | `com.dancruz.pinkunicorn.weapon.starwand` | $1.99 |
-| Snowflake Spinners | `com.dancruz.pinkunicorn.weapon.snowflake` | $1.99 |
-| Music Harp | `com.dancruz.pinkunicorn.weapon.harp` | $1.99 |
-| Thunder Horn | `com.dancruz.pinkunicorn.weapon.thunder` | $1.99 |
-| Sparkle Bundle | `com.dancruz.pinkunicorn.bundle.all` | $19.99 |
+| Star Wand | `com.dancruz.pinkunicorn.weapon.starwand` | $2.99 |
+| Snowflake Spinners | `com.dancruz.pinkunicorn.weapon.snowflake` | $2.99 |
+| Music Harp | `com.dancruz.pinkunicorn.weapon.harp` | $2.99 |
+| Thunder Horn | `com.dancruz.pinkunicorn.weapon.thunder` | $2.99 |
+| Sparkle Bundle | `com.dancruz.pinkunicorn.bundle.all` | $9.99 |
 
-- Each product needs a display name, a description and a review screenshot of its shop page.
+- Each product needs a display name and a description (both in `docs/product-sheet.md`) and a review screenshot of its shop page. Turn Family Sharing on for each.
 - Selling needs Apple's Paid Apps agreement. Dan enters the banking and tax details himself.
 - Attach all nine products to the version before submitting. A first in-app purchase is reviewed together with the app.
 - Privacy label stays **Data Not Collected**: Apple handles payment, and we receive nothing about the buyer.

@@ -4,7 +4,7 @@ A magical side-scrolling shooter for phones, tablets and computers. Fly a pink u
 Chapters: Candy Clouds, Mermaid Bay, Starry Night, Aurora Peaks, Rainbow Canyon, Coral Reef, Crystal Caves, Storm Fortress, Enchanted Forest, Cotton Candy Kingdom, Moonlit Lake, Sakura Valley, Rainbow Waterfalls, Starlight Carnival, Sunflower Fields, Glitter Volcano, Cosmic Nebula, Autumn Woods, Airship Harbor, Dream City, Tea Party Garden, Ice Palace, Toy Workshop, Lantern Festival, Jungle Temple, Desert Oasis, Unicorn Castle.
 
 **Play:** on phones, tablets and computers (Windows/Mac/Linux browsers). Publish to itch.io with `tools/package-itch.sh` (see `ITCH.md`). Locally: open `index.html`, or serve the folder (`python3 -m http.server`) for full audio. Mouse, touch, keyboard and gamepads.
-Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / right-click / pad B. Rainbow Nova: Z / Enter / pad Y / tap the meter. M = mute, P = pause, E = easy mode (title screen).
+Move: drag / arrows / WASD / stick. Dash: double-tap / Space / Shift / X / right-click / pad B. Rainbow Nova: Z / Enter / pad Y / tap the meter. M = mute, P = pause (the pause panel has a Menu button; Backspace does the same), E = easy mode (title screen). Gamepad: A start, Start pause, B or Back go back, Y map on the title screen.
 
 **Modes:** 1 Player; Rainbow Run (endless, random chapters that get harder, boss every third stretch, best run saved); 2 Players on one screen (arrows + WASD, touch halves, or two gamepads); 2 Devices online (host / join by swapping a code, `net.js`).
 
@@ -31,3 +31,5 @@ Inside the app (`NATIVE_APP` in `game.js`) the online "2 Devices" mode and the f
 Tests: `osascript -l JavaScript tools/test.js` (any Mac) or `node tools/test.js`. Before committing: `tools/check.sh` (the toll booth; also runs as a pre-commit hook). Several AI agents share this repo: see `LANES.md`.
 
 **New:** Coral Reef is a gentle sightseeing ride for small players (Mermaid rides along, say hi to five sea friends, no hearts lost), and the adventure now ends with the Castle Garden, a walking stage where the unicorn eats treats, hops on mushrooms, makes friends and walks home through the castle gate.
+
+**Store:** the game is free; nine optional one-time purchases cost $2.99 to $9.99 (`docs/product-sheet.md`). iPhone and iPad sell them through StoreKit; the Android code for Google Play Billing is in place but switched off until a test purchase has passed (`docs/google-play.md`). Listings: `docs/app-store-listing.md`, `docs/google-play-listing.md`. Steam notes: `docs/steam.md`.

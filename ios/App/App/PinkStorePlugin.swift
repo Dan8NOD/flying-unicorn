@@ -2,7 +2,8 @@ import Foundation
 import Capacitor
 import StoreKit
 
-// One-time character purchases through Apple's StoreKit. Called from game.js as "PinkStore".
+// One-time character and weapon purchases through Apple's StoreKit. Called from game.js as "PinkStore".
+// Product IDs and prices: docs/product-sheet.md. The Android twin is PinkStorePlugin.java (Google Play Billing).
 // Apple holds the record of what a family owns, so nothing about the buyer is stored or sent by us.
 // Debug builds only: when App Store Connect has no matching product yet, "buy" unlocks locally with
 // no charge so the shop can be tried on a device. Release builds contain no such path.
@@ -14,7 +15,8 @@ public class PinkStorePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "products", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "owned", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "buy", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "finish", returnType: CAPPluginReturnPromise)
     ]
     private var updates: Task<Void, Never>?
 
@@ -90,6 +92,13 @@ public class PinkStorePlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("restore failed")
             }
         }
+    }
+
+    // game.js calls "finish" once an unlock is saved. Google Play needs that call to acknowledge the purchase
+    // (android/.../PinkStorePlugin.java). Here every verified transaction is already finished in "buy" and in
+    // `updates`, so there is nothing left to do.
+    @objc func finish(_ call: CAPPluginCall) {
+        call.resolve()
     }
 
     private func ownedIds() async -> [String] {

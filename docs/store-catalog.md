@@ -1,5 +1,11 @@
 # Pink Unicorn store: characters and weapons for sale (draft 1, 2026-11-02)
 
+> **Prices re-cut on 2026-11-26.** Dan's rule for every game is now: free to download, every product between $2 and $10.
+> Characters stay at $4.99, weapons go from $1.99 to $2.99, and the Sparkle Bundle goes from $19.99 to $9.99.
+> The product IDs are unchanged. The current list, with store descriptions, is `docs/product-sheet.md`; the table below
+> shows the new prices. The rest of this page is the original plan, kept for its reasoning. The store is built: iOS in
+> PR #4, Google Play Billing in this branch (`docs/google-play.md`).
+
 Families asked for more characters and more weapons. This draft covers what to sell, how to price it, the App Store product IDs and the art each item needs.
 **Nothing here is built yet.** Dan approves the list, the prices and the art spend first.
 
@@ -31,13 +37,13 @@ Families asked for more characters and more weapons. This draft covers what to s
 | 2 | **Moonbeam Alicorn** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.moonbeam` | A silver-blue night unicorn. Her dash leaves a trail of stars. |
 | 3 | **Coral the Sea-Pegasus** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.coral` | A seahorse-tailed pegasus. Shoots bubbles that slow foes. |
 | 4 | **Ember the Baby Dragon** | Character | $4.99 | `com.dancruz.pinkunicorn.hero.ember` | A friendly pink dragon. Shoots short warm sparkle-flames. |
-| 5 | **Star Wand** | Weapon | $1.99 | `com.dancruz.pinkunicorn.weapon.starwand` | Fires 3 homing mini-stars. |
-| 6 | **Snowflake Spinners** | Weapon | $1.99 | `com.dancruz.pinkunicorn.weapon.snowflake` | Spinning flakes that pass through a row of foes. |
-| 7 | **Music Note Harp** | Weapon | $1.99 | `com.dancruz.pinkunicorn.weapon.harp` | Notes fly in a wave; every 8th note is a big chord. |
-| 8 | **Thunder Horn** | Weapon | $1.99 | `com.dancruz.pinkunicorn.weapon.thunder` | A charged horn bolt that chains to 3 foes. |
-| 9 | **Sparkle Bundle** | Bundle | $19.99 | `com.dancruz.pinkunicorn.bundle.all` | All 8 above (a $27.92 value) plus everything added later in 1.x. |
+| 5 | **Star Wand** | Weapon | $2.99 | `com.dancruz.pinkunicorn.weapon.starwand` | Fires 3 homing mini-stars. |
+| 6 | **Snowflake Spinners** | Weapon | $2.99 | `com.dancruz.pinkunicorn.weapon.snowflake` | Spinning flakes that pass through a row of foes. |
+| 7 | **Music Note Harp** | Weapon | $2.99 | `com.dancruz.pinkunicorn.weapon.harp` | Notes fly in a wave; every 8th note is a big chord. |
+| 8 | **Thunder Horn** | Weapon | $2.99 | `com.dancruz.pinkunicorn.weapon.thunder` | A charged horn bolt that chains to 3 foes. |
+| 9 | **Sparkle Bundle** | Bundle | $9.99 | `com.dancruz.pinkunicorn.bundle.all` | All 8 above ($31.92 bought one by one). |
 
-- **Dan decided on 2026-11-06:** all 4 characters at $4.99, all 4 weapons at $1.99, the bundle at $19.99, and the store ships **in 1.0**.
+- **Dan decided on 2026-11-06:** all 4 characters at $4.99, all 4 weapons at $1.99, the bundle at $19.99, and the store ships **in 1.0**. **Replaced on 2026-11-26** by the $2 to $10 rule: weapons $2.99, bundle $9.99 (see the note at the top).
 - **Prices** are Apple price tiers (US). Apple fills in other countries automatically.
 - **Product IDs can never be reused** once created, so Dan confirms the names before they go into App Store Connect.
 - **The bundle** must be a non-consumable that unlocks the other IDs in code. Apple has no native "bundle" type for non-consumables.

@@ -7,32 +7,50 @@ How to sign, build and upload the Android app, and what Play Console was told. T
 | | |
 |---|---|
 | Package | `com.dancruz.pinkunicorn`, the same as the iOS bundle ID. Permanent once uploaded. |
-| Version | 1.0.0, versionCode 1 (`android/app/build.gradle`). Google Play takes each versionCode once. |
+| Version | 1.0.0, **versionCode 2** (`android/app/build.gradle`). Google Play takes each versionCode once: 1 went to internal testing on 2026-11-26, so the next upload is 2. Log: 1 = first upload, nothing for sale. 2 = this branch (not built with the upload key yet, not uploaded). |
 | Android versions | Runs on Android 7.0 (API 24) and up. Targets Android 16 (API 36). |
 | Screen | Landscape only, fullscreen (system bars come back with a swipe from an edge). Marked as a game (`android:appCategory="game"`). |
-| Permissions | Internet (declared by Capacitor's web view; the game makes no network requests) and Vibration (the "Vibration" setting). |
+| Permissions | Internet (declared by Capacitor's web view; the game makes no network requests), Vibration (the "Vibration" setting), and from versionCode 2 `com.android.vending.BILLING` and `ACCESS_NETWORK_STATE`, both added by the Google Play Billing library. |
 | Backup | Off: progress stays on the device (`allowBackup="false"` and `data_extraction_rules.xml`). |
 | Back button | Closes the shop, sticker book, map or settings; pauses a game; leaves the app from the title screen (`backButton` in `game.js`, wired in `index.html`). |
-| Purchases | **None.** See below. |
+| Purchases | Google Play Billing is in the code but **switched off** in the default build: the shop shows Ring Looks only, as in versionCode 1. See "Purchases" below. |
 | Online play | **None.** "2 Devices" is hidden in every native app (`NATIVE_APP`), so the Android app opens no connection, not even to the STUN server. |
 
-## The shop on Android
+## Purchases
 
-The paid Characters and Weapons pages talk to the native `PinkStore` plugin, which exists only in the iOS app (StoreKit). Without it prices would stay "Loading..." and every purchase would fail. So `game.js` checks for the plugin (`STORE_NATIVE`, the same check Bible Story Pals uses for its `Unlocks` plugin):
+The nine products and their prices are in `docs/product-sheet.md`. They are the same IDs the iPhone and iPad app sells.
 
-- **iPhone and iPad app:** plugin present, nothing changes.
-- **Website:** unchanged, the pages show "In the app".
-- **Android app:** the Characters and Weapons tabs are not drawn and cannot be opened. The Sparkle Shop shows Ring Looks only, which are earned with rings. Nothing paid is unlocked for free, and nothing points at another store.
+### Where it stands (2026-11-26)
 
-All 27 chapters, Rainbow Run, 2 Players on one screen, the sticker book and the daily gift are the same as on iOS.
+- **Written and compiled:** `PinkStorePlugin.java` (Google Play Billing Library 8.0.0) and `PlayReceipt.java`, next to `MainActivity.java`. The plugin answers the same calls as `ios/App/App/PinkStorePlugin.swift` (`products`, `owned`, `buy`, `restore`) plus `finish`.
+- **Not tested with Google Play:** no purchase has been made, not even a test one. That needs the products in Play Console, the licensing key, a signed build on the internal testing track and a phone. None of that can be done from the repo.
+- **So the shop stays gated**, exactly as in versionCode 1. `pinkStoreBilling=false` in `android/gradle.properties` means `MainActivity` does not register the plugin, `STORE_NATIVE` in `game.js` is false, and the Characters and Weapons tabs are not drawn and cannot be opened. Nothing paid is unlocked for free and nothing points at another store.
+- The default build still carries the billing permission. That is deliberate: Play Console lets you create products only after a build with that permission has been uploaded.
 
-### What a Google Play Billing update needs
+### The rules the code keeps
 
-1. A Kotlin or Java Capacitor plugin named `PinkStore` in `android/app/src/main/java/com/dancruz/pinkunicorn/`, built on the Play Billing Library, with the four methods `PinkStorePlugin.swift` has: `products` (returns `prices` by product ID), `owned` and `restore` (return `ids`), and `buy` (returns `status`: `purchased`, `pending` or `cancelled`). Register it in `MainActivity` with `registerPlugin` before `super.onCreate`. Purchases must be acknowledged, or Google refunds them after three days.
-2. The `com.android.vending.BILLING` permission (the library adds it).
-3. The nine products from `docs/app-store-listing.md` created in Play Console as one-time products, and a payments profile on the developer account. Play product IDs allow lowercase letters, digits, underscores and periods, so the iOS IDs can be reused as they are.
-4. `game.js` needs no logic change: once the plugin is in the app, `STORE_NATIVE` turns true. The texts "Asking the App Store..." and "Could not reach the App Store" should become store-neutral.
-5. In Play Console: change the content rating's digital-purchases answer, the listing text ("nothing to buy") and the privacy page. Test with licence testers, then upload with a higher versionCode.
+| Google Play rule | Where |
+|---|---|
+| **Nothing for a pending payment.** Cash and pay-later purchases arrive as PENDING. | `paid()` in the plugin counts only `PURCHASED`. `buy` answers `pending`; `game.js` unlocks nothing and says "Payment pending: it unlocks when the payment clears". |
+| **Verify.** | `paid()` also needs the purchase to name this app's package and to carry Google's signature, checked on the device against the Play licensing key (`PlayReceipt.genuine`). No key, a bad key or a bad signature all count as not paid. |
+| **Grant before acknowledging.** | `game.js` saves the unlock (`storeGot` or `storeOwned`), then calls `finish`. `finish` is the only place the plugin calls `acknowledgePurchase`. |
+| **Acknowledge every purchase** (Google refunds after 3 days otherwise). | `game.js` asks `owned` at every launch, every time the app comes back to the front and every time a paid page opens, and passes everything owned to `finish`. A purchase the app missed (closed during the purchase, a pending payment that cleared later) is granted and acknowledged then. |
+| **Restore on reinstall.** | The same launch check: `owned` reads what Google Play holds for the account. The Restore Purchases button does it on request. |
+| **Refunds.** | A refunded product drops out of `owned`, and `storeOwned` takes it away. If Google Play cannot be reached, `owned` fails and the saved list is kept. |
+
+`tools/test.js` pins these rules (three tests: the Google Play app flow, the billing source, the product sheet). Each rule was broken on purpose once to see its test fail. `android/app/src/test/.../PlayReceiptTest.java` checks the signature code with a made-up key pair.
+
+There is no server. The signature check on the device stops casual fakes; a rooted phone that patches the app can still unlock things for itself, as with any offline game.
+
+### Turning purchases on (in this order)
+
+1. Dan: payments profile linked on the developer account, licence testers added.
+2. Upload a signed build of this branch (versionCode 2, billing off) to **internal testing**. It carries the billing permission.
+3. Create the nine products from `docs/product-sheet.md` and activate them. Check each ID, price, Active and "Backwards compatible".
+4. Copy the licensing key (Monetize with Play, Monetization setup, Licensing) into `pinkPlayLicenseKey` in `android/gradle.properties`. It is a public key, so it may be committed.
+5. Raise `versionCode` to 3 and build with billing on: `PINK_STORE_BILLING=1 npm run android:bundle`. The build refuses to start without the licensing key. Upload to internal testing.
+6. On a phone signed in as a licence tester, installed **from Play** (not from a cable): buy one product with the test card; close and reopen the app (still owned); uninstall, reinstall from Play (it comes back without tapping anything); try the "slow test card, approves after a few minutes" to see the pending message and that nothing unlocks until it clears. After three days, check Order management: the test orders are not refunded.
+7. Only then set `pinkStoreBilling=true` in `gradle.properties` for good, update the listing text and forms (`docs/google-play-listing.md`), and ask Dan before anything goes past internal testing.
 
 ## One time: the upload key
 
@@ -54,7 +72,7 @@ To keep the files elsewhere, set `PINK_UNICORN_KEYSTORE_PROPERTIES` to the full 
 
 ## Build the bundle
 
-Needs JDK 21 and the Android SDK (`JAVA_HOME`, `ANDROID_HOME`).
+Needs JDK 21 and the Android SDK (`JAVA_HOME`, `ANDROID_HOME`). The MacBook Pro has neither on its own: Unity's Android module brings an SDK and JDK 17, which is enough to compile and test (see "Checked on the MacBook Pro" below) but is not what a store build should be made with. The upload key is on the Windows PC only.
 
 ```bash
 npm install
@@ -84,7 +102,16 @@ The launcher icons and splash screens in `android/app/src/main/res/` were made f
 | Government, financial, health | No |
 | Category | Game, Action |
 
+## Checked on the MacBook Pro (2026-11-26)
+
+With Unity's JDK 17 and Android SDK, and a local Gradle init script (not in the repo) that lowers Capacitor's Java level from 21 to 17:
+
+- `./gradlew :app:compileDebugJavaWithJavac :app:testDebugUnitTest`: builds; `PlayReceiptTest` 4 of 4 pass.
+- `./gradlew :app:bundleRelease`: builds an **unsigned** 69 MB bundle, versionCode 2, whose manifest has `com.android.vending.BILLING`. It was deleted afterwards. It is not a store build: wrong Java level, no upload key.
+- `-PpinkStoreBilling=true` without a licensing key stops the build with a clear message.
+
 ## Not done
 
+- **No signed bundle for versionCode 2.** The upload key (`upload-key.jks`) is on Dan's Windows PC; this Mac has no `~/.pink-unicorn/`. Build there: `git pull`, `npm ci`, `npm run android:bundle`.
+- **No purchase has been tested.** See "Turning purchases on".
 - Nobody has run the Android build on a phone or tablet: frame rate, sound, Back, fullscreen and controllers are untested on a device.
-- Google Play Billing (above).

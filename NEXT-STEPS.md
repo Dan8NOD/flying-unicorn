@@ -96,3 +96,11 @@ Read `README.md` first. Everything is plain JS + canvas, no build step. Files: `
 - The Back button closes screens, pauses a game and leaves from the title (`backButton` in `game.js`).
 - `tools/check.sh` now runs with Node where there is no `osascript` (Windows, Linux).
 - Signed bundle 1.0.0 (1) was uploaded to Google Play internal testing. **Nobody has run it on a device.**
+
+## Holiday weekend ship-ready pass (2026-11-26, branch `weekend/ship-ready`)
+- **Prices:** free to download, every product $2 to $10. Characters $4.99, weapons $2.99 (were $1.99), Sparkle Bundle $9.99 (was $19.99). Same nine product IDs. One list: `docs/product-sheet.md`; a test keeps `game.js` and both listings in step with it.
+- **Google Play Billing is written** (`PinkStorePlugin.java`, `PlayReceipt.java`) and compiles, but **no purchase has been tested**, so the Android shop is still gated (`pinkStoreBilling=false` in `android/gradle.properties`). Steps to turn it on: `docs/google-play.md`, "Turning purchases on".
+- **Both apps** now ask the store what is owned at every launch (reinstall brings purchases back without a tap) and call `finish` after an unlock is saved.
+- **Game fixes:** a Menu button on the pause panel (before, the only way back to the title was to lose every heart); P, Esc and a controller's Start now pause the bonus round and the garden; settings rows work while the bonus round is paused; leaving the app pauses the bonus round and the garden too; Android Back and a controller's Back leave Game Over; a controller can pick the chapter, open the map (Y) and fly there.
+- **Builds:** iOS build number is 2, Android versionCode is 2. The Android upload key is only on the Windows PC, so there is no signed bundle from this Mac. `android/gradlew` was not executable on a Mac (committed from Windows); fixed.
+- **Still open:** a real device has still never run either app. Controller-only use of the shop, stickers, gift and settings (needed for Steam: `docs/steam.md`). Store screenshots and the Play feature graphic. The Android privacy page in the other repo must mention Google Play purchases before billing goes live.
